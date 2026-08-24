@@ -1,6 +1,59 @@
 import { db } from "../db";
 import type { WorkflowReviewStore } from "./workflow-review";
 export class PrismaWorkflowReviewStore implements WorkflowReviewStore {
+  async transfer(input: Parameters<WorkflowReviewStore["transfer"]>[0]) {
+    return db.$transaction(async (transaction) => {
+      const task = await transaction.workflowTask.findFirst({
+        where: {
+          id: input.taskId,
+          organizationId: input.organizationId,
+          status: { in: input.mode === "DELEGATE" ? ["IN_PROGRESS"] : ["PENDING", "IN_PROGRESS"] },
+          ...(input.mode === "DELEGATE" ? { assigneeUserId: input.actorUserId } : {}),
+          stepKey: { startsWith: "REVIEW_" },
+          workflow: { status: "ACTIVE", state: "REVIEW", entityType: "DocumentVersion" },
+        },
+        select: { id: true, assigneeUserId: true, dueAt: true, workflow: { select: { entityId: true } } },
+      });
+      if (!task || task.assigneeUserId === input.newAssigneeUserId) return false;
+      const eligible = await transaction.user.findFirst({
+        where: {
+          id: input.newAssigneeUserId,
+          organizationId: input.organizationId,
+          status: "ACTIVE",
+          roles: { some: { role: { permissions: { some: { permission: { key: "document.review" } } } } } },
+        },
+        select: { id: true },
+      });
+      if (!eligible) return false;
+      const changed = await transaction.workflowTask.updateMany({
+        where: { id: task.id, organizationId: input.organizationId, assigneeUserId: task.assigneeUserId },
+        data: { assigneeUserId: input.newAssigneeUserId },
+      });
+      if (changed.count !== 1) return false;
+      await transaction.notificationOutbox.create({
+        data: {
+          organizationId: input.organizationId,
+          recipientUserId: input.newAssigneeUserId,
+          eventKey: `document-review-${input.mode.toLowerCase()}:${task.id}:${input.newAssigneeUserId}`,
+          templateKey: input.mode === "DELEGATE" ? "DOCUMENT_REVIEW_DELEGATED" : "DOCUMENT_REVIEW_REASSIGNED",
+          payload: { taskId: task.id, documentVersionId: task.workflow.entityId, dueAt: task.dueAt?.toISOString() },
+        },
+      });
+      await transaction.auditEvent.create({
+        data: {
+          organizationId: input.organizationId,
+          actorUserId: input.actorUserId,
+          action: input.mode === "DELEGATE" ? "DOCUMENT_REVIEW_DELEGATED" : "DOCUMENT_REVIEW_REASSIGNED",
+          entityType: "WorkflowTask",
+          entityId: task.id,
+          reason: input.reason,
+          occurredAt: input.occurredAt,
+          metadata: { previousAssigneeUserId: task.assigneeUserId, newAssigneeUserId: input.newAssigneeUserId },
+        },
+      });
+      return true;
+    });
+  }
   async decide(input: Parameters<WorkflowReviewStore["decide"]>[0]) {
     try {
       return await db.$transaction(async (transaction) => {
@@ -219,6 +272,18 @@ export class PrismaWorkflowReviewStore implements WorkflowReviewStore {
           throw error;
       }
     }
+    return created;
+  }
+  async notifyAllOverdue(occurredAt: Date) {
+    const organizations = await db.workflowTask.findMany({
+      where: { status: "IN_PROGRESS", dueAt: { lt: occurredAt }, workflow: { status: "ACTIVE", state: "REVIEW" } },
+      distinct: ["organizationId"],
+      select: { organizationId: true },
+      take: 1000,
+    });
+    let created = 0;
+    for (const organization of organizations)
+      created += await this.notifyOverdue(organization.organizationId, occurredAt);
     return created;
   }
 }

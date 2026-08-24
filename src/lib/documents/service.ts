@@ -38,6 +38,8 @@ export interface TransitionInput {
   assigneeUserId?: string;
   assigneeUserIds?: string[];
   dueAt?: Date;
+  reviewStages?: Array<{ reviewerUserId: string; dueAt: Date }>;
+  workflowTemplateId?: string;
   comment?: string;
 }
 
@@ -85,6 +87,8 @@ export interface DocumentLifecycleStore {
     assigneeUserId?: string;
     assigneeUserIds?: string[];
     dueAt?: Date;
+    reviewStages?: Array<{ reviewerUserId: string; dueAt: Date }>;
+    workflowTemplateId?: string;
     comment?: string;
     occurredAt: Date;
   }): Promise<boolean>;
@@ -142,14 +146,33 @@ export class DocumentCommandService {
     if (version.lockVersion !== input.expectedLockVersion) {
       throw new DocumentConcurrencyError();
     }
-    const reviewers = input.assigneeUserIds?.length
+    const legacyReviewers = input.assigneeUserIds?.length
       ? input.assigneeUserIds
       : input.assigneeUserId
         ? [input.assigneeUserId]
         : [];
     if (
-      (reviewers.length && !input.dueAt) ||
-      (!reviewers.length && input.dueAt)
+      input.workflowTemplateId &&
+      (input.reviewStages?.length || input.dueAt || !legacyReviewers.length)
+    )
+      throw new DocumentCommandError(
+        "A template requires reviewers and cannot be combined with explicit deadlines",
+      );
+    const reviewStages = input.reviewStages?.length
+      ? input.reviewStages
+      : legacyReviewers.map((reviewerUserId) => ({
+          reviewerUserId,
+          dueAt: input.dueAt!,
+        }));
+    const reviewers = input.workflowTemplateId
+      ? legacyReviewers
+      : reviewStages.map((stage) => stage.reviewerUserId);
+    if (
+      (legacyReviewers.length &&
+        !input.dueAt &&
+        !input.reviewStages?.length &&
+        !input.workflowTemplateId) ||
+      (!legacyReviewers.length && input.dueAt && !input.reviewStages?.length)
     )
       throw new DocumentCommandError(
         "Reviewer and due date must be provided together",
@@ -158,7 +181,7 @@ export class DocumentCommandService {
       throw new DocumentCommandError(
         "Reviewers must be unique and limited to ten stages",
       );
-    if (input.dueAt && input.dueAt <= this.clock())
+    if (reviewStages.some((stage) => stage.dueAt <= this.clock()))
       throw new DocumentCommandError("Review due date must be in the future");
 
     const next = nextDocumentVersionState(
@@ -179,6 +202,8 @@ export class DocumentCommandService {
       assigneeUserId: input.assigneeUserId,
       assigneeUserIds: reviewers,
       dueAt: input.dueAt,
+      reviewStages,
+      workflowTemplateId: input.workflowTemplateId,
       comment: input.comment?.trim() || undefined,
       occurredAt: this.clock(),
     });

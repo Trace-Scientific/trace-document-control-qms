@@ -34,6 +34,12 @@ function fixture(
     async notifyOverdue() {
       return 2;
     },
+    async notifyAllOverdue() {
+      return 2;
+    },
+    async transfer() {
+      return true;
+    },
   };
   return { store, decisions };
 }
@@ -81,5 +87,25 @@ describe("sequential workflow review", () => {
         "org-1",
       ),
     ).resolves.toEqual({ created: 2 });
+  });
+  it("supports manager reassignment and reviewer delegation with a reason", async () => {
+    await expect(
+      new WorkflowReviewService(fixture().store).transfer(context, {
+        organizationId: "org-1",
+        taskId: "task-1",
+        newAssigneeUserId: "reviewer-2",
+        reason: "Coverage during leave",
+        mode: "REASSIGN",
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      new WorkflowReviewService(fixture().store).transfer(context, {
+        organizationId: "org-1",
+        taskId: "task-1",
+        newAssigneeUserId: "reviewer-2",
+        reason: " ",
+        mode: "DELEGATE",
+      }),
+    ).rejects.toThrow("reason");
   });
 });

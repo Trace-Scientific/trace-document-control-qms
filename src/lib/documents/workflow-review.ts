@@ -13,6 +13,16 @@ export interface WorkflowReviewStore {
     occurredAt: Date;
   }): Promise<"NEXT_REVIEW" | "AWAITING_APPROVAL" | "RETURNED_TO_DRAFT" | null>;
   notifyOverdue(organizationId: string, occurredAt: Date): Promise<number>;
+  notifyAllOverdue(occurredAt: Date): Promise<number>;
+  transfer(input: {
+    organizationId: string;
+    taskId: string;
+    actorUserId: string;
+    newAssigneeUserId: string;
+    reason: string;
+    mode: "REASSIGN" | "DELEGATE";
+    occurredAt: Date;
+  }): Promise<boolean>;
 }
 export class WorkflowReviewService {
   constructor(
@@ -51,6 +61,33 @@ export class WorkflowReviewService {
     return {
       created: await this.store.notifyOverdue(organizationId, this.clock()),
     };
+  }
+  async transfer(
+    context: AuthorizationContext,
+    input: {
+      organizationId: string;
+      taskId: string;
+      newAssigneeUserId: string;
+      reason: string;
+      mode: "REASSIGN" | "DELEGATE";
+    },
+  ) {
+    requireAuthorization(context, {
+      organizationId: input.organizationId,
+      permission:
+        input.mode === "REASSIGN"
+          ? "document.review.manage"
+          : "document.review",
+    });
+    if (!input.reason.trim() || input.newAssigneeUserId === context.userId)
+      throw new WorkflowReviewValidationError("A new reviewer and reason are required");
+    const changed = await this.store.transfer({
+      ...input,
+      reason: input.reason.trim(),
+      actorUserId: context.userId,
+      occurredAt: this.clock(),
+    });
+    if (!changed) throw new WorkflowReviewConflictError();
   }
 }
 export class WorkflowReviewValidationError extends Error {}
