@@ -67,7 +67,8 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
   async applyTransition(
     input: Parameters<DocumentLifecycleStore["applyTransition"]>[0],
   ): Promise<boolean> {
-    return db.$transaction(async (transaction) => {
+    try {
+      return await db.$transaction(async (transaction) => {
       if (input.command === "SUBMIT") {
         const definition = await transaction.workflowDefinition.findFirst({
           where: {
@@ -139,7 +140,7 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
           where: { organizationId: input.organizationId, id: input.documentId },
           select: { currentVersionId: true },
         });
-        if (!document) return false;
+        if (!document) throw new ConcurrentTransitionError();
         if (document.currentVersionId && document.currentVersionId !== input.versionId) {
           const superseded = await transaction.documentVersion.updateMany({
             where: {
@@ -153,7 +154,7 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
               lockVersion: { increment: 1 },
             },
           });
-          if (superseded.count !== 1) return false;
+          if (superseded.count !== 1) throw new ConcurrentTransitionError();
         }
       }
 
@@ -171,7 +172,7 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
           effectiveAt: input.to === "EFFECTIVE" ? input.occurredAt : undefined,
         },
       });
-      if (changed.count !== 1) return false;
+      if (changed.count !== 1) throw new ConcurrentTransitionError();
 
       if (input.command === "MAKE_EFFECTIVE") {
         await transaction.document.update({
@@ -198,9 +199,15 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
         },
       });
       return true;
-    });
+      });
+    } catch (error) {
+      if (error instanceof ConcurrentTransitionError) return false;
+      throw error;
+    }
   }
 }
+
+class ConcurrentTransitionError extends Error {}
 
 export class DocumentConfigurationError extends Error {
   constructor(message: string) {
