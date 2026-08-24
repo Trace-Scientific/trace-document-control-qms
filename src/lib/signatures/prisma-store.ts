@@ -39,7 +39,17 @@ export class PrismaApprovalSignatureStore implements ApprovalSignatureStore {
 
         const workflow = await transaction.workflowInstance.findFirst({ where: { organizationId: input.organizationId, entityType: "DocumentVersion", entityId: input.documentVersionId, status: "ACTIVE" }, orderBy: { startedAt: "desc" } });
         if (!workflow) throw new SignatureConfigurationError("An active review workflow is required");
-        await transaction.workflowTask.updateMany({ where: { organizationId: input.organizationId, workflowInstanceId: workflow.id, status: { in: ["PENDING", "IN_PROGRESS"] } }, data: { status: "COMPLETED", completedAt: input.signedAt, decision: "APPROVE" } });
+        const eligibleTask = await transaction.workflowTask.findFirst({
+          where: {
+            organizationId: input.organizationId,
+            workflowInstanceId: workflow.id,
+            status: { in: ["PENDING", "IN_PROGRESS"] },
+            OR: [{ assigneeUserId: null }, { assigneeUserId: input.signerUserId }],
+          },
+          orderBy: { createdAt: "asc" },
+        });
+        if (!eligibleTask) throw new SignatureEligibilityError();
+        await transaction.workflowTask.update({ where: { id: eligibleTask.id }, data: { status: "COMPLETED", completedAt: input.signedAt, decision: "APPROVE" } });
         await transaction.workflowInstance.update({ where: { id: workflow.id }, data: { status: "COMPLETED", state: "APPROVED", completedAt: input.signedAt, lockVersion: { increment: 1 } } });
 
         const authentication = await transaction.authenticationEvent.create({ data: { organizationId: input.organizationId, userId: input.signerUserId, eventType: "REAUTHENTICATION", outcome: "SUCCESS", method: "PASSWORD", occurredAt: input.signedAt, validUntil: input.authenticationValidUntil, metadata: { purpose: "DOCUMENT_APPROVAL" } } });
@@ -56,3 +66,4 @@ export class PrismaApprovalSignatureStore implements ApprovalSignatureStore {
 
 class SignatureConflict extends Error {}
 export class SignatureConfigurationError extends Error { constructor(message: string) { super(message); this.name = "SignatureConfigurationError"; } }
+export class SignatureEligibilityError extends Error { constructor() { super("Signer is not eligible for the active workflow task"); this.name = "SignatureEligibilityError"; } }
