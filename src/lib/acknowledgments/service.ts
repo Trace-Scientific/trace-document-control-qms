@@ -10,6 +10,7 @@ export interface AcknowledgmentStore {
   recentFailures(organizationId: string, userId: string, since: Date): Promise<number>;
   recordFailure(evidence: AssignmentEvidence, at: Date): Promise<void>;
   complete(input: AcknowledgmentPayload & { payloadHash: string; authenticationValidUntil: Date }): Promise<{ completionId: string } | null>;
+  listOutstanding(organizationId: string, now: Date): Promise<Array<{ assignmentId: string; documentVersionId: string; recipientUserId: string; dueAt: Date | null; overdue: boolean }>>;
 }
 
 export class AcknowledgmentService {
@@ -21,6 +22,10 @@ export class AcknowledgmentService {
     if (!recipients.length || recipients.length !== input.recipientUserIds.length) throw new AcknowledgmentValidationError("Recipients must be unique");
     if (input.dueAt <= now) throw new AcknowledgmentValidationError("Due date must be in the future");
     return this.store.assign({ ...input, recipientUserIds: recipients, assignedByUserId: context.userId, assignedAt: now });
+  }
+  async listOutstanding(context: AuthorizationContext, organizationId: string) {
+    requireAuthorization(context, { organizationId, permission: "document.distribute" });
+    return this.store.listOutstanding(organizationId, this.clock());
   }
   async complete(context: AuthorizationContext, input: { organizationId: string; assignmentId: string; password: string; confirmed: boolean }) {
     requireAuthorization(context, { organizationId: input.organizationId, permission: "document.acknowledge" });
