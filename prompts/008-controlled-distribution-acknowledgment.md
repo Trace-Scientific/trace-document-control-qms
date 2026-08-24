@@ -10,6 +10,7 @@ Assign the exact effective document version to active employees and preserve sig
 - assignments are tenant-bound and reference one exact effective version
 - duplicate recipient/version assignments are rejected
 - due dates must be future dates
+- authorized distribution managers can report outstanding and overdue assignments
 - only the assigned active user can complete an assignment
 - completion requires fresh password reauthentication and explicit acknowledgment meaning
 - assignment, signature, authentication, completion, and audit evidence commit atomically
