@@ -8,6 +8,7 @@ Require a fresh authenticated signature before a controlled document can move fr
 
 - unsigned approval is unavailable through the generic lifecycle API
 - signer must hold the current `document.approve` permission
+- signer must be eligible for the active assigned workflow task
 - password reauthentication is verified server-side against the stored scrypt hash
 - failures create append-only authentication/security evidence without storing the password
 - approval, workflow completion, authentication event, signature, and audit event commit atomically
