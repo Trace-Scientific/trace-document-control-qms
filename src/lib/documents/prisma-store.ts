@@ -65,159 +65,324 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
     });
   }
 
-  async updateDraft(input:Parameters<DocumentLifecycleStore["updateDraft"]>[0]):Promise<boolean>{return db.$transaction(async transaction=>{const changed=await transaction.documentVersion.updateMany({where:{organizationId:input.organizationId,id:input.versionId,status:"DRAFT",lockVersion:input.expectedLockVersion},data:{contentText:input.contentText,contentHash:input.contentHash,changeSummary:input.changeSummary.trim(),lockVersion:{increment:1}}});if(changed.count!==1)return false;await transaction.auditEvent.create({data:{organizationId:input.organizationId,actorUserId:input.actorUserId,action:"DOCUMENT_DRAFT_UPDATED",entityType:"DocumentVersion",entityId:input.versionId,occurredAt:input.occurredAt,metadata:{priorLockVersion:input.expectedLockVersion,contentHash:input.contentHash}}});return true;});}
+  async createRevision(
+    input: Parameters<DocumentLifecycleStore["createRevision"]>[0],
+  ) {
+    return db.$transaction(async (transaction) => {
+      const source = await transaction.documentVersion.findFirst({
+        where: {
+          organizationId: input.organizationId,
+          id: input.sourceVersionId,
+          status: { in: ["EFFECTIVE", "SUPERSEDED"] },
+        },
+        select: { documentId: true },
+      });
+      if (!source)
+        throw new DocumentConfigurationError(
+          "An effective or superseded source version is required",
+        );
+      const active = await transaction.documentVersion.count({
+        where: {
+          organizationId: input.organizationId,
+          documentId: source.documentId,
+          status: { in: ["DRAFT", "IN_REVIEW", "APPROVED"] },
+        },
+      });
+      if (active)
+        throw new DocumentConfigurationError(
+          "Complete the existing in-process revision first",
+        );
+      const maximum = await transaction.documentVersion.aggregate({
+          where: {
+            organizationId: input.organizationId,
+            documentId: source.documentId,
+          },
+          _max: { versionNumber: true },
+        }),
+        version = await transaction.documentVersion.create({
+          data: {
+            organizationId: input.organizationId,
+            documentId: source.documentId,
+            versionNumber: (maximum._max.versionNumber ?? 0) + 1,
+            revisionLabel: input.revisionLabel.trim(),
+            authoredByUserId: input.actorUserId,
+            contentHash: input.contentHash,
+            contentText: input.contentText,
+            changeSummary: input.changeSummary.trim(),
+          },
+        });
+      await transaction.auditEvent.create({
+        data: {
+          organizationId: input.organizationId,
+          actorUserId: input.actorUserId,
+          action: "DOCUMENT_SUCCESSOR_REVISION_CREATED",
+          entityType: "DocumentVersion",
+          entityId: version.id,
+          occurredAt: input.occurredAt,
+          metadata: {
+            documentId: source.documentId,
+            sourceVersionId: input.sourceVersionId,
+            versionNumber: version.versionNumber,
+            revisionLabel: version.revisionLabel,
+            contentHash: version.contentHash,
+          },
+        },
+      });
+      return version;
+    });
+  }
+
+  async updateDraft(
+    input: Parameters<DocumentLifecycleStore["updateDraft"]>[0],
+  ): Promise<boolean> {
+    return db.$transaction(async (transaction) => {
+      const changed = await transaction.documentVersion.updateMany({
+        where: {
+          organizationId: input.organizationId,
+          id: input.versionId,
+          status: "DRAFT",
+          lockVersion: input.expectedLockVersion,
+        },
+        data: {
+          contentText: input.contentText,
+          contentHash: input.contentHash,
+          changeSummary: input.changeSummary.trim(),
+          lockVersion: { increment: 1 },
+        },
+      });
+      if (changed.count !== 1) return false;
+      await transaction.auditEvent.create({
+        data: {
+          organizationId: input.organizationId,
+          actorUserId: input.actorUserId,
+          action: "DOCUMENT_DRAFT_UPDATED",
+          entityType: "DocumentVersion",
+          entityId: input.versionId,
+          occurredAt: input.occurredAt,
+          metadata: {
+            priorLockVersion: input.expectedLockVersion,
+            contentHash: input.contentHash,
+          },
+        },
+      });
+      return true;
+    });
+  }
 
   async applyTransition(
     input: Parameters<DocumentLifecycleStore["applyTransition"]>[0],
   ): Promise<boolean> {
     try {
       return await db.$transaction(async (transaction) => {
-      if (input.command === "SUBMIT") {
-        const definition = await transaction.workflowDefinition.findFirst({
-          where: {
-            organizationId: input.organizationId,
-            key: "document-approval",
-            active: true,
-          },
-          orderBy: { version: "desc" },
-        });
-        if (!definition) {
-          throw new DocumentConfigurationError("An active document-approval workflow is required");
-        }
-        const workflow = await transaction.workflowInstance.create({
-          data: {
-            organizationId: input.organizationId,
-            workflowDefinitionId: definition.id,
-            entityType: "DocumentVersion",
-            entityId: input.versionId,
-            entityVersion: String(input.expectedLockVersion + 1),
-            state: "REVIEW",
-          },
-        });
-        await transaction.workflowTask.create({
-          data: {
-            organizationId: input.organizationId,
-            workflowInstanceId: workflow.id,
-            stepKey: "REVIEW",
-          },
-        });
-      }
-
-      if (input.command === "APPROVE" || input.command === "REJECT") {
-        const workflow = await transaction.workflowInstance.findFirst({
-          where: {
-            organizationId: input.organizationId,
-            entityType: "DocumentVersion",
-            entityId: input.versionId,
-            status: "ACTIVE",
-          },
-          orderBy: { startedAt: "desc" },
-        });
-        if (!workflow) throw new DocumentConfigurationError("An active review workflow is required");
-        await transaction.workflowTask.updateMany({
-          where: {
-            organizationId: input.organizationId,
-            workflowInstanceId: workflow.id,
-            status: { in: ["PENDING", "IN_PROGRESS"] },
-          },
-          data: {
-            status: "COMPLETED",
-            completedAt: input.occurredAt,
-            decision: input.command,
-            comments: input.reason,
-          },
-        });
-        await transaction.workflowInstance.update({
-          where: { id: workflow.id },
-          data: {
-            status: "COMPLETED",
-            state: input.command === "APPROVE" ? "APPROVED" : "REJECTED",
-            completedAt: input.occurredAt,
-            lockVersion: { increment: 1 },
-          },
-        });
-      }
-
-      let reviewDueAt: Date | undefined;
-      if (input.command === "MAKE_EFFECTIVE") {
-        const document = await transaction.document.findFirst({
-          where: { organizationId: input.organizationId, id: input.documentId },
-          select: { currentVersionId: true },
-        });
-        if (!document) throw new ConcurrentTransitionError();
-        if (document.currentVersionId && document.currentVersionId !== input.versionId) {
-          await transaction.documentReviewTask.updateMany({
-            where: { organizationId: input.organizationId, documentVersionId: document.currentVersionId, status: "PENDING" },
-            data: { status: "CANCELLED" },
-          });
-          const superseded = await transaction.documentVersion.updateMany({
+        if (input.command === "SUBMIT") {
+          const definition = await transaction.workflowDefinition.findFirst({
             where: {
               organizationId: input.organizationId,
-              id: document.currentVersionId,
-              status: "EFFECTIVE",
+              key: "document-approval",
+              active: true,
+            },
+            orderBy: { version: "desc" },
+          });
+          if (!definition) {
+            throw new DocumentConfigurationError(
+              "An active document-approval workflow is required",
+            );
+          }
+          const workflow = await transaction.workflowInstance.create({
+            data: {
+              organizationId: input.organizationId,
+              workflowDefinitionId: definition.id,
+              entityType: "DocumentVersion",
+              entityId: input.versionId,
+              entityVersion: String(input.expectedLockVersion + 1),
+              state: "REVIEW",
+            },
+          });
+          if (input.assigneeUserId) {
+            const eligible = await transaction.user.findFirst({
+              where: {
+                organizationId: input.organizationId,
+                id: input.assigneeUserId,
+                status: "ACTIVE",
+                roles: {
+                  some: {
+                    role: {
+                      permissions: {
+                        some: {
+                          permission: {
+                            key: {
+                              in: ["document.review", "document.approve"],
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              select: { id: true },
+            });
+            if (!eligible)
+              throw new DocumentConfigurationError(
+                "The selected reviewer is not eligible",
+              );
+          }
+          await transaction.workflowTask.create({
+            data: {
+              organizationId: input.organizationId,
+              workflowInstanceId: workflow.id,
+              stepKey: "REVIEW",
+              assigneeUserId: input.assigneeUserId,
+              dueAt: input.dueAt,
+              comments: input.comment,
+            },
+          });
+        }
+
+        if (input.command === "APPROVE" || input.command === "REJECT") {
+          const workflow = await transaction.workflowInstance.findFirst({
+            where: {
+              organizationId: input.organizationId,
+              entityType: "DocumentVersion",
+              entityId: input.versionId,
+              status: "ACTIVE",
+            },
+            orderBy: { startedAt: "desc" },
+          });
+          if (!workflow)
+            throw new DocumentConfigurationError(
+              "An active review workflow is required",
+            );
+          await transaction.workflowTask.updateMany({
+            where: {
+              organizationId: input.organizationId,
+              workflowInstanceId: workflow.id,
+              status: { in: ["PENDING", "IN_PROGRESS"] },
             },
             data: {
-              status: "SUPERSEDED",
-              supersededAt: input.occurredAt,
+              status: "COMPLETED",
+              completedAt: input.occurredAt,
+              decision: input.command,
+              comments: input.reason,
+            },
+          });
+          await transaction.workflowInstance.update({
+            where: { id: workflow.id },
+            data: {
+              status: "COMPLETED",
+              state: input.command === "APPROVE" ? "APPROVED" : "REJECTED",
+              completedAt: input.occurredAt,
               lockVersion: { increment: 1 },
             },
           });
-          if (superseded.count !== 1) throw new ConcurrentTransitionError();
         }
-        const documentType = await transaction.documentType.findFirst({
-          where: { organizationId: input.organizationId, documents: { some: { id: input.documentId } } },
-          select: { reviewMonths: true },
-        });
-        if (!documentType?.reviewMonths) throw new DocumentConfigurationError("A positive review interval is required before a document can become effective");
-        reviewDueAt = addMonthsUtc(input.occurredAt, documentType.reviewMonths);
-      }
 
-      const changed = await transaction.documentVersion.updateMany({
-        where: {
-          organizationId: input.organizationId,
-          id: input.versionId,
-          documentId: input.documentId,
-          status: input.from,
-          lockVersion: input.expectedLockVersion,
-        },
-        data: {
-          status: input.to,
-          lockVersion: { increment: 1 },
-          effectiveAt: input.to === "EFFECTIVE" ? input.occurredAt : undefined,
-          reviewDueAt,
-        },
-      });
-      if (changed.count !== 1) throw new ConcurrentTransitionError();
+        let reviewDueAt: Date | undefined;
+        if (input.command === "MAKE_EFFECTIVE") {
+          const document = await transaction.document.findFirst({
+            where: {
+              organizationId: input.organizationId,
+              id: input.documentId,
+            },
+            select: { currentVersionId: true },
+          });
+          if (!document) throw new ConcurrentTransitionError();
+          if (
+            document.currentVersionId &&
+            document.currentVersionId !== input.versionId
+          ) {
+            await transaction.documentReviewTask.updateMany({
+              where: {
+                organizationId: input.organizationId,
+                documentVersionId: document.currentVersionId,
+                status: "PENDING",
+              },
+              data: { status: "CANCELLED" },
+            });
+            const superseded = await transaction.documentVersion.updateMany({
+              where: {
+                organizationId: input.organizationId,
+                id: document.currentVersionId,
+                status: "EFFECTIVE",
+              },
+              data: {
+                status: "SUPERSEDED",
+                supersededAt: input.occurredAt,
+                lockVersion: { increment: 1 },
+              },
+            });
+            if (superseded.count !== 1) throw new ConcurrentTransitionError();
+          }
+          const documentType = await transaction.documentType.findFirst({
+            where: {
+              organizationId: input.organizationId,
+              documents: { some: { id: input.documentId } },
+            },
+            select: { reviewMonths: true },
+          });
+          if (!documentType?.reviewMonths)
+            throw new DocumentConfigurationError(
+              "A positive review interval is required before a document can become effective",
+            );
+          reviewDueAt = addMonthsUtc(
+            input.occurredAt,
+            documentType.reviewMonths,
+          );
+        }
 
-      if (input.command === "MAKE_EFFECTIVE") {
-        await transaction.document.update({
-          where: { id: input.documentId },
-          data: { currentVersionId: input.versionId },
-        });
-        await transaction.documentReviewTask.create({ data: {
-          organizationId: input.organizationId, documentId: input.documentId, documentVersionId: input.versionId,
-          dueAt: reviewDueAt!,
-        }});
-      }
-
-      await transaction.auditEvent.create({
-        data: {
-          organizationId: input.organizationId,
-          actorUserId: input.actorUserId,
-          action: `DOCUMENT_VERSION_${input.command}`,
-          entityType: "DocumentVersion",
-          entityId: input.versionId,
-          reason: input.reason,
-          occurredAt: input.occurredAt,
-          metadata: {
+        const changed = await transaction.documentVersion.updateMany({
+          where: {
+            organizationId: input.organizationId,
+            id: input.versionId,
             documentId: input.documentId,
-            from: input.from,
-            to: input.to,
-            priorLockVersion: input.expectedLockVersion,
+            status: input.from,
+            lockVersion: input.expectedLockVersion,
           },
-        },
-      });
-      return true;
+          data: {
+            status: input.to,
+            lockVersion: { increment: 1 },
+            effectiveAt:
+              input.to === "EFFECTIVE" ? input.occurredAt : undefined,
+            reviewDueAt,
+          },
+        });
+        if (changed.count !== 1) throw new ConcurrentTransitionError();
+
+        if (input.command === "MAKE_EFFECTIVE") {
+          await transaction.document.update({
+            where: { id: input.documentId },
+            data: { currentVersionId: input.versionId },
+          });
+          await transaction.documentReviewTask.create({
+            data: {
+              organizationId: input.organizationId,
+              documentId: input.documentId,
+              documentVersionId: input.versionId,
+              dueAt: reviewDueAt!,
+            },
+          });
+        }
+
+        await transaction.auditEvent.create({
+          data: {
+            organizationId: input.organizationId,
+            actorUserId: input.actorUserId,
+            action: `DOCUMENT_VERSION_${input.command}`,
+            entityType: "DocumentVersion",
+            entityId: input.versionId,
+            reason: input.reason,
+            occurredAt: input.occurredAt,
+            metadata: {
+              documentId: input.documentId,
+              from: input.from,
+              to: input.to,
+              priorLockVersion: input.expectedLockVersion,
+              assigneeUserId: input.assigneeUserId,
+              dueAt: input.dueAt?.toISOString(),
+            },
+          },
+        });
+        return true;
       });
     } catch (error) {
       if (error instanceof ConcurrentTransitionError) return false;
@@ -233,7 +398,9 @@ function addMonthsUtc(value: Date, months: number): Date {
   const day = result.getUTCDate();
   result.setUTCDate(1);
   result.setUTCMonth(result.getUTCMonth() + months);
-  const lastDay = new Date(Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0)).getUTCDate();
+  const lastDay = new Date(
+    Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0),
+  ).getUTCDate();
   result.setUTCDate(Math.min(day, lastDay));
   return result;
 }
