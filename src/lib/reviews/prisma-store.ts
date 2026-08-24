@@ -3,12 +3,12 @@ import type { ReviewStore } from "./service";
 
 export class PrismaReviewStore implements ReviewStore {
   async listDue(organizationId: string, through: Date) {
-    const rows = await db.documentReviewTask.findMany({ where: { organizationId, status: "PENDING", dueAt: { lte: through }, documentVersion: { status: "EFFECTIVE" } }, select: { id: true, documentId: true, documentVersionId: true, dueAt: true, document: { select: { currentVersionId: true } } }, orderBy: { dueAt: "asc" } });
-    return rows.filter((row) => row.document.currentVersionId === row.documentVersionId).map((row) => ({ id: row.id, documentId: row.documentId, documentVersionId: row.documentVersionId, dueAt: row.dueAt }));
+    const rows = await db.documentReviewTask.findMany({ where: { organizationId, status: "PENDING", dueAt: { lte: through }, documentVersion: { status: "EFFECTIVE" } }, select: { id: true, documentId: true, documentVersionId: true, dueAt: true, document: { select: { currentVersionId: true, documentNumber: true, title: true } }, documentVersion: { select: { revisionLabel: true } } }, orderBy: { dueAt: "asc" } });
+    return rows.filter((row) => row.document.currentVersionId === row.documentVersionId).map((row) => ({ id: row.id, documentId: row.documentId, documentVersionId: row.documentVersionId, documentNumber: row.document.documentNumber, title: row.document.title, revisionLabel: row.documentVersion.revisionLabel, dueAt: row.dueAt }));
   }
   async listOutstanding(organizationId: string, now: Date) {
-    const rows = await db.documentReviewTask.findMany({ where: { organizationId, status: "PENDING", documentVersion: { status: "EFFECTIVE" } }, select: { id: true, documentId: true, documentVersionId: true, dueAt: true, document: { select: { currentVersionId: true } } }, orderBy: { dueAt: "asc" } });
-    return rows.filter((row) => row.document.currentVersionId === row.documentVersionId).map((row) => ({ id: row.id, documentId: row.documentId, documentVersionId: row.documentVersionId, dueAt: row.dueAt, overdue: row.dueAt < now }));
+    const rows = await db.documentReviewTask.findMany({ where: { organizationId, status: "PENDING", documentVersion: { status: "EFFECTIVE" } }, select: { id: true, documentId: true, documentVersionId: true, dueAt: true, document: { select: { currentVersionId: true, documentNumber: true, title: true } }, documentVersion: { select: { revisionLabel: true } } }, orderBy: { dueAt: "asc" } });
+    return rows.filter((row) => row.document.currentVersionId === row.documentVersionId).map((row) => ({ id: row.id, documentId: row.documentId, documentVersionId: row.documentVersionId, documentNumber: row.document.documentNumber, title: row.document.title, revisionLabel: row.documentVersion.revisionLabel, dueAt: row.dueAt, overdue: row.dueAt < now }));
   }
   async escalate(input: Parameters<ReviewStore["escalate"]>[0]) {
     try {
