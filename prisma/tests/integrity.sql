@@ -6,9 +6,10 @@ INSERT INTO "Site" ("id","organizationId","name","updatedAt")
 VALUES ('10000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','Site One',CURRENT_TIMESTAMP);
 INSERT INTO "User" ("id","organizationId","email","firstName","lastName","updatedAt")
 VALUES ('20000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','one@example.test','Test','One',CURRENT_TIMESTAMP),
-       ('20000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000002','two@example.test','Test','Two',CURRENT_TIMESTAMP);
-INSERT INTO "AuthenticationEvent" ("id","organizationId","userId","eventType","outcome","method")
-VALUES ('90000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','LOGIN','SUCCESS','PASSWORD');
+       ('20000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000002','two@example.test','Test','Two',CURRENT_TIMESTAMP),
+       ('20000000-0000-4000-8000-000000000003','00000000-0000-4000-8000-000000000001','other@example.test','Other','Signer',CURRENT_TIMESTAMP);
+INSERT INTO "AuthenticationEvent" ("id","organizationId","userId","eventType","outcome","method","validUntil")
+VALUES ('90000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','REAUTHENTICATION','SUCCESS','PASSWORD',CURRENT_TIMESTAMP + interval '5 minutes');
 INSERT INTO "Role" ("id","organizationId","name","updatedAt")
 VALUES ('30000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000002','Tenant Two Role',CURRENT_TIMESTAMP);
 
@@ -87,6 +88,13 @@ END $$;
 
 INSERT INTO "ElectronicSignature" ("id","organizationId","signerUserId","entityType","entityId","entityVersion","meaning","meaningText","authenticationEventId","payloadHash")
 VALUES ('80000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','DocumentVersion','70000000-0000-4000-8000-000000000001','1.0','APPROVED','Approved','90000000-0000-4000-8000-000000000001',repeat('b',64));
+DO $$ DECLARE blocked boolean := false; BEGIN
+  BEGIN
+    INSERT INTO "ElectronicSignature" ("organizationId","signerUserId","entityType","entityId","entityVersion","meaning","meaningText","authenticationEventId","payloadHash")
+    VALUES ('00000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000003','DocumentVersion','70000000-0000-4000-8000-000000000001','1.0','APPROVED','Invalid signer','90000000-0000-4000-8000-000000000001',repeat('d',64));
+  EXCEPTION WHEN OTHERS THEN blocked := true; END;
+  IF NOT blocked THEN RAISE EXCEPTION 'signature accepted authentication evidence for another signer'; END IF;
+END $$;
 DO $$ DECLARE blocked boolean := false; BEGIN
   BEGIN UPDATE "ElectronicSignature" SET "payloadHash"=repeat('c',64) WHERE "id"='80000000-0000-4000-8000-000000000001';
   EXCEPTION WHEN OTHERS THEN blocked := true; END;

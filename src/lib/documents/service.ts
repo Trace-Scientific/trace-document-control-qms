@@ -85,6 +85,9 @@ export class DocumentCommandService {
     context: AuthorizationContext,
     input: TransitionInput,
   ): Promise<StoredDocumentVersion> {
+    if (input.command === "APPROVE") {
+      throw new DocumentSignatureRequiredError();
+    }
     requireAuthorization(context, {
       organizationId: input.organizationId,
       permission: commandPermissions[input.command],
@@ -126,5 +129,12 @@ export class DocumentCommandError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "DocumentCommandError";
+  }
+}
+
+export class DocumentSignatureRequiredError extends Error {
+  constructor() {
+    super("Electronic signature is required for approval");
+    this.name = "DocumentSignatureRequiredError";
   }
 }
