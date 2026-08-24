@@ -1431,6 +1431,29 @@ td.due {
   max-width: 50%;
   text-align: right;
 }
+.assignment-history article .review-decisions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.review-decisions button {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid #d9dee7;
+  border-radius: 5px;
+  background: #fff;
+  color: #526073;
+  font-size: 9px;
+  font-weight: 700;
+}
+.review-decisions .primary-button {
+  color: #fff;
+  background: var(--blue);
+  border-color: var(--blue);
+}
+.approval-box select[multiple] {
+  min-height: 95px;
+}
 .approval-box input,
 .approval-box select,
 .approval-box textarea {

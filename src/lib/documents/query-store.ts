@@ -154,6 +154,7 @@ export class PrismaDocumentQueryStore implements DocumentQueryStore {
         },
         select: {
           id: true,
+          stepKey: true,
           status: true,
           dueAt: true,
           decision: true,
@@ -188,6 +189,7 @@ export class PrismaDocumentQueryStore implements DocumentQueryStore {
     ]);
     const assignments = tasks.map((task) => ({
         id: task.id,
+        stepKey: task.stepKey,
         versionId: task.workflow.entityId,
         status: task.status,
         dueAt: task.dueAt,

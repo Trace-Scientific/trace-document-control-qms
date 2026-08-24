@@ -93,6 +93,7 @@ type DetailVersion = {
 };
 type ReviewAssignment = {
   id: string;
+  stepKey: string;
   versionId: string;
   status: string;
   dueAt: string | null;
@@ -109,6 +110,7 @@ type DocumentDetail = {
 };
 type LiveData = {
   organizationId: string;
+  userId: string;
   capabilities: {
     canReadDocuments: boolean;
     canCreateDocuments: boolean;
@@ -356,7 +358,7 @@ export function DocumentControlDashboard() {
     );
   }
   async function runCommand(
-    command: "SUBMIT" | "REJECT" | "MAKE_EFFECTIVE",
+    command: "SUBMIT" | "MAKE_EFFECTIVE",
     reason?: string,
   ) {
     if (!detail) return;
@@ -473,7 +475,7 @@ export function DocumentControlDashboard() {
     event.preventDefault();
     if (!detail) return;
     const form = new FormData(event.currentTarget),
-      reviewer = String(form.get("reviewer")),
+      reviewers = form.getAll("reviewers").map(String),
       dueAt = String(form.get("reviewDue")),
       comment = String(form.get("reviewComment"));
     setSubmitting(true);
@@ -485,7 +487,7 @@ export function DocumentControlDashboard() {
           versionId: detail.selected.id,
           command: "SUBMIT",
           expectedLockVersion: detail.selected.lockVersion,
-          assigneeUserId: reviewer,
+          assigneeUserIds: reviewers,
           dueAt: new Date(`${dueAt}T23:59:59`).toISOString(),
           comment,
         }),
@@ -502,7 +504,60 @@ export function DocumentControlDashboard() {
     await loadDetail(detail.selected.id);
     setDocumentReload((value) => value + 1);
     setNotice(
-      "Revision submitted to the assigned reviewer with an audited due date.",
+      "Revision submitted to the ordered reviewers with an audited due date.",
+    );
+  }
+  async function decideReview(
+    taskId: string,
+    decision: "ACCEPT" | "REQUEST_CHANGES",
+  ) {
+    if (!detail) return;
+    const comment = window.prompt(
+      decision === "ACCEPT"
+        ? "Enter your review comment"
+        : "Describe the required changes",
+    );
+    if (!comment?.trim()) return;
+    setSubmitting(true);
+    const response = await fetch("/api/documents/workflow", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          operation: "DECIDE",
+          taskId,
+          decision,
+          comment,
+        }),
+      }),
+      body = await response.json().catch(() => null);
+    setSubmitting(false);
+    if (!response.ok) {
+      setDetailError(
+        body?.error || "The review decision could not be recorded.",
+      );
+      return;
+    }
+    await loadDetail(detail.selected.id);
+    setDocumentReload((value) => value + 1);
+    setNotice(
+      decision === "ACCEPT"
+        ? "Review stage accepted; the next stage is now active."
+        : "Revision returned to draft with the reviewer comment.",
+    );
+  }
+  async function monitorWorkflowOverdue() {
+    setSubmitting(true);
+    const response = await fetch("/api/documents/workflow", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ operation: "MONITOR_OVERDUE" }),
+      }),
+      body = await response.json().catch(() => null);
+    setSubmitting(false);
+    setNotice(
+      response.ok
+        ? `${body.data.created} overdue review notification${body.data.created === 1 ? "" : "s"} queued.`
+        : body?.error || "Unable to monitor overdue assignments.",
     );
   }
   async function createDraft(event: FormEvent<HTMLFormElement>) {
@@ -1026,7 +1081,20 @@ export function DocumentControlDashboard() {
                   <h2>Notification delivery monitoring</h2>
                   <p>Failed and dead-letter deliveries only</p>
                 </div>
-                <span className="count-pill">{live?.failures.length ?? 0}</span>
+                <div>
+                  <span className="count-pill">
+                    {live?.failures.length ?? 0}
+                  </span>
+                  {live?.capabilities.canManageReviews && (
+                    <button
+                      className="text-button"
+                      disabled={submitting}
+                      onClick={monitorWorkflowOverdue}
+                    >
+                      Queue overdue reviews
+                    </button>
+                  )}
+                </div>
               </div>
               {live?.capabilities.canManageNotifications ? (
                 <div className="table-wrap">
@@ -1253,6 +1321,26 @@ export function DocumentControlDashboard() {
                           item.decision ||
                           "No reviewer comment recorded."}
                       </p>
+                      {item.status === "IN_PROGRESS" &&
+                        item.assignee?.id === live?.userId && (
+                          <div className="review-decisions">
+                            <button
+                              disabled={submitting}
+                              onClick={() =>
+                                decideReview(item.id, "REQUEST_CHANGES")
+                              }
+                            >
+                              Request changes
+                            </button>
+                            <button
+                              className="primary-button"
+                              disabled={submitting}
+                              onClick={() => decideReview(item.id, "ACCEPT")}
+                            >
+                              Accept stage
+                            </button>
+                          </div>
+                        )}
                     </article>
                   ))}
                 {!detail.assignments.some(
@@ -1290,20 +1378,12 @@ export function DocumentControlDashboard() {
                       </button>
                     )}
                   {detail.selected.status === "IN_REVIEW" &&
-                    live?.capabilities.canReviewDocuments && (
-                      <button
-                        disabled={submitting}
-                        onClick={() => {
-                          const reason = window.prompt(
-                            "Enter the required rejection reason",
-                          );
-                          if (reason?.trim()) runCommand("REJECT", reason);
-                        }}
-                      >
-                        Reject to draft
-                      </button>
-                    )}
-                  {detail.selected.status === "IN_REVIEW" &&
+                    detail.assignments.some(
+                      (item) =>
+                        item.versionId === detail.selected.id &&
+                        item.stepKey === "APPROVAL" &&
+                        ["PENDING", "IN_PROGRESS"].includes(item.status),
+                    ) &&
                     live?.capabilities.canApproveDocuments && (
                       <button
                         className="primary-button"
@@ -1333,9 +1413,13 @@ export function DocumentControlDashboard() {
                     instructions.
                   </p>
                   <label>
-                    Reviewer
-                    <select name="reviewer" required>
-                      <option value="">Select reviewer</option>
+                    Reviewers in stage order
+                    <select
+                      name="reviewers"
+                      required
+                      multiple
+                      size={Math.min(6, Math.max(2, detail.reviewers.length))}
+                    >
                       {detail.reviewers.map((reviewer) => (
                         <option key={reviewer.id} value={reviewer.id}>
                           {reviewer.name}
@@ -1345,11 +1429,7 @@ export function DocumentControlDashboard() {
                   </label>
                   <label>
                     Due date
-                    <input
-                      name="reviewDue"
-                      type="date"
-                      required
-                    />
+                    <input name="reviewDue" type="date" required />
                   </label>
                   <label>
                     Review comment
@@ -1364,7 +1444,7 @@ export function DocumentControlDashboard() {
                       type="submit"
                       disabled={submitting || !detail.reviewers.length}
                     >
-                      {submitting ? "Submitting…" : "Assign and submit"}
+                      {submitting ? "Submitting…" : "Assign stages and submit"}
                     </button>
                   </div>
                 </form>

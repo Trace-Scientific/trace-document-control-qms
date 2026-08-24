@@ -43,6 +43,7 @@ export interface DocumentDetailVersion {
 }
 export interface ReviewAssignment {
   id: string;
+  stepKey: string;
   versionId: string;
   status: string;
   dueAt: Date | null;
