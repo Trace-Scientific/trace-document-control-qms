@@ -30,10 +30,11 @@ const createDraft = z.object({
 const transition = z.object({
   operation: z.literal("TRANSITION"),
   versionId: uuid,
-  command: z.enum(["SUBMIT", "REJECT", "MAKE_EFFECTIVE"]),
+  command: z.enum(["SUBMIT", "MAKE_EFFECTIVE"]),
   expectedLockVersion: z.number().int().nonnegative(),
   reason: z.string().trim().min(1).max(4000).optional(),
   assigneeUserId: uuid.optional(),
+  assigneeUserIds: z.array(uuid).min(1).max(10).optional(),
   dueAt: z.coerce.date().optional(),
   comment: z.string().trim().min(1).max(4000).optional(),
 });

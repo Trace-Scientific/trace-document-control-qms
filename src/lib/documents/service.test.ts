@@ -189,14 +189,31 @@ describe("document command boundary", () => {
       versionId: "version-1",
       command: "SUBMIT",
       expectedLockVersion: 3,
-      assigneeUserId: "reviewer-1",
+      assigneeUserIds: ["reviewer-1", "reviewer-2"],
       dueAt: new Date("2026-09-01T00:00:00Z"),
       comment: "Review the collection changes",
     });
     expect(fixture.transitions[0]).toMatchObject({
-      assigneeUserId: "reviewer-1",
+      assigneeUserIds: ["reviewer-1", "reviewer-2"],
       comment: "Review the collection changes",
     });
+  });
+
+  it("rejects duplicate sequential reviewer stages", async () => {
+    const service = new DocumentCommandService(
+      store(draft).implementation,
+      () => new Date("2026-08-25T00:00:00Z"),
+    );
+    await expect(
+      service.transition(activeContext, {
+        organizationId: "org-1",
+        versionId: "version-1",
+        command: "SUBMIT",
+        expectedLockVersion: 3,
+        assigneeUserIds: ["reviewer-1", "reviewer-1"],
+        dueAt: new Date("2026-09-01T00:00:00Z"),
+      }),
+    ).rejects.toThrow("unique");
   });
 
   it("authorizes, transitions, and passes audit evidence to the atomic store", async () => {

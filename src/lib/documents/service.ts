@@ -36,6 +36,7 @@ export interface TransitionInput {
   expectedLockVersion: number;
   reason?: string;
   assigneeUserId?: string;
+  assigneeUserIds?: string[];
   dueAt?: Date;
   comment?: string;
 }
@@ -82,6 +83,7 @@ export interface DocumentLifecycleStore {
     expectedLockVersion: number;
     reason?: string;
     assigneeUserId?: string;
+    assigneeUserIds?: string[];
     dueAt?: Date;
     comment?: string;
     occurredAt: Date;
@@ -140,12 +142,21 @@ export class DocumentCommandService {
     if (version.lockVersion !== input.expectedLockVersion) {
       throw new DocumentConcurrencyError();
     }
+    const reviewers = input.assigneeUserIds?.length
+      ? input.assigneeUserIds
+      : input.assigneeUserId
+        ? [input.assigneeUserId]
+        : [];
     if (
-      (input.assigneeUserId && !input.dueAt) ||
-      (!input.assigneeUserId && input.dueAt)
+      (reviewers.length && !input.dueAt) ||
+      (!reviewers.length && input.dueAt)
     )
       throw new DocumentCommandError(
         "Reviewer and due date must be provided together",
+      );
+    if (new Set(reviewers).size !== reviewers.length || reviewers.length > 10)
+      throw new DocumentCommandError(
+        "Reviewers must be unique and limited to ten stages",
       );
     if (input.dueAt && input.dueAt <= this.clock())
       throw new DocumentCommandError("Review due date must be in the future");
@@ -166,6 +177,7 @@ export class DocumentCommandService {
       expectedLockVersion: input.expectedLockVersion,
       reason: input.reason?.trim() || undefined,
       assigneeUserId: input.assigneeUserId,
+      assigneeUserIds: reviewers,
       dueAt: input.dueAt,
       comment: input.comment?.trim() || undefined,
       occurredAt: this.clock(),

@@ -172,6 +172,11 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
   async applyTransition(
     input: Parameters<DocumentLifecycleStore["applyTransition"]>[0],
   ): Promise<boolean> {
+    const reviewers = input.assigneeUserIds?.length
+      ? input.assigneeUserIds
+      : input.assigneeUserId
+        ? [input.assigneeUserId]
+        : [];
     try {
       return await db.$transaction(async (transaction) => {
         if (input.command === "SUBMIT") {
@@ -195,14 +200,14 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
               entityType: "DocumentVersion",
               entityId: input.versionId,
               entityVersion: String(input.expectedLockVersion + 1),
-              state: "REVIEW",
+              state: reviewers.length ? "REVIEW" : "APPROVAL",
             },
           });
-          if (input.assigneeUserId) {
-            const eligible = await transaction.user.findFirst({
+          if (reviewers.length) {
+            const eligible = await transaction.user.count({
               where: {
                 organizationId: input.organizationId,
-                id: input.assigneeUserId,
+                id: { in: reviewers },
                 status: "ACTIVE",
                 roles: {
                   some: {
@@ -220,23 +225,39 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
                   },
                 },
               },
-              select: { id: true },
             });
-            if (!eligible)
+            if (eligible !== reviewers.length)
               throw new DocumentConfigurationError(
-                "The selected reviewer is not eligible",
+                "One or more selected reviewers are not eligible",
               );
           }
-          await transaction.workflowTask.create({
-            data: {
-              organizationId: input.organizationId,
-              workflowInstanceId: workflow.id,
-              stepKey: "REVIEW",
-              assigneeUserId: input.assigneeUserId,
-              dueAt: input.dueAt,
-              comments: input.comment,
-            },
-          });
+          const stages = reviewers.length ? reviewers : [null];
+          for (const [index, reviewerId] of stages.entries())
+            await transaction.workflowTask.create({
+              data: {
+                organizationId: input.organizationId,
+                workflowInstanceId: workflow.id,
+                stepKey: reviewerId ? `REVIEW_${index + 1}` : "APPROVAL",
+                assigneeUserId: reviewerId,
+                status: reviewerId && index === 0 ? "IN_PROGRESS" : "PENDING",
+                dueAt: input.dueAt,
+                comments: input.comment,
+              },
+            });
+          for (const reviewerId of reviewers)
+            await transaction.notificationOutbox.create({
+              data: {
+                organizationId: input.organizationId,
+                recipientUserId: reviewerId,
+                eventKey: `document-review-assigned:${workflow.id}:${reviewerId}`,
+                templateKey: "DOCUMENT_REVIEW_ASSIGNED",
+                payload: {
+                  documentVersionId: input.versionId,
+                  workflowId: workflow.id,
+                  dueAt: input.dueAt?.toISOString(),
+                },
+              },
+            });
         }
 
         if (input.command === "APPROVE" || input.command === "REJECT") {
@@ -378,6 +399,7 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
               to: input.to,
               priorLockVersion: input.expectedLockVersion,
               assigneeUserId: input.assigneeUserId,
+              assigneeUserIds: reviewers,
               dueAt: input.dueAt?.toISOString(),
             },
           },
