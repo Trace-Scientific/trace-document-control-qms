@@ -133,4 +133,10 @@ DO $$ DECLARE blocked boolean := false; BEGIN
   IF NOT blocked THEN RAISE EXCEPTION 'duplicate notification event was accepted'; END IF;
 END $$;
 
+DO $$ DECLARE blocked boolean := false; BEGIN
+  BEGIN UPDATE "NotificationOutbox" SET "status"='SENT' WHERE "eventKey"='review:1';
+  EXCEPTION WHEN check_violation THEN blocked := true; END;
+  IF NOT blocked THEN RAISE EXCEPTION 'notification was marked sent without delivery evidence'; END IF;
+END $$;
+
 ROLLBACK;

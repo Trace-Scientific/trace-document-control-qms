@@ -472,7 +472,12 @@ model NotificationOutbox {
   status          NotificationStatus  @default(PENDING)
   attempts        Int                 @default(0)
   availableAt     DateTime            @default(now()) @db.Timestamptz(3)
+  claimedAt       DateTime?           @db.Timestamptz(3)
+  claimedBy       String?
+  lastAttemptAt   DateTime?           @db.Timestamptz(3)
   sentAt          DateTime?           @db.Timestamptz(3)
+  readAt          DateTime?           @db.Timestamptz(3)
+  deadLetteredAt  DateTime?           @db.Timestamptz(3)
   lastError       String?
   createdAt       DateTime            @default(now()) @db.Timestamptz(3)
   organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
@@ -492,6 +497,7 @@ enum NotificationStatus {
   PROCESSING
   SENT
   FAILED
+  DEAD_LETTER
 }
 
 model AcknowledgmentCompletion {

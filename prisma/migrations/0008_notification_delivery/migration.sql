@@ -1,0 +1,1 @@
+ALTER TYPE "NotificationStatus" ADD VALUE 'DEAD_LETTER';
