@@ -35,14 +35,42 @@ export interface TransitionInput {
   command: DocumentCommand;
   expectedLockVersion: number;
   reason?: string;
+  assigneeUserId?: string;
+  dueAt?: Date;
+  comment?: string;
 }
 
-export interface UpdateDraftInput {organizationId:string;versionId:string;expectedLockVersion:number;contentHash:string;contentText:string;changeSummary:string;}
+export interface UpdateDraftInput {
+  organizationId: string;
+  versionId: string;
+  expectedLockVersion: number;
+  contentHash: string;
+  contentText: string;
+  changeSummary: string;
+}
+export interface CreateRevisionInput {
+  organizationId: string;
+  sourceVersionId: string;
+  revisionLabel: string;
+  contentHash: string;
+  contentText: string;
+  changeSummary: string;
+}
 
 export interface DocumentLifecycleStore {
-  createDraft(input: CreateDraftInput & { actorUserId: string }): Promise<StoredDocumentVersion>;
-  updateDraft(input: UpdateDraftInput & { actorUserId:string;occurredAt:Date }):Promise<boolean>;
-  findVersion(organizationId: string, versionId: string): Promise<StoredDocumentVersion | null>;
+  createDraft(
+    input: CreateDraftInput & { actorUserId: string },
+  ): Promise<StoredDocumentVersion>;
+  createRevision(
+    input: CreateRevisionInput & { actorUserId: string; occurredAt: Date },
+  ): Promise<StoredDocumentVersion>;
+  updateDraft(
+    input: UpdateDraftInput & { actorUserId: string; occurredAt: Date },
+  ): Promise<boolean>;
+  findVersion(
+    organizationId: string,
+    versionId: string,
+  ): Promise<StoredDocumentVersion | null>;
   applyTransition(input: {
     organizationId: string;
     versionId: string;
@@ -53,6 +81,9 @@ export interface DocumentLifecycleStore {
     command: DocumentCommand;
     expectedLockVersion: number;
     reason?: string;
+    assigneeUserId?: string;
+    dueAt?: Date;
+    comment?: string;
     occurredAt: Date;
   }): Promise<boolean>;
 }
@@ -82,8 +113,10 @@ export class DocumentCommandService {
     if (!input.documentNumber.trim() || !input.title.trim()) {
       throw new DocumentCommandError("Document number and title are required");
     }
-    if (!input.contentText?.trim()) throw new DocumentCommandError("Document content is required");
-    if (input.contentText.length > 1_000_000) throw new DocumentCommandError("Document content is too large");
+    if (!input.contentText?.trim())
+      throw new DocumentCommandError("Document content is required");
+    if (input.contentText.length > 1_000_000)
+      throw new DocumentCommandError("Document content is too large");
     return this.store.createDraft({ ...input, actorUserId: context.userId });
   }
 
@@ -99,13 +132,29 @@ export class DocumentCommandService {
       permission: commandPermissions[input.command],
     });
 
-    const version = await this.store.findVersion(input.organizationId, input.versionId);
+    const version = await this.store.findVersion(
+      input.organizationId,
+      input.versionId,
+    );
     if (!version) throw new Error("Access denied");
     if (version.lockVersion !== input.expectedLockVersion) {
       throw new DocumentConcurrencyError();
     }
+    if (
+      (input.assigneeUserId && !input.dueAt) ||
+      (!input.assigneeUserId && input.dueAt)
+    )
+      throw new DocumentCommandError(
+        "Reviewer and due date must be provided together",
+      );
+    if (input.dueAt && input.dueAt <= this.clock())
+      throw new DocumentCommandError("Review due date must be in the future");
 
-    const next = nextDocumentVersionState(version.status, input.command, input.reason);
+    const next = nextDocumentVersionState(
+      version.status,
+      input.command,
+      input.reason,
+    );
     const changed = await this.store.applyTransition({
       organizationId: input.organizationId,
       versionId: version.id,
@@ -116,6 +165,9 @@ export class DocumentCommandService {
       command: input.command,
       expectedLockVersion: input.expectedLockVersion,
       reason: input.reason?.trim() || undefined,
+      assigneeUserId: input.assigneeUserId,
+      dueAt: input.dueAt,
+      comment: input.comment?.trim() || undefined,
       occurredAt: this.clock(),
     });
     if (!changed) throw new DocumentConcurrencyError();
@@ -123,7 +175,58 @@ export class DocumentCommandService {
     return { ...version, status: next, lockVersion: version.lockVersion + 1 };
   }
 
-  async updateDraft(context:AuthorizationContext,input:UpdateDraftInput):Promise<{status:"DRAFT";lockVersion:number}>{requireAuthorization(context,{organizationId:input.organizationId,permission:"document.create"});if(!Number.isSafeInteger(input.expectedLockVersion)||input.expectedLockVersion<0)throw new DocumentCommandError("Invalid lock version");if(!/^[a-f0-9]{64}$/.test(input.contentHash))throw new DocumentCommandError("Invalid content hash");if(!input.contentText.trim())throw new DocumentCommandError("Document content is required");if(input.contentText.length>1_000_000)throw new DocumentCommandError("Document content is too large");if(!input.changeSummary.trim())throw new DocumentCommandError("Change summary is required");const changed=await this.store.updateDraft({...input,actorUserId:context.userId,occurredAt:this.clock()});if(!changed)throw new DocumentConcurrencyError();return{status:"DRAFT",lockVersion:input.expectedLockVersion+1};}
+  async updateDraft(
+    context: AuthorizationContext,
+    input: UpdateDraftInput,
+  ): Promise<{ status: "DRAFT"; lockVersion: number }> {
+    requireAuthorization(context, {
+      organizationId: input.organizationId,
+      permission: "document.create",
+    });
+    if (
+      !Number.isSafeInteger(input.expectedLockVersion) ||
+      input.expectedLockVersion < 0
+    )
+      throw new DocumentCommandError("Invalid lock version");
+    if (!/^[a-f0-9]{64}$/.test(input.contentHash))
+      throw new DocumentCommandError("Invalid content hash");
+    if (!input.contentText.trim())
+      throw new DocumentCommandError("Document content is required");
+    if (input.contentText.length > 1_000_000)
+      throw new DocumentCommandError("Document content is too large");
+    if (!input.changeSummary.trim())
+      throw new DocumentCommandError("Change summary is required");
+    const changed = await this.store.updateDraft({
+      ...input,
+      actorUserId: context.userId,
+      occurredAt: this.clock(),
+    });
+    if (!changed) throw new DocumentConcurrencyError();
+    return { status: "DRAFT", lockVersion: input.expectedLockVersion + 1 };
+  }
+
+  async createRevision(
+    context: AuthorizationContext,
+    input: CreateRevisionInput,
+  ) {
+    requireAuthorization(context, {
+      organizationId: input.organizationId,
+      permission: "document.create",
+    });
+    if (!input.revisionLabel.trim())
+      throw new DocumentCommandError("Revision label is required");
+    if (!/^[a-f0-9]{64}$/.test(input.contentHash))
+      throw new DocumentCommandError("Invalid content hash");
+    if (!input.contentText.trim() || input.contentText.length > 1_000_000)
+      throw new DocumentCommandError("Valid document content is required");
+    if (!input.changeSummary.trim())
+      throw new DocumentCommandError("Change summary is required");
+    return this.store.createRevision({
+      ...input,
+      actorUserId: context.userId,
+      occurredAt: this.clock(),
+    });
+  }
 }
 
 export class DocumentConcurrencyError extends Error {
