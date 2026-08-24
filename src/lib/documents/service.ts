@@ -37,8 +37,11 @@ export interface TransitionInput {
   reason?: string;
 }
 
+export interface UpdateDraftInput {organizationId:string;versionId:string;expectedLockVersion:number;contentHash:string;contentText:string;changeSummary:string;}
+
 export interface DocumentLifecycleStore {
   createDraft(input: CreateDraftInput & { actorUserId: string }): Promise<StoredDocumentVersion>;
+  updateDraft(input: UpdateDraftInput & { actorUserId:string;occurredAt:Date }):Promise<boolean>;
   findVersion(organizationId: string, versionId: string): Promise<StoredDocumentVersion | null>;
   applyTransition(input: {
     organizationId: string;
@@ -119,6 +122,8 @@ export class DocumentCommandService {
 
     return { ...version, status: next, lockVersion: version.lockVersion + 1 };
   }
+
+  async updateDraft(context:AuthorizationContext,input:UpdateDraftInput):Promise<{status:"DRAFT";lockVersion:number}>{requireAuthorization(context,{organizationId:input.organizationId,permission:"document.create"});if(!Number.isSafeInteger(input.expectedLockVersion)||input.expectedLockVersion<0)throw new DocumentCommandError("Invalid lock version");if(!/^[a-f0-9]{64}$/.test(input.contentHash))throw new DocumentCommandError("Invalid content hash");if(!input.contentText.trim())throw new DocumentCommandError("Document content is required");if(input.contentText.length>1_000_000)throw new DocumentCommandError("Document content is too large");if(!input.changeSummary.trim())throw new DocumentCommandError("Change summary is required");const changed=await this.store.updateDraft({...input,actorUserId:context.userId,occurredAt:this.clock()});if(!changed)throw new DocumentConcurrencyError();return{status:"DRAFT",lockVersion:input.expectedLockVersion+1};}
 }
 
 export class DocumentConcurrencyError extends Error {

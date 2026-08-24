@@ -20,11 +20,13 @@ const activeContext: AuthorizationContext = {
 function store(version: StoredDocumentVersion | null, succeeds = true) {
   const transitions: Parameters<DocumentLifecycleStore["applyTransition"]>[0][] = [];
   const drafts: Parameters<DocumentLifecycleStore["createDraft"]>[0][] = [];
+  const updates: Parameters<DocumentLifecycleStore["updateDraft"]>[0][] = [];
   const implementation: DocumentLifecycleStore = {
     async createDraft(input) {
       drafts.push(input);
       return { id: "version-new", organizationId: input.organizationId, documentId: "document-new", status: "DRAFT", lockVersion: 0 };
     },
+    async updateDraft(input){updates.push(input);return succeeds;},
     async findVersion(organizationId, versionId) {
       return version?.organizationId === organizationId && version.id === versionId ? version : null;
     },
@@ -33,7 +35,7 @@ function store(version: StoredDocumentVersion | null, succeeds = true) {
       return succeeds;
     },
   };
-  return { implementation, transitions, drafts };
+  return { implementation, transitions, drafts, updates };
 }
 
 const draft: StoredDocumentVersion = {
@@ -68,6 +70,8 @@ describe("document command boundary", () => {
     await expect(service.createDraft(activeContext, { ...input, contentText:"   " })).rejects.toThrow("content is required");
     await expect(service.createDraft(activeContext, { ...input, contentText:"a".repeat(1_000_001) })).rejects.toThrow("too large");
   });
+
+  it("updates only an authorized, current draft revision",async()=>{const fixture=store(draft),service=new DocumentCommandService(fixture.implementation,()=>new Date("2026-08-25T00:00:00Z"));await expect(service.updateDraft(activeContext,{organizationId:"org-1",versionId:"version-1",expectedLockVersion:3,contentHash:"b".repeat(64),contentText:"Revised controlled content",changeSummary:"Clarified collection step"})).resolves.toEqual({status:"DRAFT",lockVersion:4});expect(fixture.updates[0]).toMatchObject({actorUserId:"user-1",expectedLockVersion:3});await expect(new DocumentCommandService(store(draft,false).implementation).updateDraft(activeContext,{organizationId:"org-1",versionId:"version-1",expectedLockVersion:3,contentHash:"b".repeat(64),contentText:"Revised",changeSummary:"Change"})).rejects.toThrow("changed");});
 
   it("authorizes, transitions, and passes audit evidence to the atomic store", async () => {
     const fixture = store(draft);

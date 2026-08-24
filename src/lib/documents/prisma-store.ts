@@ -65,6 +65,8 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
     });
   }
 
+  async updateDraft(input:Parameters<DocumentLifecycleStore["updateDraft"]>[0]):Promise<boolean>{return db.$transaction(async transaction=>{const changed=await transaction.documentVersion.updateMany({where:{organizationId:input.organizationId,id:input.versionId,status:"DRAFT",lockVersion:input.expectedLockVersion},data:{contentText:input.contentText,contentHash:input.contentHash,changeSummary:input.changeSummary.trim(),lockVersion:{increment:1}}});if(changed.count!==1)return false;await transaction.auditEvent.create({data:{organizationId:input.organizationId,actorUserId:input.actorUserId,action:"DOCUMENT_DRAFT_UPDATED",entityType:"DocumentVersion",entityId:input.versionId,occurredAt:input.occurredAt,metadata:{priorLockVersion:input.expectedLockVersion,contentHash:input.contentHash}}});return true;});}
+
   async applyTransition(
     input: Parameters<DocumentLifecycleStore["applyTransition"]>[0],
   ): Promise<boolean> {

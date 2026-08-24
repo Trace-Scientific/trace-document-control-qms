@@ -4,13 +4,13 @@ import { authenticateRequest, AuthenticationRequiredError } from "@/lib/security
 import { PrismaApprovalSignatureStore, SignatureConfigurationError, SignatureEligibilityError } from "@/lib/signatures/prisma-store";
 import { ApprovalSignatureService, ReauthenticationFailedError, ReauthenticationThrottledError, SignatureConcurrencyError, SignatureValidationError } from "@/lib/signatures/service";
 
-const inputSchema = z.object({ organizationId: z.string().uuid(), versionId: z.string().uuid(), expectedLockVersion: z.number().int().nonnegative(), password: z.string().min(1).max(1024), confirmed: z.literal(true) });
+const inputSchema = z.object({ versionId: z.string().uuid(), expectedLockVersion: z.number().int().nonnegative(), password: z.string().min(1).max(1024), confirmed: z.literal(true) });
 const service = new ApprovalSignatureService(new PrismaApprovalSignatureStore());
 
 export async function POST(request: NextRequest) {
   try {
     const context = await authenticateRequest(request);
-    const result = await service.signApproval(context, inputSchema.parse(await request.json()));
+    const result = await service.signApproval(context, { ...inputSchema.parse(await request.json()), organizationId: context.organizationId });
     return NextResponse.json({ data: result });
   } catch (error) {
     if (error instanceof AuthenticationRequiredError || error instanceof ReauthenticationFailedError) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
