@@ -17,3 +17,7 @@ export function filterDashboardDocuments<T extends DashboardDocument>(
       && (status === "All documents" || document.status === status);
   });
 }
+
+export function summarizeOperationalData(input:{notifications:readonly {readAt:string|null}[];reviews:readonly {overdue:boolean}[];failures:readonly unknown[]}){
+  return {unread:input.notifications.filter(item=>!item.readAt).length,overdue:input.reviews.filter(item=>item.overdue).length,failures:input.failures.length};
+}
