@@ -8,62 +8,89 @@ datasource db {
 }
 
 model Organization {
-  id          String   @id @default(uuid()) @db.Uuid
-  legalName   String
+  id String @id @default(uuid()) @db.Uuid
+  legalName String
   displayName String
-  timezone    String   @default("America/Los_Angeles")
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  sites       Site[]
+  timezone String @default("America/Los_Angeles")
+  active Boolean @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  sites Site[]
   departments Department[]
-  users       User[]
-  roles       Role[]
+  users User[]
+  roles Role[]
+  userRoles UserRole[]
+  documentTypes DocumentType[]
+  documents Document[]
+  documentVersions DocumentVersion[]
+  files FileObject[]
+  workflowDefinitions WorkflowDefinition[]
+  workflowInstances WorkflowInstance[]
+  workflowTasks WorkflowTask[]
+  signatures ElectronicSignature[]
+  acknowledgments AcknowledgmentAssignment[]
+  retentionPolicies RetentionPolicy[]
+  legalHolds LegalHold[]
   auditEvents AuditEvent[]
 }
 
 model Site {
-  id             String       @id @default(uuid()) @db.Uuid
-  organizationId String       @db.Uuid
-  name           String
-  address        String?
-  siteType       String?
-  active         Boolean      @default(true)
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  departments    Department[]
-  @@index([organizationId])
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  name String
+  address String?
+  siteType String?
+  active Boolean @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  departments Department[]
+  @@unique([organizationId, id])
+  @@unique([organizationId, name])
 }
 
 model Department {
-  id             String       @id @default(uuid()) @db.Uuid
-  organizationId String       @db.Uuid
-  siteId         String?      @db.Uuid
-  name           String
-  active         Boolean      @default(true)
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  site           Site?        @relation(fields: [siteId], references: [id])
-  @@index([organizationId])
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  siteId String? @db.Uuid
+  name String
+  active Boolean @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  site Site? @relation(fields: [organizationId, siteId], references: [organizationId, id], onDelete: Restrict)
+  @@unique([organizationId, id])
+  @@unique([organizationId, siteId, name])
 }
 
 model User {
-  id             String       @id @default(uuid()) @db.Uuid
-  organizationId String       @db.Uuid
-  email          String
-  username       String?
-  firstName      String
-  lastName       String
-  status         UserStatus   @default(ACTIVE)
-  mfaEnabled     Boolean      @default(false)
-  lastLoginAt    DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  roles          UserRole[]
-  auditEvents    AuditEvent[]
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  email String
+  username String?
+  firstName String
+  lastName String
+  status UserStatus @default(ACTIVE)
+  mfaEnabled Boolean @default(false)
+  lastLoginAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  roles UserRole[] @relation("RoleSubject")
+  assignedRoles UserRole[] @relation("RoleAssigner")
+  authoredVersions DocumentVersion[]
+  uploadedFiles FileObject[]
+  tasks WorkflowTask[]
+  signatures ElectronicSignature[]
+  assignedAcks AcknowledgmentAssignment[] @relation("AckRecipient")
+  createdAcks AcknowledgmentAssignment[] @relation("AckAssigner")
+  createdHolds LegalHold[] @relation("HoldCreator")
+  releasedHolds LegalHold[] @relation("HoldReleaser")
+  auditEvents AuditEvent[]
+  @@unique([organizationId, id])
   @@unique([organizationId, email])
-  @@index([organizationId])
+  @@index([organizationId, status])
 }
-
 enum UserStatus {
   ACTIVE
   INACTIVE
@@ -72,57 +99,348 @@ enum UserStatus {
 }
 
 model Role {
-  id             String       @id @default(uuid()) @db.Uuid
-  organizationId String       @db.Uuid
-  name           String
-  description    String?
-  systemRole     Boolean      @default(false)
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  users          UserRole[]
-  permissions    RolePermission[]
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  name String
+  description String?
+  systemRole Boolean @default(false)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  users UserRole[]
+  permissions RolePermission[]
+  @@unique([organizationId, id])
   @@unique([organizationId, name])
 }
 
 model Permission {
-  id          String          @id @default(uuid()) @db.Uuid
-  key         String          @unique
+  id String @id @default(uuid()) @db.Uuid
+  key String @unique
   description String?
-  roles       RolePermission[]
+  roles RolePermission[]
 }
 
 model UserRole {
-  userId     String   @db.Uuid
-  roleId     String   @db.Uuid
-  assignedAt DateTime @default(now())
-  assignedBy String?  @db.Uuid
-  user       User     @relation(fields: [userId], references: [id])
-  role       Role     @relation(fields: [roleId], references: [id])
-  @@id([userId, roleId])
+  organizationId String @db.Uuid
+  userId String @db.Uuid
+  roleId String @db.Uuid
+  assignedAt DateTime @default(now()) @db.Timestamptz(3)
+  assignedBy String? @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user User @relation("RoleSubject", fields: [organizationId, userId], references: [organizationId, id], onDelete: Cascade)
+  role Role @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Cascade)
+  assigner User? @relation("RoleAssigner", fields: [organizationId, assignedBy], references: [organizationId, id], onDelete: Restrict)
+  @@id([organizationId, userId, roleId])
+  @@index([organizationId, roleId])
 }
 
 model RolePermission {
-  roleId       String     @db.Uuid
-  permissionId String     @db.Uuid
-  role         Role       @relation(fields: [roleId], references: [id])
-  permission   Permission @relation(fields: [permissionId], references: [id])
+  roleId String @db.Uuid
+  permissionId String @db.Uuid
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
   @@id([roleId, permissionId])
 }
 
+model DocumentType {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  code String
+  name String
+  reviewMonths Int?
+  active Boolean @default(true)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  documents Document[]
+  @@unique([organizationId, id])
+  @@unique([organizationId, code])
+}
+
+model Document {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  documentTypeId String @db.Uuid
+  documentNumber String
+  title String
+  lifecycleState DocumentLifecycle @default(ACTIVE)
+  currentVersionId String? @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  documentType DocumentType @relation(fields: [organizationId, documentTypeId], references: [organizationId, id], onDelete: Restrict)
+  versions DocumentVersion[] @relation("Versions")
+  currentVersion DocumentVersion? @relation("CurrentVersion", fields: [organizationId, currentVersionId], references: [organizationId, id], onDelete: Restrict)
+  acknowledgments AcknowledgmentAssignment[]
+  @@unique([organizationId, id])
+  @@unique([organizationId, documentNumber])
+  @@unique([organizationId, currentVersionId])
+  @@index([organizationId, lifecycleState])
+}
+enum DocumentLifecycle {
+  ACTIVE
+  RETIRED
+  OBSOLETE
+}
+
+model DocumentVersion {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  documentId String @db.Uuid
+  versionNumber Int
+  revisionLabel String
+  status DocumentVersionStatus @default(DRAFT)
+  authoredByUserId String @db.Uuid
+  fileId String? @db.Uuid
+  contentHash String
+  changeSummary String
+  effectiveAt DateTime? @db.Timestamptz(3)
+  reviewDueAt DateTime? @db.Timestamptz(3)
+  supersededAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  document Document @relation("Versions", fields: [organizationId, documentId], references: [organizationId, id], onDelete: Restrict)
+  currentFor Document? @relation("CurrentVersion")
+  author User @relation(fields: [organizationId, authoredByUserId], references: [organizationId, id], onDelete: Restrict)
+  file FileObject? @relation(fields: [organizationId, fileId], references: [organizationId, id], onDelete: Restrict)
+  signatures ElectronicSignature[]
+  acknowledgments AcknowledgmentAssignment[]
+  @@unique([organizationId, id])
+  @@unique([organizationId, documentId, id])
+  @@unique([organizationId, documentId, versionNumber])
+  @@unique([organizationId, documentId, revisionLabel])
+  @@index([organizationId, status, effectiveAt])
+}
+enum DocumentVersionStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  EFFECTIVE
+  SUPERSEDED
+  RETIRED
+}
+
+model FileObject {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  storageKey String
+  originalName String
+  mimeType String
+  sizeBytes BigInt
+  sha256 String
+  status FileStatus @default(PENDING_SCAN)
+  uploadedByUserId String @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  uploader User @relation(fields: [organizationId, uploadedByUserId], references: [organizationId, id], onDelete: Restrict)
+  documentVersions DocumentVersion[]
+  @@unique([organizationId, id])
+  @@unique([organizationId, storageKey])
+  @@index([organizationId, sha256])
+}
+enum FileStatus {
+  PENDING_SCAN
+  AVAILABLE
+  QUARANTINED
+  ARCHIVED
+}
+
+model WorkflowDefinition {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  key String
+  version Int
+  name String
+  active Boolean @default(true)
+  definition Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  instances WorkflowInstance[]
+  @@unique([organizationId, id])
+  @@unique([organizationId, key, version])
+}
+
+model WorkflowInstance {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  workflowDefinitionId String @db.Uuid
+  entityType String
+  entityId String @db.Uuid
+  entityVersion String?
+  state String
+  status WorkflowStatus @default(ACTIVE)
+  lockVersion Int @default(0)
+  startedAt DateTime @default(now()) @db.Timestamptz(3)
+  completedAt DateTime? @db.Timestamptz(3)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  definition WorkflowDefinition @relation(fields: [organizationId, workflowDefinitionId], references: [organizationId, id], onDelete: Restrict)
+  tasks WorkflowTask[]
+  signatures ElectronicSignature[]
+  @@unique([organizationId, id])
+  @@index([organizationId, entityType, entityId])
+  @@index([organizationId, status, state])
+}
+enum WorkflowStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+model WorkflowTask {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  workflowInstanceId String @db.Uuid
+  stepKey String
+  assigneeUserId String? @db.Uuid
+  status WorkflowTaskStatus @default(PENDING)
+  dueAt DateTime? @db.Timestamptz(3)
+  completedAt DateTime? @db.Timestamptz(3)
+  decision String?
+  comments String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  workflow WorkflowInstance @relation(fields: [organizationId, workflowInstanceId], references: [organizationId, id], onDelete: Restrict)
+  assignee User? @relation(fields: [organizationId, assigneeUserId], references: [organizationId, id], onDelete: Restrict)
+  @@unique([organizationId, id])
+  @@index([organizationId, assigneeUserId, status])
+}
+enum WorkflowTaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model ElectronicSignature {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  signerUserId String @db.Uuid
+  workflowInstanceId String? @db.Uuid
+  documentVersionId String? @db.Uuid
+  entityType String
+  entityId String @db.Uuid
+  entityVersion String
+  meaning SignatureMeaning
+  meaningText String
+  authenticationEventId String @db.Uuid
+  payloadHash String
+  signedAt DateTime @default(now()) @db.Timestamptz(3)
+  status SignatureStatus @default(VALID)
+  invalidatedAt DateTime? @db.Timestamptz(3)
+  invalidationReason String?
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  signer User @relation(fields: [organizationId, signerUserId], references: [organizationId, id], onDelete: Restrict)
+  workflow WorkflowInstance? @relation(fields: [organizationId, workflowInstanceId], references: [organizationId, id], onDelete: Restrict)
+  documentVersion DocumentVersion? @relation(fields: [organizationId, documentVersionId], references: [organizationId, id], onDelete: Restrict)
+  acknowledgment AcknowledgmentCompletion?
+  @@unique([organizationId, id])
+  @@index([organizationId, entityType, entityId, entityVersion])
+}
+enum SignatureMeaning {
+  AUTHORED
+  REVIEWED
+  APPROVED
+  ACKNOWLEDGED
+  COMPLETED
+  VERIFIED
+}
+enum SignatureStatus {
+  VALID
+  INVALIDATED
+}
+
+model AcknowledgmentAssignment {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  documentId String @db.Uuid
+  documentVersionId String @db.Uuid
+  assignedToUserId String @db.Uuid
+  assignedByUserId String @db.Uuid
+  assignedAt DateTime @default(now()) @db.Timestamptz(3)
+  dueAt DateTime? @db.Timestamptz(3)
+  status AcknowledgmentStatus @default(ASSIGNED)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  document Document @relation(fields: [organizationId, documentId], references: [organizationId, id], onDelete: Restrict)
+  documentVersion DocumentVersion @relation(fields: [organizationId, documentId, documentVersionId], references: [organizationId, documentId, id], onDelete: Restrict)
+  recipient User @relation("AckRecipient", fields: [organizationId, assignedToUserId], references: [organizationId, id], onDelete: Restrict)
+  assigner User @relation("AckAssigner", fields: [organizationId, assignedByUserId], references: [organizationId, id], onDelete: Restrict)
+  completion AcknowledgmentCompletion?
+  @@unique([organizationId, id])
+  @@unique([organizationId, documentVersionId, assignedToUserId])
+  @@index([organizationId, assignedToUserId, status, dueAt])
+}
+enum AcknowledgmentStatus {
+  ASSIGNED
+  COMPLETED
+  CANCELLED
+}
+
+model AcknowledgmentCompletion {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  assignmentId String @db.Uuid
+  signatureId String @db.Uuid
+  completedAt DateTime @default(now()) @db.Timestamptz(3)
+  assignment AcknowledgmentAssignment @relation(fields: [organizationId, assignmentId], references: [organizationId, id], onDelete: Restrict)
+  signature ElectronicSignature @relation(fields: [organizationId, signatureId], references: [organizationId, id], onDelete: Restrict)
+  @@unique([organizationId, id])
+  @@unique([organizationId, assignmentId])
+  @@unique([organizationId, signatureId])
+}
+
+model RetentionPolicy {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  recordType String
+  jurisdiction String?
+  retentionDays Int
+  active Boolean @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  @@unique([organizationId, id])
+  @@unique([organizationId, recordType, jurisdiction])
+}
+
+model LegalHold {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  entityType String
+  entityId String @db.Uuid
+  reason String
+  status LegalHoldStatus @default(ACTIVE)
+  createdByUserId String @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  releasedByUserId String? @db.Uuid
+  releasedAt DateTime? @db.Timestamptz(3)
+  releaseReason String?
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  creator User @relation("HoldCreator", fields: [organizationId, createdByUserId], references: [organizationId, id], onDelete: Restrict)
+  releaser User? @relation("HoldReleaser", fields: [organizationId, releasedByUserId], references: [organizationId, id], onDelete: Restrict)
+  @@unique([organizationId, id])
+  @@index([organizationId, entityType, entityId, status])
+}
+enum LegalHoldStatus {
+  ACTIVE
+  RELEASED
+}
+
 model AuditEvent {
-  id              String       @id @default(uuid()) @db.Uuid
-  organizationId  String       @db.Uuid
-  actorUserId     String?      @db.Uuid
-  occurredAt      DateTime     @default(now())
-  action          String
-  entityType      String
-  entityId        String?      @db.Uuid
-  entityVersion   String?
-  previousHash    String?
-  newHash         String?
-  correlationId   String?      @db.Uuid
-  metadata        Json
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  actor           User?        @relation(fields: [actorUserId], references: [id])
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  actorUserId String? @db.Uuid
+  occurredAt DateTime @default(now()) @db.Timestamptz(3)
+  action String
+  entityType String
+  entityId String? @db.Uuid
+  entityVersion String?
+  previousHash String?
+  newHash String?
+  correlationId String? @db.Uuid
+  requestId String? @db.Uuid
+  reason String?
+  metadata Json @default("{}")
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actor User? @relation(fields: [organizationId, actorUserId], references: [organizationId, id], onDelete: Restrict)
   @@index([organizationId, occurredAt])
-  @@index([entityType, entityId])
+  @@index([organizationId, entityType, entityId])
+  @@index([organizationId, correlationId])
 }
