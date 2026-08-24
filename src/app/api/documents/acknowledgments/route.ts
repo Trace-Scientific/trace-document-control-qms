@@ -1,0 +1,11 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { authenticateRequest, AuthenticationRequiredError } from "@/lib/security/authenticated-request";
+import { PrismaAcknowledgmentStore, DistributionValidationError } from "@/lib/acknowledgments/prisma-store";
+import { AcknowledgmentConflictError, AcknowledgmentReauthenticationError, AcknowledgmentService, AcknowledgmentThrottledError, AcknowledgmentValidationError } from "@/lib/acknowledgments/service";
+
+const uuid=z.string().uuid(); const service=new AcknowledgmentService(new PrismaAcknowledgmentStore());
+const assign=z.object({operation:z.literal("ASSIGN"),organizationId:uuid,versionId:uuid,recipientUserIds:z.array(uuid).min(1).max(500),dueAt:z.coerce.date()});
+const complete=z.object({operation:z.literal("COMPLETE"),organizationId:uuid,assignmentId:uuid,password:z.string().min(1).max(1024),confirmed:z.literal(true)});
+const schema=z.discriminatedUnion("operation",[assign,complete]);
+export async function POST(request:NextRequest){try{const context=await authenticateRequest(request);const input=schema.parse(await request.json());const data=input.operation==="ASSIGN"?await service.assign(context,input):await service.complete(context,input);return NextResponse.json({data});}catch(error){if(error instanceof AuthenticationRequiredError||error instanceof AcknowledgmentReauthenticationError)return NextResponse.json({error:"Authentication required"},{status:401});if(error instanceof AcknowledgmentThrottledError)return NextResponse.json({error:error.message},{status:429});if(error instanceof AcknowledgmentConflictError)return NextResponse.json({error:error.message},{status:409});if(error instanceof z.ZodError||error instanceof AcknowledgmentValidationError||error instanceof DistributionValidationError)return NextResponse.json({error:"The acknowledgment request is invalid"},{status:422});if(error instanceof Error&&error.message==="Access denied")return NextResponse.json({error:"Access denied"},{status:403});return NextResponse.json({error:"Unable to process acknowledgment"},{status:500});}}

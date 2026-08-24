@@ -101,4 +101,21 @@ DO $$ DECLARE blocked boolean := false; BEGIN
   IF NOT blocked THEN RAISE EXCEPTION 'signature evidence update was accepted'; END IF;
 END $$;
 
+INSERT INTO "AuthenticationEvent" ("id","organizationId","userId","eventType","outcome","method","validUntil")
+VALUES ('90000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','REAUTHENTICATION','SUCCESS','PASSWORD',CURRENT_TIMESTAMP + interval '5 minutes');
+INSERT INTO "DocumentVersion" ("id","organizationId","documentId","versionNumber","revisionLabel","status","authoredByUserId","contentHash","changeSummary")
+VALUES ('70000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001',2,'2.0','EFFECTIVE','20000000-0000-4000-8000-000000000001',repeat('f',64),'Second version');
+INSERT INTO "AcknowledgmentAssignment" ("id","organizationId","documentId","documentVersionId","assignedToUserId","assignedByUserId","dueAt")
+VALUES ('92000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001','70000000-0000-4000-8000-000000000002','20000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000003',CURRENT_TIMESTAMP + interval '7 days');
+UPDATE "AcknowledgmentAssignment" SET "status"='COMPLETED' WHERE "id"='92000000-0000-4000-8000-000000000001';
+INSERT INTO "ElectronicSignature" ("id","organizationId","signerUserId","documentVersionId","entityType","entityId","entityVersion","meaning","meaningText","authenticationEventId","payloadHash")
+VALUES ('80000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','70000000-0000-4000-8000-000000000002','DocumentVersion','70000000-0000-4000-8000-000000000002','2.0','ACKNOWLEDGED','Read and understood','90000000-0000-4000-8000-000000000002',repeat('e',64));
+INSERT INTO "AcknowledgmentCompletion" ("id","organizationId","assignmentId","signatureId")
+VALUES ('93000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','92000000-0000-4000-8000-000000000001','80000000-0000-4000-8000-000000000002');
+DO $$ DECLARE blocked boolean := false; BEGIN
+  BEGIN UPDATE "AcknowledgmentCompletion" SET "completedAt"=CURRENT_TIMESTAMP + interval '1 day' WHERE "id"='93000000-0000-4000-8000-000000000001';
+  EXCEPTION WHEN OTHERS THEN blocked := true; END;
+  IF NOT blocked THEN RAISE EXCEPTION 'acknowledgment completion update was accepted'; END IF;
+END $$;
+
 ROLLBACK;
