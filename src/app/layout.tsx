@@ -3,8 +3,8 @@ import type { ReactNode } from 'react';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Trace Document Control QMS',
-  description: 'Laboratory Quality Management System',
+  title: 'Document Control | Trace QMS',
+  description: 'Secure laboratory document control and quality management workspace',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
