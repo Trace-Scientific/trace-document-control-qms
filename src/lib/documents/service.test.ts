@@ -99,4 +99,15 @@ describe("document command boundary", () => {
       expectedLockVersion: 3,
     })).rejects.toThrow("changed");
   });
+
+  it("rejects unsigned approval through the generic command boundary", async () => {
+    const fixture = store({ ...draft, status: "IN_REVIEW" });
+    const service = new DocumentCommandService(fixture.implementation);
+    await expect(service.transition(activeContext, {
+      organizationId: "org-1",
+      versionId: "version-1",
+      command: "APPROVE",
+      expectedLockVersion: 3,
+    })).rejects.toThrow("Electronic signature is required");
+  });
 });

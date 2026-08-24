@@ -21,7 +21,7 @@ const transition = z.object({
   operation: z.literal("TRANSITION"),
   organizationId: uuid,
   versionId: uuid,
-  command: z.enum(["SUBMIT", "APPROVE", "REJECT", "MAKE_EFFECTIVE"]),
+  command: z.enum(["SUBMIT", "REJECT", "MAKE_EFFECTIVE"]),
   expectedLockVersion: z.number().int().nonnegative(),
   reason: z.string().trim().min(1).max(4000).optional(),
 });
