@@ -32,6 +32,9 @@ model Organization {
   retentionPolicies RetentionPolicy[]
   legalHolds LegalHold[]
   auditEvents AuditEvent[]
+  credentials Credential[]
+  authenticationEvents AuthenticationEvent[]
+  sessions Session[]
 }
 
 model Site {
@@ -87,6 +90,10 @@ model User {
   createdHolds LegalHold[] @relation("HoldCreator")
   releasedHolds LegalHold[] @relation("HoldReleaser")
   auditEvents AuditEvent[]
+  credential Credential?
+  authenticationEvents AuthenticationEvent[]
+  sessions Session[] @relation("SessionUser")
+  revokedSessions Session[] @relation("SessionRevoker")
   @@unique([organizationId, id])
   @@unique([organizationId, email])
   @@index([organizationId, status])
@@ -330,6 +337,7 @@ model ElectronicSignature {
   signer User @relation(fields: [organizationId, signerUserId], references: [organizationId, id], onDelete: Restrict)
   workflow WorkflowInstance? @relation(fields: [organizationId, workflowInstanceId], references: [organizationId, id], onDelete: Restrict)
   documentVersion DocumentVersion? @relation(fields: [organizationId, documentVersionId], references: [organizationId, id], onDelete: Restrict)
+  authenticationEvent AuthenticationEvent @relation(fields: [organizationId, authenticationEventId], references: [organizationId, id], onDelete: Restrict)
   acknowledgment AcknowledgmentCompletion?
   @@unique([organizationId, id])
   @@index([organizationId, entityType, entityId, entityVersion])
@@ -443,4 +451,85 @@ model AuditEvent {
   @@index([organizationId, occurredAt])
   @@index([organizationId, entityType, entityId])
   @@index([organizationId, correlationId])
+}
+
+model Credential {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  userId String @unique @db.Uuid
+  passwordHash String
+  algorithm String @default("scrypt")
+  version Int @default(1)
+  changedAt DateTime @default(now()) @db.Timestamptz(3)
+  disabledAt DateTime? @db.Timestamptz(3)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
+  @@unique([organizationId, id])
+  @@unique([organizationId, userId])
+}
+
+model AuthenticationEvent {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  userId String? @db.Uuid
+  eventType AuthenticationEventType
+  outcome AuthenticationOutcome
+  method AuthenticationMethod
+  occurredAt DateTime @default(now()) @db.Timestamptz(3)
+  validUntil DateTime? @db.Timestamptz(3)
+  correlationId String? @db.Uuid
+  ipAddressHash String?
+  userAgentHash String?
+  metadata Json @default("{}")
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user User? @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
+  sessions Session[]
+  signatures ElectronicSignature[]
+  @@unique([organizationId, id])
+  @@index([organizationId, userId, occurredAt])
+  @@index([organizationId, correlationId])
+}
+
+enum AuthenticationEventType {
+  LOGIN
+  LOGIN_FAILURE
+  REAUTHENTICATION
+  MFA_CHALLENGE
+  LOGOUT
+  SESSION_REVOKED
+}
+
+enum AuthenticationOutcome {
+  SUCCESS
+  FAILURE
+}
+
+enum AuthenticationMethod {
+  PASSWORD
+  MFA
+  SSO
+  RECOVERY
+}
+
+model Session {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  userId String @db.Uuid
+  authenticationEventId String @db.Uuid
+  tokenHash String @unique
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  lastSeenAt DateTime @default(now()) @db.Timestamptz(3)
+  idleExpiresAt DateTime @db.Timestamptz(3)
+  absoluteExpiresAt DateTime @db.Timestamptz(3)
+  revokedAt DateTime? @db.Timestamptz(3)
+  revokedByUserId String? @db.Uuid
+  revocationReason String?
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user User @relation("SessionUser", fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
+  authenticationEvent AuthenticationEvent @relation(fields: [organizationId, authenticationEventId], references: [organizationId, id], onDelete: Restrict)
+  revoker User? @relation("SessionRevoker", fields: [organizationId, revokedByUserId], references: [organizationId, id], onDelete: Restrict)
+  @@unique([organizationId, id])
+  @@index([organizationId, userId, revokedAt])
+  @@index([idleExpiresAt])
+  @@index([absoluteExpiresAt])
 }
