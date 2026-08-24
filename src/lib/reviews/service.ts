@@ -1,7 +1,7 @@
 import { requireAuthorization, type AuthorizationContext } from "../security/authorization";
 
 export type ReviewOutcome = "NO_CHANGE" | "REVISION_REQUIRED" | "RETIREMENT_REQUIRED";
-export interface DueReview { id: string; documentId: string; documentVersionId: string; dueAt: Date; }
+export interface DueReview { id: string; documentId: string; documentVersionId: string; documentNumber?: string; title?: string; revisionLabel?: string; dueAt: Date; }
 export interface ReviewStore {
   listDue(organizationId: string, through: Date): Promise<DueReview[]>;
   escalate(input: { organizationId: string; taskId: string; level: number; eventKey: string; occurredAt: Date }): Promise<boolean>;
