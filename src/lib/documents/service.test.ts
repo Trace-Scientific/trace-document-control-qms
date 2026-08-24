@@ -19,8 +19,10 @@ const activeContext: AuthorizationContext = {
 
 function store(version: StoredDocumentVersion | null, succeeds = true) {
   const transitions: Parameters<DocumentLifecycleStore["applyTransition"]>[0][] = [];
+  const drafts: Parameters<DocumentLifecycleStore["createDraft"]>[0][] = [];
   const implementation: DocumentLifecycleStore = {
     async createDraft(input) {
+      drafts.push(input);
       return { id: "version-new", organizationId: input.organizationId, documentId: "document-new", status: "DRAFT", lockVersion: 0 };
     },
     async findVersion(organizationId, versionId) {
@@ -31,7 +33,7 @@ function store(version: StoredDocumentVersion | null, succeeds = true) {
       return succeeds;
     },
   };
-  return { implementation, transitions };
+  return { implementation, transitions, drafts };
 }
 
 const draft: StoredDocumentVersion = {
@@ -43,6 +45,30 @@ const draft: StoredDocumentVersion = {
 };
 
 describe("document command boundary", () => {
+  it("persists required draft content with the authorized actor", async () => {
+    const fixture = store(null);
+    const service = new DocumentCommandService(fixture.implementation);
+    await expect(service.createDraft(activeContext, {
+      organizationId: "org-1",
+      documentTypeId: "type-1",
+      documentNumber: " SOP-100 ",
+      title: "Sample handling",
+      versionNumber: 1,
+      revisionLabel: "0.1",
+      contentHash: "a".repeat(64),
+      contentText: "Collect the sample using the validated kit.",
+      changeSummary: "Initial draft",
+    })).resolves.toMatchObject({ status: "DRAFT" });
+    expect(fixture.drafts[0]).toMatchObject({ actorUserId: "user-1", contentText: "Collect the sample using the validated kit." });
+  });
+
+  it("rejects blank or oversized controlled content", async () => {
+    const service = new DocumentCommandService(store(null).implementation);
+    const input = { organizationId:"org-1",documentTypeId:"type-1",documentNumber:"SOP-100",title:"Sample handling",versionNumber:1,revisionLabel:"0.1",contentHash:"a".repeat(64),changeSummary:"Initial draft" };
+    await expect(service.createDraft(activeContext, { ...input, contentText:"   " })).rejects.toThrow("content is required");
+    await expect(service.createDraft(activeContext, { ...input, contentText:"a".repeat(1_000_001) })).rejects.toThrow("too large");
+  });
+
   it("authorizes, transitions, and passes audit evidence to the atomic store", async () => {
     const fixture = store(draft);
     const service = new DocumentCommandService(fixture.implementation, () => new Date("2026-08-24T19:00:00Z"));
