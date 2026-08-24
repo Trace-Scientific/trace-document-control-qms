@@ -9,6 +9,20 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/trace_qms
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: trace_qms
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d trace_qms"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,7 +31,8 @@ jobs:
       - run: npm install
       - run: npm audit --audit-level=high
       - run: npm run db:validate
-      - run: npx prisma migrate diff --from-schema-datamodel docs/database/0001-baseline.prisma --to-schema-datamodel prisma/schema.prisma --script
+      - run: npx prisma migrate deploy
+      - run: npx prisma db execute --file prisma/tests/integrity.sql --schema prisma/schema.prisma
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
