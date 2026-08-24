@@ -75,6 +75,16 @@ DO $$ DECLARE blocked boolean := false; BEGIN
   IF NOT blocked THEN RAISE EXCEPTION 'effective version update was accepted'; END IF;
 END $$;
 
+UPDATE "DocumentVersion"
+SET "status"='SUPERSEDED', "supersededAt"=CURRENT_TIMESTAMP, "lockVersion"="lockVersion" + 1
+WHERE "id"='70000000-0000-4000-8000-000000000001';
+
+DO $$ DECLARE blocked boolean := false; BEGIN
+  BEGIN UPDATE "DocumentVersion" SET "supersededAt"=CURRENT_TIMESTAMP + interval '1 day' WHERE "id"='70000000-0000-4000-8000-000000000001';
+  EXCEPTION WHEN OTHERS THEN blocked := true; END;
+  IF NOT blocked THEN RAISE EXCEPTION 'superseded history update was accepted'; END IF;
+END $$;
+
 INSERT INTO "ElectronicSignature" ("id","organizationId","signerUserId","entityType","entityId","entityVersion","meaning","meaningText","authenticationEventId","payloadHash")
 VALUES ('80000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','DocumentVersion','70000000-0000-4000-8000-000000000001','1.0','APPROVED','Approved','90000000-0000-4000-8000-000000000001',repeat('b',64));
 DO $$ DECLARE blocked boolean := false; BEGIN

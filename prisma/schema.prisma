@@ -195,6 +195,7 @@ model DocumentVersion {
   versionNumber Int
   revisionLabel String
   status DocumentVersionStatus @default(DRAFT)
+  lockVersion Int @default(0)
   authoredByUserId String @db.Uuid
   fileId String? @db.Uuid
   contentHash String
