@@ -36,6 +36,14 @@ const transition = z.object({
   assigneeUserId: uuid.optional(),
   assigneeUserIds: z.array(uuid).min(1).max(10).optional(),
   dueAt: z.coerce.date().optional(),
+  reviewStages: z
+    .array(
+      z.object({ reviewerUserId: uuid, dueAt: z.coerce.date() }),
+    )
+    .min(1)
+    .max(10)
+    .optional(),
+  workflowTemplateId: uuid.optional(),
   comment: z.string().trim().min(1).max(4000).optional(),
 });
 const updateDraft = z.object({

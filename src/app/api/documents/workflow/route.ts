@@ -19,18 +19,29 @@ const service = new WorkflowReviewService(new PrismaWorkflowReviewStore()),
       comment: z.string().trim().min(1).max(4000),
     }),
     z.object({ operation: z.literal("MONITOR_OVERDUE") }),
+    z.object({
+      operation: z.enum(["REASSIGN", "DELEGATE"]),
+      taskId: z.string().uuid(),
+      newAssigneeUserId: z.string().uuid(),
+      reason: z.string().trim().min(1).max(4000),
+    }),
   ]);
 export async function POST(request: NextRequest) {
   try {
     const context = await authenticateRequest(request),
       input = schema.parse(await request.json()),
-      data =
-        input.operation === "DECIDE"
+      data = input.operation === "DECIDE"
           ? await service.decide(context, {
               ...input,
               organizationId: context.organizationId,
             })
-          : await service.notifyOverdue(context, context.organizationId);
+          : input.operation === "MONITOR_OVERDUE"
+            ? await service.notifyOverdue(context, context.organizationId)
+            : await service.transfer(context, {
+                ...input,
+                mode: input.operation,
+                organizationId: context.organizationId,
+              });
     return NextResponse.json({ data });
   } catch (error) {
     if (error instanceof AuthenticationRequiredError)

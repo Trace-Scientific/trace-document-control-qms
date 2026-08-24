@@ -183,7 +183,9 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
           const definition = await transaction.workflowDefinition.findFirst({
             where: {
               organizationId: input.organizationId,
-              key: "document-approval",
+              ...(input.workflowTemplateId
+                ? { id: input.workflowTemplateId }
+                : { key: "document-approval" }),
               active: true,
             },
             orderBy: { version: "desc" },
@@ -193,6 +195,13 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
               "An active document-approval workflow is required",
             );
           }
+          const templateStages = input.workflowTemplateId
+            ? parseTemplateStages(definition.definition)
+            : [];
+          if (input.workflowTemplateId && templateStages.length !== reviewers.length)
+            throw new DocumentConfigurationError(
+              "The selected workflow template does not match the reviewer stages",
+            );
           const workflow = await transaction.workflowInstance.create({
             data: {
               organizationId: input.organizationId,
@@ -240,11 +249,14 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
                 stepKey: reviewerId ? `REVIEW_${index + 1}` : "APPROVAL",
                 assigneeUserId: reviewerId,
                 status: reviewerId && index === 0 ? "IN_PROGRESS" : "PENDING",
-                dueAt: input.dueAt,
+                dueAt:
+                  input.reviewStages?.[index]?.dueAt ??
+                  input.dueAt ??
+                  templateDueAt(input.occurredAt, templateStages[index]?.dueDays),
                 comments: input.comment,
               },
             });
-          for (const reviewerId of reviewers)
+          for (const [index, reviewerId] of reviewers.entries())
             await transaction.notificationOutbox.create({
               data: {
                 organizationId: input.organizationId,
@@ -254,7 +266,11 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
                 payload: {
                   documentVersionId: input.versionId,
                   workflowId: workflow.id,
-                  dueAt: input.dueAt?.toISOString(),
+                  dueAt: (
+                    input.reviewStages?.[index]?.dueAt ??
+                    input.dueAt ??
+                    templateDueAt(input.occurredAt, templateStages[index]?.dueDays)
+                  )?.toISOString(),
                 },
               },
             });
@@ -400,7 +416,8 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
               priorLockVersion: input.expectedLockVersion,
               assigneeUserId: input.assigneeUserId,
               assigneeUserIds: reviewers,
-              dueAt: input.dueAt?.toISOString(),
+              workflowTemplateId: input.workflowTemplateId,
+              dueAt: input.reviewStages?.map((stage) => stage.dueAt.toISOString()) ?? input.dueAt?.toISOString(),
             },
           },
         });
@@ -414,6 +431,24 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
 }
 
 class ConcurrentTransitionError extends Error {}
+
+function parseTemplateStages(definition: unknown): Array<{ dueDays: number }> {
+  if (!definition || typeof definition !== "object") return [];
+  const stages = (definition as { stages?: unknown }).stages;
+  if (!Array.isArray(stages)) return [];
+  return stages.filter(
+    (stage): stage is { dueDays: number } =>
+      !!stage &&
+      typeof stage === "object" &&
+      Number.isSafeInteger((stage as { dueDays?: unknown }).dueDays) &&
+      Number((stage as { dueDays: number }).dueDays) >= 1,
+  );
+}
+
+function templateDueAt(startedAt: Date, dueDays?: number) {
+  if (!dueDays) return undefined;
+  return new Date(startedAt.getTime() + dueDays * 86_400_000);
+}
 
 function addMonthsUtc(value: Date, months: number): Date {
   const result = new Date(value);

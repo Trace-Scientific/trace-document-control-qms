@@ -216,6 +216,43 @@ describe("document command boundary", () => {
     ).rejects.toThrow("unique");
   });
 
+  it("preserves a distinct deadline for each review stage", async () => {
+    const fixture = store(draft);
+    await new DocumentCommandService(
+      fixture.implementation,
+      () => new Date("2026-08-25T00:00:00Z"),
+    ).transition(activeContext, {
+      organizationId: "org-1",
+      versionId: "version-1",
+      command: "SUBMIT",
+      expectedLockVersion: 3,
+      reviewStages: [
+        { reviewerUserId: "reviewer-1", dueAt: new Date("2026-09-01T00:00:00Z") },
+        { reviewerUserId: "reviewer-2", dueAt: new Date("2026-09-05T00:00:00Z") },
+      ],
+    });
+    expect(fixture.transitions[0].reviewStages).toEqual([
+      { reviewerUserId: "reviewer-1", dueAt: new Date("2026-09-01T00:00:00Z") },
+      { reviewerUserId: "reviewer-2", dueAt: new Date("2026-09-05T00:00:00Z") },
+    ]);
+  });
+
+  it("accepts reviewer assignments backed by an active workflow template", async () => {
+    const fixture = store(draft);
+    await new DocumentCommandService(fixture.implementation).transition(activeContext, {
+      organizationId: "org-1",
+      versionId: "version-1",
+      command: "SUBMIT",
+      expectedLockVersion: 3,
+      assigneeUserIds: ["reviewer-1", "reviewer-2"],
+      workflowTemplateId: "template-1",
+    });
+    expect(fixture.transitions[0]).toMatchObject({
+      workflowTemplateId: "template-1",
+      assigneeUserIds: ["reviewer-1", "reviewer-2"],
+    });
+  });
+
   it("authorizes, transitions, and passes audit evidence to the atomic store", async () => {
     const fixture = store(draft);
     const service = new DocumentCommandService(

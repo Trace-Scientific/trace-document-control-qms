@@ -9,6 +9,15 @@ This branch establishes the application and database foundation:
 - Next.js / React / TypeScript application
 - PostgreSQL + Prisma data layer
 - validated environment configuration
+- scheduler-ready overdue review monitoring
+
+## Overdue review monitor
+
+Configure `CRON_SECRET` with at least 32 random characters. Schedule an HTTPS
+`POST` to `/api/internal/review-overdue` with the header
+`Authorization: Bearer <CRON_SECRET>`. The endpoint finds overdue active review
+stages across organizations and creates idempotent outbox notifications and
+audit events. It returns `404` when the secret is absent, weak, or incorrect.
 - health endpoint
 - automated unit-test configuration
 - ESLint and strict TypeScript
