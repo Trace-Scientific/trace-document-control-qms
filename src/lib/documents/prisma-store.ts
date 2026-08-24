@@ -135,6 +135,7 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
         });
       }
 
+      let reviewDueAt: Date | undefined;
       if (input.command === "MAKE_EFFECTIVE") {
         const document = await transaction.document.findFirst({
           where: { organizationId: input.organizationId, id: input.documentId },
@@ -142,6 +143,10 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
         });
         if (!document) throw new ConcurrentTransitionError();
         if (document.currentVersionId && document.currentVersionId !== input.versionId) {
+          await transaction.documentReviewTask.updateMany({
+            where: { organizationId: input.organizationId, documentVersionId: document.currentVersionId, status: "PENDING" },
+            data: { status: "CANCELLED" },
+          });
           const superseded = await transaction.documentVersion.updateMany({
             where: {
               organizationId: input.organizationId,
@@ -156,6 +161,12 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
           });
           if (superseded.count !== 1) throw new ConcurrentTransitionError();
         }
+        const documentType = await transaction.documentType.findFirst({
+          where: { organizationId: input.organizationId, documents: { some: { id: input.documentId } } },
+          select: { reviewMonths: true },
+        });
+        if (!documentType?.reviewMonths) throw new DocumentConfigurationError("A positive review interval is required before a document can become effective");
+        reviewDueAt = addMonthsUtc(input.occurredAt, documentType.reviewMonths);
       }
 
       const changed = await transaction.documentVersion.updateMany({
@@ -170,6 +181,7 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
           status: input.to,
           lockVersion: { increment: 1 },
           effectiveAt: input.to === "EFFECTIVE" ? input.occurredAt : undefined,
+          reviewDueAt,
         },
       });
       if (changed.count !== 1) throw new ConcurrentTransitionError();
@@ -179,6 +191,10 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
           where: { id: input.documentId },
           data: { currentVersionId: input.versionId },
         });
+        await transaction.documentReviewTask.create({ data: {
+          organizationId: input.organizationId, documentId: input.documentId, documentVersionId: input.versionId,
+          dueAt: reviewDueAt!,
+        }});
       }
 
       await transaction.auditEvent.create({
@@ -208,6 +224,16 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
 }
 
 class ConcurrentTransitionError extends Error {}
+
+function addMonthsUtc(value: Date, months: number): Date {
+  const result = new Date(value);
+  const day = result.getUTCDate();
+  result.setUTCDate(1);
+  result.setUTCMonth(result.getUTCMonth() + months);
+  const lastDay = new Date(Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0)).getUTCDate();
+  result.setUTCDate(Math.min(day, lastDay));
+  return result;
+}
 
 export class DocumentConfigurationError extends Error {
   constructor(message: string) {
