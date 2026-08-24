@@ -118,4 +118,19 @@ DO $$ DECLARE blocked boolean := false; BEGIN
   IF NOT blocked THEN RAISE EXCEPTION 'acknowledgment completion update was accepted'; END IF;
 END $$;
 
+INSERT INTO "DocumentReviewTask" ("id","organizationId","documentId","documentVersionId","dueAt")
+VALUES ('94000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001','70000000-0000-4000-8000-000000000002',CURRENT_TIMESTAMP - interval '1 day');
+UPDATE "DocumentReviewTask" SET "status"='COMPLETED',"completedAt"=CURRENT_TIMESTAMP,"completedByUserId"='20000000-0000-4000-8000-000000000001',"outcome"='NO_CHANGE',"comments"='Still current' WHERE "id"='94000000-0000-4000-8000-000000000001';
+DO $$ DECLARE blocked boolean := false; BEGIN
+  BEGIN UPDATE "DocumentReviewTask" SET "comments"='Tampered' WHERE "id"='94000000-0000-4000-8000-000000000001';
+  EXCEPTION WHEN OTHERS THEN blocked := true; END;
+  IF NOT blocked THEN RAISE EXCEPTION 'completed review evidence update was accepted'; END IF;
+END $$;
+INSERT INTO "NotificationOutbox" ("organizationId","eventKey","templateKey","payload") VALUES ('00000000-0000-4000-8000-000000000001','review:1','DOCUMENT_REVIEW_OVERDUE','{}');
+DO $$ DECLARE blocked boolean := false; BEGIN
+  BEGIN INSERT INTO "NotificationOutbox" ("organizationId","eventKey","templateKey","payload") VALUES ('00000000-0000-4000-8000-000000000001','review:1','DOCUMENT_REVIEW_OVERDUE','{}');
+  EXCEPTION WHEN unique_violation THEN blocked := true; END;
+  IF NOT blocked THEN RAISE EXCEPTION 'duplicate notification event was accepted'; END IF;
+END $$;
+
 ROLLBACK;
