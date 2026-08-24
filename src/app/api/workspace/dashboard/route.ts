@@ -13,12 +13,16 @@ export async function GET(request:NextRequest){
     const canManageNotifications=evaluateAuthorization(context,{organizationId,permission:"notification.manage"}).allowed;
     const canReadDocuments=evaluateAuthorization(context,{organizationId,permission:"document.read"}).allowed;
     const canCreateDocuments=evaluateAuthorization(context,{organizationId,permission:"document.create"}).allowed;
+    const canSubmitDocuments=evaluateAuthorization(context,{organizationId,permission:"document.submit"}).allowed;
+    const canReviewDocuments=evaluateAuthorization(context,{organizationId,permission:"document.review"}).allowed;
+    const canApproveDocuments=evaluateAuthorization(context,{organizationId,permission:"document.approve"}).allowed;
+    const canMakeDocumentsEffective=evaluateAuthorization(context,{organizationId,permission:"document.make_effective"}).allowed;
     const deliveryStore=new PrismaDeliveryStore();
     const notifications=await new NotificationInboxService(deliveryStore).list(context,organizationId);
     const [reviews,failures]=await Promise.all([
       canManageReviews?new DocumentReviewService(new PrismaReviewStore()).listOutstanding(context,organizationId):Promise.resolve([]),
       canManageNotifications?new NotificationInboxService(deliveryStore).failures(context,organizationId):Promise.resolve([]),
     ]);
-    return NextResponse.json({data:{organizationId,capabilities:{canManageReviews,canManageNotifications,canReadDocuments,canCreateDocuments},notifications,reviews,failures}});
+    return NextResponse.json({data:{organizationId,capabilities:{canManageReviews,canManageNotifications,canReadDocuments,canCreateDocuments,canSubmitDocuments,canReviewDocuments,canApproveDocuments,canMakeDocumentsEffective},notifications,reviews,failures}});
   }catch(error){if(error instanceof AuthenticationRequiredError)return NextResponse.json({error:"Authentication required"},{status:401});return NextResponse.json({error:"Unable to load workspace dashboard"},{status:500});}
 }
