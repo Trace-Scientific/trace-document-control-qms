@@ -3,6 +3,10 @@ import { ACKNOWLEDGMENT_MEANING, type AcknowledgmentPayload } from "./payload";
 import type { AcknowledgmentStore, AssignmentEvidence } from "./service";
 
 export class PrismaAcknowledgmentStore implements AcknowledgmentStore {
+  async listOutstanding(organizationId: string, now: Date) {
+    const rows=await db.acknowledgmentAssignment.findMany({where:{organizationId,status:"ASSIGNED"},select:{id:true,documentVersionId:true,assignedToUserId:true,dueAt:true},orderBy:{dueAt:"asc"}});
+    return rows.map(row=>({assignmentId:row.id,documentVersionId:row.documentVersionId,recipientUserId:row.assignedToUserId,dueAt:row.dueAt,overdue:Boolean(row.dueAt&&row.dueAt<now)}));
+  }
   async assign(input: { organizationId: string; versionId: string; recipientUserIds: string[]; assignedByUserId: string; dueAt: Date; assignedAt: Date }) {
     return db.$transaction(async tx => {
       const version = await tx.documentVersion.findFirst({ where: { organizationId: input.organizationId, id: input.versionId, status: "EFFECTIVE" }, select: { id: true, documentId: true } });
