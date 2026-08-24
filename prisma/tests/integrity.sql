@@ -7,6 +7,8 @@ VALUES ('10000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-00000000
 INSERT INTO "User" ("id","organizationId","email","firstName","lastName","updatedAt")
 VALUES ('20000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','one@example.test','Test','One',CURRENT_TIMESTAMP),
        ('20000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000002','two@example.test','Test','Two',CURRENT_TIMESTAMP);
+INSERT INTO "AuthenticationEvent" ("id","organizationId","userId","eventType","outcome","method")
+VALUES ('90000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','LOGIN','SUCCESS','PASSWORD');
 INSERT INTO "Role" ("id","organizationId","name","updatedAt")
 VALUES ('30000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000002','Tenant Two Role',CURRENT_TIMESTAMP);
 
@@ -16,6 +18,28 @@ DO $$ DECLARE blocked boolean := false; BEGIN
     VALUES ('00000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000001','Invalid',CURRENT_TIMESTAMP);
   EXCEPTION WHEN foreign_key_violation THEN blocked := true; END;
   IF NOT blocked THEN RAISE EXCEPTION 'cross-tenant site relation was accepted'; END IF;
+END $$;
+
+DO $$ DECLARE blocked boolean := false; BEGIN
+  BEGIN
+    INSERT INTO "Session" ("id","organizationId","userId","authenticationEventId","tokenHash","idleExpiresAt","absoluteExpiresAt")
+    VALUES ('91000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','20000000-0000-4000-8000-000000000001','90000000-0000-4000-8000-000000000001',repeat('a',64),CURRENT_TIMESTAMP + interval '15 minutes',CURRENT_TIMESTAMP + interval '1 day');
+  EXCEPTION WHEN foreign_key_violation THEN blocked := true; END;
+  IF NOT blocked THEN RAISE EXCEPTION 'cross-tenant session was accepted'; END IF;
+END $$;
+
+DO $$ DECLARE blocked boolean := false; BEGIN
+  BEGIN
+    INSERT INTO "Session" ("id","organizationId","userId","authenticationEventId","tokenHash","idleExpiresAt","absoluteExpiresAt")
+    VALUES ('91000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','90000000-0000-4000-8000-000000000001','raw-session-token',CURRENT_TIMESTAMP + interval '15 minutes',CURRENT_TIMESTAMP + interval '1 day');
+  EXCEPTION WHEN check_violation THEN blocked := true; END;
+  IF NOT blocked THEN RAISE EXCEPTION 'unhashed session token was accepted'; END IF;
+END $$;
+
+DO $$ DECLARE blocked boolean := false; BEGIN
+  BEGIN UPDATE "AuthenticationEvent" SET "outcome"='FAILURE' WHERE "id"='90000000-0000-4000-8000-000000000001';
+  EXCEPTION WHEN OTHERS THEN blocked := true; END;
+  IF NOT blocked THEN RAISE EXCEPTION 'authentication evidence update was accepted'; END IF;
 END $$;
 
 DO $$ DECLARE blocked boolean := false; BEGIN
