@@ -15,7 +15,7 @@ jobs:
       - run: npm install
       - run: npm audit --audit-level=high
       - run: npm run db:validate
-      - run: npx prisma migrate diff --from-schema-datamodel prisma/baselines/0001.prisma --to-schema-datamodel prisma/schema.prisma --script
+      - run: npx prisma migrate diff --from-schema-datamodel docs/database/0001-baseline.prisma --to-schema-datamodel prisma/schema.prisma --script
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/trace_qms
       - run: npm run typecheck
