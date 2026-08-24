@@ -1,0 +1,128 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id          String   @id @default(uuid()) @db.Uuid
+  legalName   String
+  displayName String
+  timezone    String   @default("America/Los_Angeles")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  sites       Site[]
+  departments Department[]
+  users       User[]
+  roles       Role[]
+  auditEvents AuditEvent[]
+}
+
+model Site {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  name           String
+  address        String?
+  siteType       String?
+  active         Boolean      @default(true)
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  departments    Department[]
+  @@index([organizationId])
+}
+
+model Department {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  siteId         String?      @db.Uuid
+  name           String
+  active         Boolean      @default(true)
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  site           Site?        @relation(fields: [siteId], references: [id])
+  @@index([organizationId])
+}
+
+model User {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  email          String
+  username       String?
+  firstName      String
+  lastName       String
+  status         UserStatus   @default(ACTIVE)
+  mfaEnabled     Boolean      @default(false)
+  lastLoginAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  roles          UserRole[]
+  auditEvents    AuditEvent[]
+  @@unique([organizationId, email])
+  @@index([organizationId])
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  LOCKED
+  PENDING
+}
+
+model Role {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  name           String
+  description    String?
+  systemRole     Boolean      @default(false)
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  users          UserRole[]
+  permissions    RolePermission[]
+  @@unique([organizationId, name])
+}
+
+model Permission {
+  id          String          @id @default(uuid()) @db.Uuid
+  key         String          @unique
+  description String?
+  roles       RolePermission[]
+}
+
+model UserRole {
+  userId     String   @db.Uuid
+  roleId     String   @db.Uuid
+  assignedAt DateTime @default(now())
+  assignedBy String?  @db.Uuid
+  user       User     @relation(fields: [userId], references: [id])
+  role       Role     @relation(fields: [roleId], references: [id])
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+  @@id([roleId, permissionId])
+}
+
+model AuditEvent {
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @db.Uuid
+  actorUserId     String?      @db.Uuid
+  occurredAt      DateTime     @default(now())
+  action          String
+  entityType      String
+  entityId        String?      @db.Uuid
+  entityVersion   String?
+  previousHash    String?
+  newHash         String?
+  correlationId   String?      @db.Uuid
+  metadata        Json
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  actor           User?        @relation(fields: [actorUserId], references: [id])
+  @@index([organizationId, occurredAt])
+  @@index([entityType, entityId])
+}

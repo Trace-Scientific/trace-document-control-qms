@@ -1,0 +1,4 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { font-family: Arial, Helvetica, sans-serif; line-height: 1.5; padding: 2rem; }
+main { max-width: 900px; margin: 0 auto; }
