@@ -91,7 +91,12 @@ model User {
   @@unique([organizationId, email])
   @@index([organizationId, status])
 }
-enum UserStatus { ACTIVE INACTIVE LOCKED PENDING }
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  LOCKED
+  PENDING
+}
 
 model Role {
   id String @id @default(uuid()) @db.Uuid
@@ -169,7 +174,11 @@ model Document {
   @@unique([organizationId, documentNumber])
   @@index([organizationId, lifecycleState])
 }
-enum DocumentLifecycle { ACTIVE RETIRED OBSOLETE }
+enum DocumentLifecycle {
+  ACTIVE
+  RETIRED
+  OBSOLETE
+}
 
 model DocumentVersion {
   id String @id @default(uuid()) @db.Uuid
@@ -198,7 +207,14 @@ model DocumentVersion {
   @@unique([organizationId, documentId, revisionLabel])
   @@index([organizationId, status, effectiveAt])
 }
-enum DocumentVersionStatus { DRAFT IN_REVIEW APPROVED EFFECTIVE SUPERSEDED RETIRED }
+enum DocumentVersionStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  EFFECTIVE
+  SUPERSEDED
+  RETIRED
+}
 
 model FileObject {
   id String @id @default(uuid()) @db.Uuid
@@ -218,7 +234,12 @@ model FileObject {
   @@unique([organizationId, storageKey])
   @@index([organizationId, sha256])
 }
-enum FileStatus { PENDING_SCAN AVAILABLE QUARANTINED ARCHIVED }
+enum FileStatus {
+  PENDING_SCAN
+  AVAILABLE
+  QUARANTINED
+  ARCHIVED
+}
 
 model WorkflowDefinition {
   id String @id @default(uuid()) @db.Uuid
@@ -255,7 +276,11 @@ model WorkflowInstance {
   @@index([organizationId, entityType, entityId])
   @@index([organizationId, status, state])
 }
-enum WorkflowStatus { ACTIVE COMPLETED CANCELLED }
+enum WorkflowStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
 
 model WorkflowTask {
   id String @id @default(uuid()) @db.Uuid
@@ -275,7 +300,12 @@ model WorkflowTask {
   @@unique([organizationId, id])
   @@index([organizationId, assigneeUserId, status])
 }
-enum WorkflowTaskStatus { PENDING IN_PROGRESS COMPLETED CANCELLED }
+enum WorkflowTaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
 
 model ElectronicSignature {
   id String @id @default(uuid()) @db.Uuid
@@ -302,8 +332,18 @@ model ElectronicSignature {
   @@unique([organizationId, id])
   @@index([organizationId, entityType, entityId, entityVersion])
 }
-enum SignatureMeaning { AUTHORED REVIEWED APPROVED ACKNOWLEDGED COMPLETED VERIFIED }
-enum SignatureStatus { VALID INVALIDATED }
+enum SignatureMeaning {
+  AUTHORED
+  REVIEWED
+  APPROVED
+  ACKNOWLEDGED
+  COMPLETED
+  VERIFIED
+}
+enum SignatureStatus {
+  VALID
+  INVALIDATED
+}
 
 model AcknowledgmentAssignment {
   id String @id @default(uuid()) @db.Uuid
@@ -325,7 +365,11 @@ model AcknowledgmentAssignment {
   @@unique([organizationId, documentVersionId, assignedToUserId])
   @@index([organizationId, assignedToUserId, status, dueAt])
 }
-enum AcknowledgmentStatus { ASSIGNED COMPLETED CANCELLED }
+enum AcknowledgmentStatus {
+  ASSIGNED
+  COMPLETED
+  CANCELLED
+}
 
 model AcknowledgmentCompletion {
   id String @id @default(uuid()) @db.Uuid
@@ -370,7 +414,10 @@ model LegalHold {
   @@unique([organizationId, id])
   @@index([organizationId, entityType, entityId, status])
 }
-enum LegalHoldStatus { ACTIVE RELEASED }
+enum LegalHoldStatus {
+  ACTIVE
+  RELEASED
+}
 
 model AuditEvent {
   id String @id @default(uuid()) @db.Uuid
