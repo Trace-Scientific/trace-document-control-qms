@@ -204,6 +204,7 @@ model DocumentVersion {
   signatures ElectronicSignature[]
   acknowledgments AcknowledgmentAssignment[]
   @@unique([organizationId, id])
+  @@unique([organizationId, documentId, id])
   @@unique([organizationId, documentId, versionNumber])
   @@unique([organizationId, documentId, revisionLabel])
   @@index([organizationId, status, effectiveAt])
@@ -358,7 +359,7 @@ model AcknowledgmentAssignment {
   status AcknowledgmentStatus @default(ASSIGNED)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   document Document @relation(fields: [organizationId, documentId], references: [organizationId, id], onDelete: Restrict)
-  documentVersion DocumentVersion @relation(fields: [organizationId, documentVersionId], references: [organizationId, id], onDelete: Restrict)
+  documentVersion DocumentVersion @relation(fields: [organizationId, documentId, documentVersionId], references: [organizationId, documentId, id], onDelete: Restrict)
   recipient User @relation("AckRecipient", fields: [organizationId, assignedToUserId], references: [organizationId, id], onDelete: Restrict)
   assigner User @relation("AckAssigner", fields: [organizationId, assignedByUserId], references: [organizationId, id], onDelete: Restrict)
   completion AcknowledgmentCompletion?
