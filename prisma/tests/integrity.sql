@@ -75,6 +75,11 @@ DO $$ DECLARE blocked boolean := false; BEGIN
   EXCEPTION WHEN OTHERS THEN blocked := true; END;
   IF NOT blocked THEN RAISE EXCEPTION 'effective version update was accepted'; END IF;
 END $$;
+DO $$ DECLARE blocked boolean := false; BEGIN
+  BEGIN UPDATE "DocumentVersion" SET "contentText"='Tampered controlled content' WHERE "id"='70000000-0000-4000-8000-000000000001';
+  EXCEPTION WHEN OTHERS THEN blocked := true; END;
+  IF NOT blocked THEN RAISE EXCEPTION 'effective document content update was accepted'; END IF;
+END $$;
 
 UPDATE "DocumentVersion"
 SET "status"='SUPERSEDED', "supersededAt"=CURRENT_TIMESTAMP, "lockVersion"="lockVersion" + 1

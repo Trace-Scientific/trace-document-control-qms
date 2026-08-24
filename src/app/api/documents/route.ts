@@ -1,0 +1,7 @@
+import { NextRequest,NextResponse } from "next/server";
+import { z } from "zod";
+import { authenticateRequest,AuthenticationRequiredError } from "@/lib/security/authenticated-request";
+import { DocumentCursorError,DocumentQueryService } from "@/lib/documents/query";
+import { PrismaDocumentQueryStore } from "@/lib/documents/query-store";
+const status=z.enum(["DRAFT","IN_REVIEW","APPROVED","EFFECTIVE","SUPERSEDED","RETIRED"]),service=new DocumentQueryService(new PrismaDocumentQueryStore());
+export async function GET(request:NextRequest){try{const context=await authenticateRequest(request),params=request.nextUrl.searchParams,query=z.string().max(100).optional().parse(params.get("query")||undefined),selected=status.optional().parse(params.get("status")||undefined),limit=z.coerce.number().int().min(1).max(100).default(25).parse(params.get("limit")||undefined),cursor=z.string().max(500).optional().parse(params.get("cursor")||undefined);return NextResponse.json({data:await service.list(context,{organizationId:context.organizationId,query,status:selected,limit,cursor})});}catch(error){if(error instanceof AuthenticationRequiredError)return NextResponse.json({error:"Authentication required"},{status:401});if(error instanceof z.ZodError||error instanceof DocumentCursorError)return NextResponse.json({error:"The document query is invalid"},{status:422});if(error instanceof Error&&error.message==="Access denied")return NextResponse.json({error:"Access denied"},{status:403});return NextResponse.json({error:"Unable to list documents"},{status:500});}}

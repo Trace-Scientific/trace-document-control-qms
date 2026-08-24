@@ -25,6 +25,7 @@ export interface CreateDraftInput {
   versionNumber: number;
   revisionLabel: string;
   contentHash: string;
+  contentText?: string;
   changeSummary: string;
 }
 
@@ -78,6 +79,8 @@ export class DocumentCommandService {
     if (!input.documentNumber.trim() || !input.title.trim()) {
       throw new DocumentCommandError("Document number and title are required");
     }
+    if (!input.contentText?.trim()) throw new DocumentCommandError("Document content is required");
+    if (input.contentText.length > 1_000_000) throw new DocumentCommandError("Document content is too large");
     return this.store.createDraft({ ...input, actorUserId: context.userId });
   }
 

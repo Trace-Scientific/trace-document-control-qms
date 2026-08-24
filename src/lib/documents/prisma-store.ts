@@ -26,6 +26,7 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
           revisionLabel: input.revisionLabel.trim(),
           authoredByUserId: input.actorUserId,
           contentHash: input.contentHash,
+          contentText: input.contentText,
           changeSummary: input.changeSummary.trim(),
         },
       });

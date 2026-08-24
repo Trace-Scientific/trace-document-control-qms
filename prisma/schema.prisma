@@ -215,6 +215,7 @@ model DocumentVersion {
   authoredByUserId String                     @db.Uuid
   fileId           String?                    @db.Uuid
   contentHash      String
+  contentText      String?
   changeSummary    String
   effectiveAt      DateTime?                  @db.Timestamptz(3)
   reviewDueAt      DateTime?                  @db.Timestamptz(3)
