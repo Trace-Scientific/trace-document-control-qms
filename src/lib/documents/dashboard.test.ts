@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterDashboardDocuments } from "./dashboard";
+import { filterDashboardDocuments, summarizeOperationalData } from "./dashboard";
 
 const documents = [
   { id: "SOP-001", title: "Specimen Handling", type: "Procedure", status: "Effective" },
@@ -17,5 +17,11 @@ describe("document dashboard filters", () => {
   it("combines text and status filters", () => {
     expect(filterDashboardDocuments(documents, "control", "In review")).toHaveLength(1);
     expect(filterDashboardDocuments(documents, "control", "Effective")).toHaveLength(0);
+  });
+});
+
+describe("operational dashboard summary",()=>{
+  it("counts unread notifications, overdue reviews, and delivery failures",()=>{
+    expect(summarizeOperationalData({notifications:[{readAt:null},{readAt:"2026-08-24T00:00:00Z"}],reviews:[{overdue:true},{overdue:false}],failures:[{}]})).toEqual({unread:1,overdue:1,failures:1});
   });
 });
