@@ -3,6 +3,7 @@ name: Generate dependency lockfile
 on:
   push:
     branches: [codex/prompt-020-release-candidate]
+  pull_request:
 
 permissions:
   contents: read
