@@ -19,9 +19,9 @@ Monitor at minimum:
 Logs are operational evidence, not the regulated audit trail. Never reconstruct
 or replace `AuditEvent` records from application logs.
 
-The current repository has no dependency lockfile. CI therefore audits the
-resolved installation, but a formal release candidate must add and review a
-lockfile before dependency resolution can be considered reproducible.
+The reviewed dependency lockfile is mandatory. CI, the production dependency
+audit, and the container build use frozen `npm ci` installation and fail when
+the manifest and lockfile diverge.
 
 ## Alert ownership
 

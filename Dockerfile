@@ -1,7 +1,7 @@
 FROM node:22-alpine AS dependencies
 WORKDIR /app
-COPY package*.json ./
-RUN npm install --ignore-scripts
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
 
 FROM node:22-alpine AS builder
 WORKDIR /app
