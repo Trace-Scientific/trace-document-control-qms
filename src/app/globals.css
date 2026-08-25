@@ -1598,3 +1598,100 @@ td.due {
 .documents-panel {
   max-width: none;
 }
+.admin-stack {
+  display: grid;
+  gap: 18px;
+}
+.template-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.6fr);
+  gap: 18px;
+  padding: 16px 18px;
+}
+.template-list {
+  display: grid;
+  gap: 9px;
+  align-content: start;
+}
+.template-list article {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.7fr) minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+.template-list article > div,
+.template-form,
+.template-form label {
+  display: grid;
+  gap: 5px;
+}
+.template-list article span,
+.template-list li {
+  color: var(--muted);
+  font-size: 9px;
+}
+.template-list ol {
+  margin: 0;
+  padding-left: 18px;
+}
+.template-list li span {
+  margin-left: 5px;
+}
+.template-form {
+  align-content: start;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 10px;
+}
+.template-form input,
+.stage-row input,
+.stage-row select,
+.review-decisions select,
+.assignment-history article > select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 10px;
+}
+.template-stage,
+.stage-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 95px;
+  gap: 8px;
+}
+.template-stage-actions,
+.stage-builder {
+  display: grid;
+  gap: 8px;
+}
+.template-stage-actions {
+  grid-template-columns: 1fr 1fr;
+}
+.stage-row {
+  grid-template-columns: 24px minmax(150px, 1fr) minmax(130px, 0.7fr) auto;
+  align-items: end;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.stage-row > span {
+  align-self: center;
+  color: var(--blue);
+  font-weight: 800;
+}
+@media (max-width: 800px) {
+  .template-layout,
+  .template-list article,
+  .stage-row {
+    grid-template-columns: 1fr;
+  }
+}

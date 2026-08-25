@@ -1,0 +1,27 @@
+name: Overdue review monitor
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Queue overdue review notifications
+        env:
+          QMS_BASE_URL: ${{ vars.QMS_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$QMS_BASE_URL"
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error \
+            --retry 2 \
+            --max-time 30 \
+            --request POST \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "${QMS_BASE_URL%/}/api/internal/review-overdue"
