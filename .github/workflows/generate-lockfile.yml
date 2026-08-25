@@ -1,0 +1,24 @@
+name: Generate dependency lockfile
+
+on:
+  push:
+    branches: [codex/prompt-020-release-candidate]
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --package-lock-only --ignore-scripts
+      - name: Emit lockfile evidence
+        run: |
+          echo LOCKFILE_BASE64_BEGIN
+          base64 --wrap=0 package-lock.json
+          echo
+          echo LOCKFILE_BASE64_END
