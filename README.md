@@ -36,6 +36,11 @@ and [release-candidate checklist](docs/operations/release-candidate-checklist.md
 The current candidate is [`0.1.0-rc.1`](docs/validation/release-candidate-0.1.0-rc.1.md).
 Its implemented critical controls are linked to automated and external evidence
 in the [validation traceability matrix](docs/validation/traceability-matrix.md).
+
+Validation deployment uses the protected `Validation environment qualification`
+workflow and the [critical-workflow UAT protocol](docs/validation/critical-workflow-uat-protocol.md).
+Executed evidence and approvals belong in the controlled validation record, not
+in source control.
 - health endpoint
 - automated unit-test configuration
 - ESLint and strict TypeScript
