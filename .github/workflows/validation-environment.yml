@@ -7,6 +7,14 @@ on:
         description: Exact deployed release-candidate SHA
         required: true
         type: string
+      release_version:
+        description: Exact deployed semantic release version
+        required: true
+        type: string
+      container_digest:
+        description: Immutable deployed OCI digest (sha256:...)
+        required: true
+        type: string
       evidence_reference:
         description: Controlled validation-record reference
         required: true
@@ -29,20 +37,30 @@ jobs:
       - name: Verify deployed release identity
         env:
           EXPECTED_SHA: ${{ inputs.release_sha }}
-        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          EXPECTED_VERSION: ${{ inputs.release_version }}
+          CONTAINER_DIGEST: ${{ inputs.container_digest }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$(node -p "require('./package.json').version")" = "$EXPECTED_VERSION"
+          printf '%s' "$CONTAINER_DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'
       - name: Run validation-environment smoke qualification
         env:
           VALIDATION_BASE_URL: ${{ vars.VALIDATION_BASE_URL }}
           VALIDATION_SESSION_TOKEN: ${{ secrets.VALIDATION_SESSION_TOKEN }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          EXPECTED_RELEASE_VERSION: ${{ inputs.release_version }}
+          EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
         run: node scripts/validation-smoke.mjs | tee validation-smoke-evidence.json
       - name: Record non-secret evidence metadata
         env:
           RELEASE_SHA: ${{ inputs.release_sha }}
           EVIDENCE_REFERENCE: ${{ inputs.evidence_reference }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          CONTAINER_DIGEST: ${{ inputs.container_digest }}
         run: |
-          printf 'release_sha=%s\nevidence_reference=%s\nrun_id=%s\n' \
-            "$RELEASE_SHA" "$EVIDENCE_REFERENCE" "$GITHUB_RUN_ID" \
+          printf 'release_sha=%s\nrelease_version=%s\ncontainer_digest=%s\nevidence_reference=%s\nrun_id=%s\n' \
+            "$RELEASE_SHA" "$RELEASE_VERSION" "$CONTAINER_DIGEST" \
+            "$EVIDENCE_REFERENCE" "$GITHUB_RUN_ID" \
             > validation-run-metadata.txt
       - uses: actions/upload-artifact@v4
         with:

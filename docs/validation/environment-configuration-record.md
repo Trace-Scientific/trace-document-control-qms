@@ -4,7 +4,7 @@ Record values by identifier, status, or fingerprint—never secret value.
 
 | Control | Required evidence | Result/reference |
 | --- | --- | --- |
-| Candidate identity | Git SHA and container digest | |
+| Candidate identity | Version, full Git SHA, container digest, and ECS task revision | |
 | HTTPS origin | Approved hostname and certificate validation | |
 | Database | PostgreSQL 17, TLS, private connectivity, least-privilege role | |
 | Secret storage | Provider secret identifiers for database, cron, and validation session | |
