@@ -9,17 +9,30 @@ export function validationConfiguration(source = process.env) {
     throw new Error("VALIDATION_SESSION_TOKEN is required");
   if (!source.CRON_SECRET || source.CRON_SECRET.length < 32)
     throw new Error("CRON_SECRET must contain at least 32 characters");
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(source.EXPECTED_RELEASE_VERSION ?? ""))
+    throw new Error("EXPECTED_RELEASE_VERSION must be a semantic release version");
+  if (!/^[0-9a-f]{40}$/.test(source.EXPECTED_RELEASE_SHA ?? ""))
+    throw new Error("EXPECTED_RELEASE_SHA must be a full lowercase Git commit SHA");
   return {
     baseUrl: baseUrl.origin,
     sessionToken: source.VALIDATION_SESSION_TOKEN,
     cronSecret: source.CRON_SECRET,
+    expectedReleaseVersion: source.EXPECTED_RELEASE_VERSION,
+    expectedReleaseSha: source.EXPECTED_RELEASE_SHA,
   };
 }
 
 export async function runValidationSmoke(source = process.env) {
   const config = validationConfiguration(source),
     evidence = [];
-  await check(config, evidence, "liveness", "/api/health", 200);
+  const liveness = await check(config, evidence, "liveness", "/api/health", 200);
+  const identity = JSON.parse(liveness.body).release;
+  if (
+    identity?.version !== config.expectedReleaseVersion ||
+    identity?.sha !== config.expectedReleaseSha
+  ) {
+    throw new Error("deployed release identity does not match the approved candidate");
+  }
   await check(config, evidence, "readiness", "/api/health/readiness", 200);
   await check(config, evidence, "authentication-boundary", "/api/documents", 401);
   await check(config, evidence, "authenticated-dashboard", "/api/workspace/dashboard", 200, {
@@ -55,6 +68,7 @@ async function check(config, evidence, name, path, expectedStatus, options = {})
     durationMs: Date.now() - startedAt.getTime(),
     responseBytes: Buffer.byteLength(body),
   });
+  return { body };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

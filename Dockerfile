@@ -14,10 +14,16 @@ RUN npm run build
 
 FROM node:22-alpine AS runtime
 WORKDIR /app
+ARG APP_RELEASE_VERSION=0.1.0-rc.2
+ARG APP_RELEASE_SHA=unknown
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+ENV APP_RELEASE_VERSION=$APP_RELEASE_VERSION
+ENV APP_RELEASE_SHA=$APP_RELEASE_SHA
+LABEL org.opencontainers.image.version=$APP_RELEASE_VERSION
+LABEL org.opencontainers.image.revision=$APP_RELEASE_SHA
 RUN addgroup --system --gid 1001 qms && adduser --system --uid 1001 --ingroup qms qms
 COPY --from=builder --chown=qms:qms /app/.next/standalone ./
 COPY --from=builder --chown=qms:qms /app/.next/static ./.next/static

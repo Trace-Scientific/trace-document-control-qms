@@ -1,4 +1,4 @@
-# Release approval record — 0.1.0-rc.1
+# Release approval record — 0.1.0-rc.2
 
 ## Evidence index
 
@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | Final CI and Security runs | | |
 | Container digest and deployed SHA | | |
+| Release version and ECS task-definition revision | | |
 | Environment configuration record | | |
 | Automated validation qualification artifact | | |
 | Completed critical-workflow UAT | | |

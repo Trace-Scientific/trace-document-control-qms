@@ -1,0 +1,47 @@
+{
+  "family": "trace-qms-validation",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "${EXECUTION_ROLE_ARN}",
+  "taskRoleArn": "${TASK_ROLE_ARN}",
+  "containerDefinitions": [
+    {
+      "name": "qms",
+      "image": "${IMAGE_URI}@${IMAGE_DIGEST}",
+      "essential": true,
+      "readonlyRootFilesystem": true,
+      "portMappings": [
+        { "containerPort": 3000, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "APP_BASE_URL", "value": "${APP_BASE_URL}" },
+        { "name": "APP_RELEASE_VERSION", "value": "${APP_RELEASE_VERSION}" },
+        { "name": "APP_RELEASE_SHA", "value": "${APP_RELEASE_SHA}" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL", "valueFrom": "${DATABASE_URL_SECRET_ARN}" },
+        { "name": "CRON_SECRET", "valueFrom": "${CRON_SECRET_ARN}" }
+      ],
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:3000/api/health/readiness').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 30
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "${LOG_GROUP}",
+          "awslogs-region": "${AWS_REGION}",
+          "awslogs-stream-prefix": "qms"
+        }
+      }
+    }
+  ]
+}

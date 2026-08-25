@@ -56,8 +56,15 @@ jobs:
       - run: npm run test:validation-config
       - run: npm run build
       - name: Build production container
-        run: docker build --tag trace-document-control-qms:${{ github.sha }} .
+        run: |
+          docker build \
+            --build-arg APP_RELEASE_VERSION="$(node -p "require('./package.json').version")" \
+            --build-arg APP_RELEASE_SHA="${{ github.sha }}" \
+            --tag trace-document-control-qms:${{ github.sha }} .
       - name: Run production smoke checks
+        env:
+          APP_RELEASE_VERSION: 0.1.0-rc.2
+          APP_RELEASE_SHA: ${{ github.sha }}
         run: |
           npm run start -- --hostname 127.0.0.1 > /tmp/qms-next.log 2>&1 &
           server_pid=$!
