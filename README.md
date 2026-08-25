@@ -23,6 +23,11 @@ The `Overdue review monitor` GitHub Actions workflow runs hourly at minute 17.
 Configure the repository variable `QMS_BASE_URL` with the deployed HTTPS origin
 and the Actions secret `CRON_SECRET` with the same application secret. The
 workflow fails closed when either value is missing and can also be run manually.
+
+Production releases must follow the
+[deployment runbook](docs/operations/production-deployment-runbook.md). Security,
+availability, or integrity events follow the
+[incident-response runbook](docs/operations/incident-response-runbook.md).
 - health endpoint
 - automated unit-test configuration
 - ESLint and strict TypeScript
