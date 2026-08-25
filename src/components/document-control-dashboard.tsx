@@ -1482,7 +1482,7 @@ export function DocumentControlDashboard() {
                               }}
                             >
                               <option value="">Delegate…</option>
-                              {detail.reviewers.filter((reviewer) => reviewer.id !== live.userId).map((reviewer) => <option key={reviewer.id} value={reviewer.id}>{reviewer.name}</option>)}
+                              {detail.reviewers.filter((reviewer) => reviewer.id !== live?.userId).map((reviewer) => <option key={reviewer.id} value={reviewer.id}>{reviewer.name}</option>)}
                             </select>
                             <button
                               disabled={submitting}
