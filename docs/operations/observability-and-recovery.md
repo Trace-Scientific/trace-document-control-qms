@@ -19,6 +19,10 @@ Monitor at minimum:
 Logs are operational evidence, not the regulated audit trail. Never reconstruct
 or replace `AuditEvent` records from application logs.
 
+The current repository has no dependency lockfile. CI therefore audits the
+resolved installation, but a formal release candidate must add and review a
+lockfile before dependency resolution can be considered reproducible.
+
 ## Alert ownership
 
 Critical availability, security, or integrity alerts page the on-call operations
