@@ -34,14 +34,20 @@ jobs:
       - run: npx prisma migrate deploy
       - run: npx prisma db execute --file prisma/tests/integrity.sql --schema prisma/schema.prisma
       - name: Verify database backup and restore
-        env:
-          PGPASSWORD: postgres
         run: |
-          pg_dump --host localhost --username postgres --dbname trace_qms \
-            --format custom --file /tmp/trace-qms.dump
-          createdb --host localhost --username postgres trace_qms_restore
-          pg_restore --host localhost --username postgres \
-            --dbname trace_qms_restore --exit-on-error /tmp/trace-qms.dump
+          docker run --rm --network host \
+            --env PGPASSWORD=postgres postgres:17-alpine \
+            pg_dump --host 127.0.0.1 --username postgres --dbname trace_qms \
+            --format custom > /tmp/trace-qms.dump
+          docker run --rm --network host \
+            --env PGPASSWORD=postgres postgres:17-alpine \
+            createdb --host 127.0.0.1 --username postgres trace_qms_restore
+          docker run --rm --network host \
+            --env PGPASSWORD=postgres \
+            --volume /tmp/trace-qms.dump:/tmp/trace-qms.dump:ro \
+            postgres:17-alpine pg_restore --host 127.0.0.1 \
+            --username postgres --dbname trace_qms_restore --exit-on-error \
+            /tmp/trace-qms.dump
           DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trace_qms_restore \
             npx prisma db execute --file prisma/tests/integrity.sql --schema prisma/schema.prisma
       - run: npm run typecheck

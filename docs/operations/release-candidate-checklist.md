@@ -5,7 +5,7 @@ Record each item as pass, fail, or not applicable with evidence and an approver.
 ## Build and traceability
 
 - [ ] Release commit matches the approved pull request and change record.
-- [ ] CI, CodeQL, dependency review, tests, migrations, integrity checks, runtime
+- [ ] CI, CodeQL, dependency audit, tests, migrations, integrity checks, runtime
       smoke tests, and container build are green.
 - [ ] Requirements, risk assessment, design, implementation, and test evidence
       are traceable for changed critical functions.

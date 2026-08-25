@@ -11,7 +11,7 @@ recoverability, operability, and controlled release approval.
 - Next.js standalone deployment output and minimal Docker build context.
 - Structured, redacted operational telemetry for dependency failures.
 - Logical PostgreSQL backup, isolated restore, and integrity verification in CI.
-- CodeQL and high-severity dependency review workflows.
+- CodeQL and high-severity production dependency audit workflows.
 - Observability ownership and production recovery-exercise guidance.
 - Evidence-oriented release-candidate certification checklist.
 
@@ -20,5 +20,5 @@ recoverability, operability, and controlled release approval.
 - Existing CI gates pass.
 - A production container builds from the approved source tree.
 - A restored database passes the same integrity suite as the source database.
-- CodeQL and dependency review report no blocking findings.
+- CodeQL and the production dependency audit report no blocking findings.
 - Operational telemetry tests confirm redaction and non-scalar omission.

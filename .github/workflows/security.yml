@@ -25,8 +25,8 @@ jobs:
         with:
           category: /language:javascript-typescript
 
-  dependency-review:
-    name: Dependency review
+  dependency-audit:
+    name: Production dependency audit
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -34,6 +34,9 @@ jobs:
       pull-requests: read
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/setup-node@v4
         with:
-          fail-on-severity: high
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm audit --omit=dev --audit-level=high
