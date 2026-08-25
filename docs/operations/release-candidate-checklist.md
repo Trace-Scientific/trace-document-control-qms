@@ -4,8 +4,8 @@ Record each item as pass, fail, or not applicable with evidence and an approver.
 
 ## Build and traceability
 
-- [ ] A reviewed dependency lockfile exists and the release artifact uses frozen
-      dependency installation; until then, release certification is blocked.
+- [ ] The reviewed dependency lockfile matches the manifest and every release
+      artifact uses frozen dependency installation.
 - [ ] Release commit matches the approved pull request and change record.
 - [ ] CI, CodeQL, dependency audit, tests, migrations, integrity checks, runtime
       smoke tests, and container build are green.

@@ -32,6 +32,10 @@ availability, or integrity events follow the
 Container hosting, alert ownership, backup exercises, and release approval are
 defined in the [observability and recovery controls](docs/operations/observability-and-recovery.md)
 and [release-candidate checklist](docs/operations/release-candidate-checklist.md).
+
+The current candidate is [`0.1.0-rc.1`](docs/validation/release-candidate-0.1.0-rc.1.md).
+Its implemented critical controls are linked to automated and external evidence
+in the [validation traceability matrix](docs/validation/traceability-matrix.md).
 - health endpoint
 - automated unit-test configuration
 - ESLint and strict TypeScript
