@@ -1,0 +1,224 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Trace QMS validation foundation in us-west-1
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: trace-qms-validation
+    AllowedPattern: "[a-z0-9-]+"
+  DatabaseInstanceClass:
+    Type: String
+    Default: db.m7g.large
+  DatabaseAllocatedStorage:
+    Type: Number
+    Default: 100
+    MinValue: 20
+  BackupRetentionDays:
+    Type: Number
+    Default: 35
+    MinValue: 1
+    MaxValue: 35
+
+Resources:
+  EncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Trace QMS validation encryption key
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AccountAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: "*"
+
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.40.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags: [{ Key: Name, Value: !Ref EnvironmentName }]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: 10.40.0.0/24
+      MapPublicIpOnLaunch: false
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: 10.40.1.0/24
+      MapPublicIpOnLaunch: false
+  ApplicationSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: 10.40.10.0/24
+      MapPublicIpOnLaunch: false
+  ApplicationSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: 10.40.11.0/24
+      MapPublicIpOnLaunch: false
+  DatabaseSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: 10.40.20.0/24
+      MapPublicIpOnLaunch: false
+  DatabaseSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: 10.40.21.0/24
+      MapPublicIpOnLaunch: false
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: { VpcId: !Ref Vpc }
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicRouteAssociationA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PublicSubnetA, RouteTableId: !Ref PublicRouteTable }
+  PublicRouteAssociationB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PublicSubnetB, RouteTableId: !Ref PublicRouteTable }
+
+  NatEipA:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties: { Domain: vpc }
+  NatEipB:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties: { Domain: vpc }
+  NatGatewayA:
+    Type: AWS::EC2::NatGateway
+    Properties: { AllocationId: !GetAtt NatEipA.AllocationId, SubnetId: !Ref PublicSubnetA }
+  NatGatewayB:
+    Type: AWS::EC2::NatGateway
+    Properties: { AllocationId: !GetAtt NatEipB.AllocationId, SubnetId: !Ref PublicSubnetB }
+  ApplicationRouteTableA:
+    Type: AWS::EC2::RouteTable
+    Properties: { VpcId: !Ref Vpc }
+  ApplicationRouteTableB:
+    Type: AWS::EC2::RouteTable
+    Properties: { VpcId: !Ref Vpc }
+  ApplicationDefaultRouteA:
+    Type: AWS::EC2::Route
+    Properties: { RouteTableId: !Ref ApplicationRouteTableA, DestinationCidrBlock: 0.0.0.0/0, NatGatewayId: !Ref NatGatewayA }
+  ApplicationDefaultRouteB:
+    Type: AWS::EC2::Route
+    Properties: { RouteTableId: !Ref ApplicationRouteTableB, DestinationCidrBlock: 0.0.0.0/0, NatGatewayId: !Ref NatGatewayB }
+  ApplicationRouteAssociationA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref ApplicationSubnetA, RouteTableId: !Ref ApplicationRouteTableA }
+  ApplicationRouteAssociationB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref ApplicationSubnetB, RouteTableId: !Ref ApplicationRouteTableB }
+
+  ApplicationSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Trace QMS application tasks
+      VpcId: !Ref Vpc
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: PostgreSQL from QMS tasks only
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref ApplicationSecurityGroup
+
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Trace QMS isolated database subnets
+      SubnetIds: [!Ref DatabaseSubnetA, !Ref DatabaseSubnetB]
+  DatabaseParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Family: postgres17
+      Description: Trace QMS PostgreSQL audit logging
+      Parameters:
+        log_connections: "1"
+        log_disconnections: "1"
+        log_lock_waits: "1"
+        log_min_duration_statement: "1000"
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: postgres
+      EngineVersion: "17"
+      DBName: trace_qms
+      DBInstanceClass: !Ref DatabaseInstanceClass
+      AllocatedStorage: !Ref DatabaseAllocatedStorage
+      StorageType: gp3
+      StorageEncrypted: true
+      KmsKeyId: !GetAtt EncryptionKey.Arn
+      MasterUsername: qmsbootstrap
+      ManageMasterUserPassword: true
+      MasterUserSecret:
+        KmsKeyId: !GetAtt EncryptionKey.Arn
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      VPCSecurityGroups: [!Ref DatabaseSecurityGroup]
+      MultiAZ: true
+      PubliclyAccessible: false
+      BackupRetentionPeriod: !Ref BackupRetentionDays
+      CopyTagsToSnapshot: true
+      DeletionProtection: true
+      AutoMinorVersionUpgrade: true
+      EnablePerformanceInsights: true
+      PerformanceInsightsKMSKeyId: !GetAtt EncryptionKey.Arn
+      EnableCloudwatchLogsExports: [postgresql, upgrade]
+      DBParameterGroupName: !Ref DatabaseParameterGroup
+
+  Repository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: trace-qms-validation
+      ImageTagMutability: IMMUTABLE
+      ImageScanningConfiguration: { ScanOnPush: true }
+      EncryptionConfiguration: { EncryptionType: KMS, KmsKey: !GetAtt EncryptionKey.Arn }
+
+Outputs:
+  VpcId: { Value: !Ref Vpc }
+  PublicSubnetIds: { Value: !Join [",", [!Ref PublicSubnetA, !Ref PublicSubnetB]] }
+  ApplicationSubnetIds: { Value: !Join [",", [!Ref ApplicationSubnetA, !Ref ApplicationSubnetB]] }
+  ApplicationSecurityGroupId: { Value: !Ref ApplicationSecurityGroup }
+  DatabaseEndpoint: { Value: !GetAtt Database.Endpoint.Address }
+  DatabaseMasterSecretArn: { Value: !GetAtt Database.MasterUserSecret.SecretArn }
+  RepositoryUri: { Value: !GetAtt Repository.RepositoryUri }
+  EncryptionKeyArn: { Value: !GetAtt EncryptionKey.Arn }
