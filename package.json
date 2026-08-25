@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:validation-config": "node --test scripts/validation-smoke.test.mjs",
     "test:watch": "vitest",
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",

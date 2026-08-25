@@ -53,6 +53,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      - run: npm run test:validation-config
       - run: npm run build
       - name: Build production container
         run: docker build --tag trace-document-control-qms:${{ github.sha }} .

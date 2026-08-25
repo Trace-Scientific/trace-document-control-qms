@@ -1,0 +1,54 @@
+name: Validation environment qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact deployed release-candidate SHA
+        required: true
+        type: string
+      evidence_reference:
+        description: Controlled validation-record reference
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    environment: validation
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify deployed release identity
+        env:
+          EXPECTED_SHA: ${{ inputs.release_sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Run validation-environment smoke qualification
+        env:
+          VALIDATION_BASE_URL: ${{ vars.VALIDATION_BASE_URL }}
+          VALIDATION_SESSION_TOKEN: ${{ secrets.VALIDATION_SESSION_TOKEN }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: node scripts/validation-smoke.mjs | tee validation-smoke-evidence.json
+      - name: Record non-secret evidence metadata
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          EVIDENCE_REFERENCE: ${{ inputs.evidence_reference }}
+        run: |
+          printf 'release_sha=%s\nevidence_reference=%s\nrun_id=%s\n' \
+            "$RELEASE_SHA" "$EVIDENCE_REFERENCE" "$GITHUB_RUN_ID" \
+            > validation-run-metadata.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: validation-qualification-evidence
+          path: |
+            validation-smoke-evidence.json
+            validation-run-metadata.txt
+          retention-days: 90
+          if-no-files-found: error
