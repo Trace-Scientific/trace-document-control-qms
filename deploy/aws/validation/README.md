@@ -4,6 +4,13 @@ This package is the reviewed runtime contract for the Trace QMS validation
 environment. It deliberately does not contain account IDs, hostnames,
 credentials, or secret values.
 
+The approved primary region is `us-west-1`, the hostname is `traceqms.com`, and
+the recovery class is Tier 1. Deploy `foundation.yaml` first with an explicit
+`--region us-west-1` argument and a reviewed copy of the example parameters.
+The foundation intentionally creates managed bootstrap credentials only. Create
+a least-privilege application role and a separate `DATABASE_URL` runtime secret
+before registering the service task definition.
+
 ## Required provisioned controls
 
 - An approved AWS account and region dedicated to validation where practical.

@@ -41,6 +41,10 @@ Validation deployment uses the protected `Validation environment qualification`
 workflow and the [critical-workflow UAT protocol](docs/validation/critical-workflow-uat-protocol.md).
 Executed evidence and approvals belong in the controlled validation record, not
 in source control.
+
+The approved AWS validation foundation and Tier 1 recovery decision are recorded
+in [`deploy/aws/validation`](deploy/aws/validation) and the
+[`Tier 1 recovery architecture`](docs/validation/tier-1-recovery-architecture.md).
 - health endpoint
 - automated unit-test configuration
 - ESLint and strict TypeScript

@@ -1,0 +1,6 @@
+[
+  { "ParameterKey": "EnvironmentName", "ParameterValue": "trace-qms-validation" },
+  { "ParameterKey": "DatabaseInstanceClass", "ParameterValue": "db.m7g.large" },
+  { "ParameterKey": "DatabaseAllocatedStorage", "ParameterValue": "100" },
+  { "ParameterKey": "BackupRetentionDays", "ParameterValue": "35" }
+]
