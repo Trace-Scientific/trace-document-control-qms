@@ -28,6 +28,10 @@ Production releases must follow the
 [deployment runbook](docs/operations/production-deployment-runbook.md). Security,
 availability, or integrity events follow the
 [incident-response runbook](docs/operations/incident-response-runbook.md).
+
+Container hosting, alert ownership, backup exercises, and release approval are
+defined in the [observability and recovery controls](docs/operations/observability-and-recovery.md)
+and [release-candidate checklist](docs/operations/release-candidate-checklist.md).
 - health endpoint
 - automated unit-test configuration
 - ESLint and strict TypeScript

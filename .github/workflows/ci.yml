@@ -33,10 +33,29 @@ jobs:
       - run: npm run db:validate
       - run: npx prisma migrate deploy
       - run: npx prisma db execute --file prisma/tests/integrity.sql --schema prisma/schema.prisma
+      - name: Verify database backup and restore
+        run: |
+          docker run --rm --network host \
+            --env PGPASSWORD=postgres postgres:17-alpine \
+            pg_dump --host 127.0.0.1 --username postgres --dbname trace_qms \
+            --format custom > /tmp/trace-qms.dump
+          docker run --rm --network host \
+            --env PGPASSWORD=postgres postgres:17-alpine \
+            createdb --host 127.0.0.1 --username postgres trace_qms_restore
+          docker run --rm --network host \
+            --env PGPASSWORD=postgres \
+            --volume /tmp/trace-qms.dump:/tmp/trace-qms.dump:ro \
+            postgres:17-alpine pg_restore --host 127.0.0.1 \
+            --username postgres --dbname trace_qms_restore --exit-on-error \
+            /tmp/trace-qms.dump
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trace_qms_restore \
+            npx prisma db execute --file prisma/tests/integrity.sql --schema prisma/schema.prisma
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      - name: Build production container
+        run: docker build --tag trace-document-control-qms:${{ github.sha }} .
       - name: Run production smoke checks
         run: |
           npm run start -- --hostname 127.0.0.1 > /tmp/qms-next.log 2>&1 &
