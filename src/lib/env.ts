@@ -12,7 +12,9 @@ const envSchema = z.object({
   CRON_SECRET: z.string().min(32).optional(),
 });
 
-export function getEnv(source: NodeJS.ProcessEnv = process.env) {
+export function getEnv(
+  source: Record<string, string | undefined> = process.env,
+) {
   return envSchema.parse({
     DATABASE_URL: source.DATABASE_URL,
     APP_BASE_URL: source.APP_BASE_URL,
