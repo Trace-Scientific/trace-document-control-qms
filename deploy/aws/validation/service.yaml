@@ -1,0 +1,306 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Trace QMS Tier 1 validation service layer in us-west-1
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  ApplicationSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  ApplicationSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  EncryptionKeyArn:
+    Type: String
+    AllowedPattern: "arn:aws[a-zA-Z-]*:kms:us-west-1:[0-9]{12}:key/.+"
+  CertificateArn:
+    Type: String
+    AllowedPattern: "arn:aws[a-zA-Z-]*:acm:us-west-1:[0-9]{12}:certificate/.+"
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+  DomainName:
+    Type: String
+    Default: traceqms.com
+    AllowedValues: [traceqms.com]
+  ImageUri:
+    Type: String
+    AllowedPattern: "[0-9]{12}\\.dkr\\.ecr\\.us-west-1\\.amazonaws\\.com/.+"
+  ImageDigest:
+    Type: String
+    AllowedPattern: "sha256:[0-9a-f]{64}"
+  DatabaseUrlSecretArn:
+    Type: String
+    AllowedPattern: "arn:aws[a-zA-Z-]*:secretsmanager:us-west-1:[0-9]{12}:secret:.+"
+  CronSecretArn:
+    Type: String
+    AllowedPattern: "arn:aws[a-zA-Z-]*:secretsmanager:us-west-1:[0-9]{12}:secret:.+"
+  ReleaseVersion:
+    Type: String
+    Default: 0.1.0-rc.2
+    AllowedPattern: "[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?"
+  ReleaseSha:
+    Type: String
+    AllowedPattern: "[0-9a-f]{40}"
+  AlertEmail:
+    Type: String
+    AllowedPattern: "[^@\\s]+@[^@\\s]+\\.[^@\\s]+"
+
+Resources:
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HTTPS ingress for Trace QMS validation
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0 }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0 }
+
+  LoadBalancerToApplicationIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref ApplicationSecurityGroupId
+      IpProtocol: tcp
+      FromPort: 3000
+      ToPort: 3000
+      SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: application
+      Scheme: internet-facing
+      IpAddressType: ipv4
+      SecurityGroups: [!Ref LoadBalancerSecurityGroup]
+      Subnets: !Ref PublicSubnetIds
+      LoadBalancerAttributes:
+        - { Key: deletion_protection.enabled, Value: "true" }
+        - { Key: routing.http.drop_invalid_header_fields.enabled, Value: "true" }
+        - { Key: routing.http2.enabled, Value: "true" }
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      TargetType: ip
+      Protocol: HTTP
+      Port: 3000
+      HealthCheckEnabled: true
+      HealthCheckPath: /api/health/readiness
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher: { HttpCode: "200" }
+      TargetGroupAttributes:
+        - { Key: deregistration_delay.timeout_seconds, Value: "60" }
+
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig: { Protocol: HTTPS, Port: "443", StatusCode: HTTP_301 }
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates: [{ CertificateArn: !Ref CertificateArn }]
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      DefaultActions: [{ Type: forward, TargetGroupArn: !Ref TargetGroup }]
+
+  DnsRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt LoadBalancer.DNSName
+        HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
+        EvaluateTargetHealth: true
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: trace-qms-validation
+      ClusterSettings: [{ Name: containerInsights, Value: enabled }]
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: /trace-qms/validation/application
+      RetentionInDays: 365
+      KmsKeyId: !Ref EncryptionKeyArn
+
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadOnlyRuntimeSecrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: [!Ref DatabaseUrlSecretArn, !Ref CronSecretArn]
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: !Ref EncryptionKeyArn
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: trace-qms-validation
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      Cpu: "512"
+      Memory: "1024"
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      RuntimePlatform: { CpuArchitecture: ARM64, OperatingSystemFamily: LINUX }
+      ContainerDefinitions:
+        - Name: qms
+          Image: !Sub ${ImageUri}@${ImageDigest}
+          Essential: true
+          ReadonlyRootFilesystem: true
+          PortMappings: [{ ContainerPort: 3000, Protocol: tcp }]
+          Environment:
+            - { Name: APP_BASE_URL, Value: !Sub "https://${DomainName}" }
+            - { Name: APP_RELEASE_VERSION, Value: !Ref ReleaseVersion }
+            - { Name: APP_RELEASE_SHA, Value: !Ref ReleaseSha }
+          Secrets:
+            - { Name: DATABASE_URL, ValueFrom: !Ref DatabaseUrlSecretArn }
+            - { Name: CRON_SECRET, ValueFrom: !Ref CronSecretArn }
+          HealthCheck:
+            Command: [CMD-SHELL, "node -e \"fetch('http://127.0.0.1:3000/api/health/readiness').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""]
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 30
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: qms
+
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: HttpsListener
+    Properties:
+      ServiceName: trace-qms-validation
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref TaskDefinition
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      DesiredCount: 2
+      EnableExecuteCommand: false
+      HealthCheckGracePeriodSeconds: 60
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+        DeploymentCircuitBreaker: { Enable: true, Rollback: true }
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: !Ref ApplicationSubnetIds
+          SecurityGroups: [!Ref ApplicationSecurityGroupId]
+      LoadBalancers:
+        - ContainerName: qms
+          ContainerPort: 3000
+          TargetGroupArn: !Ref TargetGroup
+
+  ScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn: Service
+    Properties:
+      MinCapacity: 2
+      MaxCapacity: 6
+      ResourceId: !Join ["/", [service, !Ref Cluster, !GetAtt Service.Name]]
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+  CpuScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 60
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification: { PredefinedMetricType: ECSServiceAverageCPUUtilization }
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: trace-qms-validation-alerts
+      KmsMasterKeyId: !Ref EncryptionKeyArn
+  AlertSubscription:
+    Type: AWS::SNS::Subscription
+    Properties: { Protocol: email, Endpoint: !Ref AlertEmail, TopicArn: !Ref AlertTopic }
+  UnhealthyHostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Trace QMS has an unhealthy target
+      Namespace: AWS/ApplicationELB
+      MetricName: UnHealthyHostCount
+      Dimensions:
+        - { Name: LoadBalancer, Value: !GetAtt LoadBalancer.LoadBalancerFullName }
+        - { Name: TargetGroup, Value: !GetAtt TargetGroup.TargetGroupFullName }
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlertTopic]
+  LoadBalancer5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Trace QMS load balancer is returning 5xx responses
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_ELB_5XX_Count
+      Dimensions: [{ Name: LoadBalancer, Value: !GetAtt LoadBalancer.LoadBalancerFullName }]
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+Outputs:
+  ApplicationUrl: { Value: !Sub "https://${DomainName}" }
+  ClusterName: { Value: !Ref Cluster }
+  ServiceName: { Value: !GetAtt Service.Name }
+  TaskDefinitionArn: { Value: !Ref TaskDefinition }
+  LoadBalancerDnsName: { Value: !GetAtt LoadBalancer.DNSName }
+  AlertTopicArn: { Value: !Ref AlertTopic }

@@ -34,6 +34,31 @@ Resources:
               AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
             Action: kms:*
             Resource: "*"
+          - Sid: EncryptValidationLogs
+            Effect: Allow
+            Principal:
+              Service: logs.us-west-1.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+            Condition:
+              ArnLike:
+                kms:EncryptionContext:aws:logs:arn: !Sub arn:${AWS::Partition}:logs:us-west-1:${AWS::AccountId}:log-group:/trace-qms/*
+          - Sid: EncryptValidationAlerts
+            Effect: Allow
+            Principal:
+              Service: [sns.amazonaws.com, cloudwatch.amazonaws.com]
+            Action:
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+            Resource: "*"
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
 
   Vpc:
     Type: AWS::EC2::VPC

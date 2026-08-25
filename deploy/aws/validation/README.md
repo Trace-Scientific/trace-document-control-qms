@@ -11,6 +11,12 @@ The foundation intentionally creates managed bootstrap credentials only. Create
 a least-privilege application role and a separate `DATABASE_URL` runtime secret
 before registering the service task definition.
 
+After foundation approval, review `service.yaml` and the
+[`AWS validation service preflight`](../../../docs/operations/aws-validation-service-preflight.md).
+The service template creates the two-task ECS service, HTTPS load balancer,
+`traceqms.com` Route 53 alias, log retention, autoscaling, and operational alarms.
+It must not be deployed until the private-network migration procedure is ready.
+
 ## Required provisioned controls
 
 - An approved AWS account and region dedicated to validation where practical.

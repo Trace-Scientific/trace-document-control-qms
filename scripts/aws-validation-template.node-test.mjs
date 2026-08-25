@@ -12,6 +12,8 @@ test("pins the approved region through the deployment command, not the template"
   assert.match(template, /PubliclyAccessible: false/);
   assert.match(template, /ImageTagMutability: IMMUTABLE/);
   assert.match(template, /EnableKeyRotation: true/);
+  assert.match(template, /Service: logs\.us-west-1\.amazonaws\.com/);
+  assert.match(template, /Service: \[sns\.amazonaws\.com, cloudwatch\.amazonaws\.com\]/);
 });
 
 test("contains two isolated application, database, and public subnets", async () => {
