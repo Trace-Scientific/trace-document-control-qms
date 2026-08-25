@@ -45,6 +45,8 @@ in source control.
 The approved AWS validation foundation and Tier 1 recovery decision are recorded
 in [`deploy/aws/validation`](deploy/aws/validation) and the
 [`Tier 1 recovery architecture`](docs/validation/tier-1-recovery-architecture.md).
+The service-layer deployment gates are listed in the
+[`AWS validation service preflight`](docs/operations/aws-validation-service-preflight.md).
 - health endpoint
 - automated unit-test configuration
 - ESLint and strict TypeScript
