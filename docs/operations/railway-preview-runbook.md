@@ -26,14 +26,20 @@ data only.
 5. Confirm `DEPLOYMENT_TIER` equals `development-preview`. The server renders
    the preview warning from this runtime value; no browser-exposed environment
    variable is required.
-6. Apply the project configuration, then verify `/api/health/readiness` returns
+6. In the application service Build settings, set the Dockerfile path to
+   `/Dockerfile.preview`. Do not change the repository `Dockerfile`, which is
+   reserved for the protected AWS release path.
+7. Apply the project configuration, then verify `/api/health/readiness` returns
    HTTP 200 and the application displays the development-preview banner.
-7. Configure the GitHub `QMS_BASE_URL` variable only if the overdue-review
+8. Confirm the deployment log reports that all Prisma migrations were applied
+   before the Next.js server started.
+9. Configure the GitHub `QMS_BASE_URL` variable only if the overdue-review
    monitor should exercise this preview. Store the matching `CRON_SECRET` as a
    GitHub Actions secret.
 
-The start command applies committed Prisma migrations before starting Next.js.
-Migration failure prevents the application from starting. Never run
+The preview image applies committed Prisma migrations before starting Next.js.
+Migration failure prevents the application from starting and from passing its
+readiness check. Never run
 development migration generation or schema reset commands against the preview.
 
 ## Review boundary

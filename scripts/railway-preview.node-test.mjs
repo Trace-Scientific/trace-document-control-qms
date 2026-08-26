@@ -8,6 +8,8 @@ const runbook = await readFile(
   "utf8",
 );
 const page = await readFile("src/app/page.tsx", "utf8");
+const previewDockerfile = await readFile("Dockerfile.preview", "utf8");
+const productionDockerfile = await readFile("Dockerfile", "utf8");
 
 test("preview infrastructure remains small and isolated", () => {
   assert.match(config, /postgres\("preview-postgres"\)/);
@@ -32,4 +34,15 @@ test("preview warning is derived from a server-side runtime boundary", () => {
   assert.match(page, /process\.env\.DEPLOYMENT_TIER === "development-preview"/);
   assert.match(page, /export const dynamic = "force-dynamic"/);
   assert.doesNotMatch(page, /NEXT_PUBLIC_/);
+});
+
+test("preview image deploys migrations without changing the AWS runtime", () => {
+  assert.match(
+    previewDockerfile,
+    /prisma migrate deploy --schema prisma\/schema\.prisma && exec node server\.js/,
+  );
+  assert.match(previewDockerfile, /USER qms/);
+  assert.match(previewDockerfile, /\/api\/health\/readiness/);
+  assert.doesNotMatch(productionDockerfile, /prisma migrate deploy && node server\.js/);
+  assert.match(runbook, /\/Dockerfile\.preview/);
 });
