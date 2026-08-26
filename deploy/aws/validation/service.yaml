@@ -36,7 +36,7 @@ Parameters:
     AllowedPattern: "arn:aws[a-zA-Z-]*:secretsmanager:us-west-1:[0-9]{12}:secret:.+"
   ReleaseVersion:
     Type: String
-    Default: 0.1.0-rc.2
+    Default: 0.1.0-rc.3
     AllowedPattern: "[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?"
   ReleaseSha:
     Type: String

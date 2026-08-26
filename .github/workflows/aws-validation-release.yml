@@ -1,0 +1,186 @@
+name: AWS validation release
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Create a plan or apply an approved plan
+        required: true
+        type: choice
+        options: [plan, apply]
+      release_sha:
+        description: Full 40-character commit SHA from main
+        required: true
+        type: string
+      release_version:
+        description: Release version in package.json
+        required: true
+        default: 0.1.0-rc.3
+        type: string
+      change_reference:
+        description: Controlled change or approval record
+        required: true
+        type: string
+      change_set_name:
+        description: Required for apply; optional override for plan
+        required: false
+        type: string
+      application_image_digest:
+        description: Required for apply (sha256:... from plan evidence)
+        required: false
+        type: string
+      migration_image_digest:
+        description: Required for apply (sha256:... from plan evidence)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-validation-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: validation
+    env:
+      AWS_REGION: us-west-1
+      AWS_ROLE_ARN: ${{ vars.AWS_VALIDATION_DEPLOY_ROLE_ARN }}
+      STACK_NAME: trace-qms-validation-service
+      ECR_REPOSITORY_URI: ${{ vars.AWS_VALIDATION_ECR_REPOSITORY_URI }}
+      VPC_ID: ${{ vars.AWS_VALIDATION_VPC_ID }}
+      PUBLIC_SUBNET_IDS: ${{ vars.AWS_VALIDATION_PUBLIC_SUBNET_IDS }}
+      APPLICATION_SUBNET_IDS: ${{ vars.AWS_VALIDATION_APPLICATION_SUBNET_IDS }}
+      APPLICATION_SECURITY_GROUP_ID: ${{ vars.AWS_VALIDATION_APPLICATION_SECURITY_GROUP_ID }}
+      ENCRYPTION_KEY_ARN: ${{ vars.AWS_VALIDATION_ENCRYPTION_KEY_ARN }}
+      CERTIFICATE_ARN: ${{ vars.AWS_VALIDATION_CERTIFICATE_ARN }}
+      HOSTED_ZONE_ID: ${{ vars.AWS_VALIDATION_HOSTED_ZONE_ID }}
+      DATABASE_URL_SECRET_ARN: ${{ vars.AWS_VALIDATION_DATABASE_URL_SECRET_ARN }}
+      CRON_SECRET_ARN: ${{ vars.AWS_VALIDATION_CRON_SECRET_ARN }}
+      ALERT_EMAIL: ${{ vars.AWS_VALIDATION_ALERT_EMAIL }}
+      ECS_CLUSTER: ${{ vars.AWS_VALIDATION_ECS_CLUSTER }}
+      MIGRATION_EXECUTION_ROLE_ARN: ${{ vars.AWS_VALIDATION_MIGRATION_EXECUTION_ROLE_ARN }}
+      MIGRATION_TASK_ROLE_ARN: ${{ vars.AWS_VALIDATION_MIGRATION_TASK_ROLE_ARN }}
+      LOG_GROUP: ${{ vars.AWS_VALIDATION_LOG_GROUP }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify immutable release inputs and prerequisites
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          OPERATION: ${{ inputs.operation }}
+          CHANGE_SET_NAME: ${{ inputs.change_set_name }}
+          APPLICATION_IMAGE_DIGEST: ${{ inputs.application_image_digest }}
+          MIGRATION_IMAGE_DIGEST: ${{ inputs.migration_image_digest }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test "$(node -p "require('./package.json').version")" = "$RELEASE_VERSION"
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+          test "$AWS_REGION" = "us-west-1"
+          required=(AWS_ROLE_ARN ECR_REPOSITORY_URI VPC_ID PUBLIC_SUBNET_IDS APPLICATION_SUBNET_IDS APPLICATION_SECURITY_GROUP_ID ENCRYPTION_KEY_ARN CERTIFICATE_ARN HOSTED_ZONE_ID DATABASE_URL_SECRET_ARN CRON_SECRET_ARN ALERT_EMAIL ECS_CLUSTER MIGRATION_EXECUTION_ROLE_ARN MIGRATION_TASK_ROLE_ARN LOG_GROUP)
+          for name in "${required[@]}"; do test -n "${!name:-}" || { echo "Missing $name"; exit 1; }; done
+          if test "$OPERATION" = apply; then
+            test -n "$CHANGE_SET_NAME"
+            [[ "$APPLICATION_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+            [[ "$MIGRATION_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          fi
+
+      - uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: us-west-1
+
+      - name: Validate CloudFormation templates
+        run: |
+          aws cloudformation validate-template --template-body file://deploy/aws/validation/foundation.yaml
+          aws cloudformation validate-template --template-body file://deploy/aws/validation/service.yaml
+
+      - uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd
+        if: inputs.operation == 'plan'
+
+      - name: Publish immutable images and create unexecuted change set
+        if: inputs.operation == 'plan'
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          REQUESTED_CHANGE_SET_NAME: ${{ inputs.change_set_name }}
+          CHANGE_REFERENCE: ${{ inputs.change_reference }}
+        run: |
+          set -euo pipefail
+          repository_name="${ECR_REPOSITORY_URI#*/}"
+          test "$(aws ecr describe-repositories --repository-names "$repository_name" --query 'repositories[0].imageTagMutability' --output text)" = IMMUTABLE
+          app_tag="release-${RELEASE_SHA}"
+          migration_tag="migration-${RELEASE_SHA}"
+          docker build --platform linux/amd64 --build-arg APP_RELEASE_VERSION="$RELEASE_VERSION" --build-arg APP_RELEASE_SHA="$RELEASE_SHA" -t "$ECR_REPOSITORY_URI:$app_tag" .
+          docker build --platform linux/amd64 --target migration --build-arg APP_RELEASE_VERSION="$RELEASE_VERSION" --build-arg APP_RELEASE_SHA="$RELEASE_SHA" -t "$ECR_REPOSITORY_URI:$migration_tag" .
+          docker push "$ECR_REPOSITORY_URI:$app_tag"
+          docker push "$ECR_REPOSITORY_URI:$migration_tag"
+          app_digest=$(aws ecr describe-images --repository-name "$repository_name" --image-ids imageTag="$app_tag" --query 'imageDetails[0].imageDigest' --output text)
+          migration_digest=$(aws ecr describe-images --repository-name "$repository_name" --image-ids imageTag="$migration_tag" --query 'imageDetails[0].imageDigest' --output text)
+          change_set_name="${REQUESTED_CHANGE_SET_NAME:-trace-qms-${RELEASE_SHA:0:12}}"
+          aws cloudformation deploy --stack-name "$STACK_NAME" --template-file deploy/aws/validation/service.yaml --no-execute-changeset --change-set-name "$change_set_name" --capabilities CAPABILITY_IAM --parameter-overrides VpcId="$VPC_ID" PublicSubnetIds="$PUBLIC_SUBNET_IDS" ApplicationSubnetIds="$APPLICATION_SUBNET_IDS" ApplicationSecurityGroupId="$APPLICATION_SECURITY_GROUP_ID" EncryptionKeyArn="$ENCRYPTION_KEY_ARN" CertificateArn="$CERTIFICATE_ARN" HostedZoneId="$HOSTED_ZONE_ID" DomainName=traceqms.com ImageUri="$ECR_REPOSITORY_URI" ImageDigest="$app_digest" DatabaseUrlSecretArn="$DATABASE_URL_SECRET_ARN" CronSecretArn="$CRON_SECRET_ARN" ReleaseVersion="$RELEASE_VERSION" ReleaseSha="$RELEASE_SHA" AlertEmail="$ALERT_EMAIL"
+          mkdir -p release-evidence
+          printf 'change_reference=%s\nchange_set_name=%s\nrelease_sha=%s\nrelease_version=%s\napplication_image_digest=%s\nmigration_image_digest=%s\n' "$CHANGE_REFERENCE" "$change_set_name" "$RELEASE_SHA" "$RELEASE_VERSION" "$app_digest" "$migration_digest" > release-evidence/plan.txt
+
+      - name: Verify approved change set and immutable images
+        if: inputs.operation == 'apply'
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          CHANGE_SET_NAME: ${{ inputs.change_set_name }}
+          APPLICATION_IMAGE_DIGEST: ${{ inputs.application_image_digest }}
+          MIGRATION_IMAGE_DIGEST: ${{ inputs.migration_image_digest }}
+        run: |
+          set -euo pipefail
+          test "$(aws cloudformation describe-change-set --stack-name "$STACK_NAME" --change-set-name "$CHANGE_SET_NAME" --query Status --output text)" = CREATE_COMPLETE
+          test "$(aws cloudformation describe-change-set --stack-name "$STACK_NAME" --change-set-name "$CHANGE_SET_NAME" --query ChangeSetType --output text)" = UPDATE
+          planned_sha=$(aws cloudformation describe-change-set --stack-name "$STACK_NAME" --change-set-name "$CHANGE_SET_NAME" --query "Parameters[?ParameterKey=='ReleaseSha'].ParameterValue | [0]" --output text)
+          planned_digest=$(aws cloudformation describe-change-set --stack-name "$STACK_NAME" --change-set-name "$CHANGE_SET_NAME" --query "Parameters[?ParameterKey=='ImageDigest'].ParameterValue | [0]" --output text)
+          test "$planned_sha" = "$RELEASE_SHA"
+          test "$planned_digest" = "$APPLICATION_IMAGE_DIGEST"
+          repository_name="${ECR_REPOSITORY_URI#*/}"
+          aws ecr describe-images --repository-name "$repository_name" --image-ids imageDigest="$APPLICATION_IMAGE_DIGEST" >/dev/null
+          aws ecr describe-images --repository-name "$repository_name" --image-ids imageDigest="$MIGRATION_IMAGE_DIGEST" >/dev/null
+
+      - name: Run private migration and activate approved change set
+        if: inputs.operation == 'apply'
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          CHANGE_SET_NAME: ${{ inputs.change_set_name }}
+          MIGRATION_IMAGE_DIGEST: ${{ inputs.migration_image_digest }}
+          CHANGE_REFERENCE: ${{ inputs.change_reference }}
+          EXECUTION_ROLE_ARN: ${{ env.MIGRATION_EXECUTION_ROLE_ARN }}
+          TASK_ROLE_ARN: ${{ env.MIGRATION_TASK_ROLE_ARN }}
+          IMAGE_URI: ${{ env.ECR_REPOSITORY_URI }}
+          APP_RELEASE_VERSION: ${{ inputs.release_version }}
+          APP_RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-evidence
+          node scripts/render-migration-task.mjs deploy/aws/validation/migration-task-definition.json release-evidence/migration-task.json
+          task_definition_arn=$(aws ecs register-task-definition --cli-input-json file://release-evidence/migration-task.json --query 'taskDefinition.taskDefinitionArn' --output text)
+          task_arn=$(aws ecs run-task --cluster "$ECS_CLUSTER" --task-definition "$task_definition_arn" --launch-type FARGATE --network-configuration "awsvpcConfiguration={subnets=[$APPLICATION_SUBNET_IDS],securityGroups=[$APPLICATION_SECURITY_GROUP_ID],assignPublicIp=DISABLED}" --query 'tasks[0].taskArn' --output text)
+          test -n "$task_arn" && test "$task_arn" != None
+          aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$task_arn"
+          exit_code=$(aws ecs describe-tasks --cluster "$ECS_CLUSTER" --tasks "$task_arn" --query 'tasks[0].containers[?name==`migration`].exitCode | [0]' --output text)
+          test "$exit_code" = 0
+          aws cloudformation execute-change-set --stack-name "$STACK_NAME" --change-set-name "$CHANGE_SET_NAME"
+          aws cloudformation wait stack-update-complete --stack-name "$STACK_NAME"
+          printf 'change_reference=%s\nchange_set_name=%s\nrelease_sha=%s\nmigration_task_arn=%s\nmigration_exit_code=%s\n' "$CHANGE_REFERENCE" "$CHANGE_SET_NAME" "$RELEASE_SHA" "$task_arn" "$exit_code" > release-evidence/apply.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: aws-validation-${{ inputs.operation }}-${{ inputs.release_sha }}
+          path: release-evidence/*.txt
+          if-no-files-found: ignore
+          retention-days: 90

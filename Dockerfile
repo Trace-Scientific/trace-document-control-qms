@@ -14,7 +14,7 @@ RUN npm run build
 
 FROM dependencies AS migration
 WORKDIR /app
-ARG APP_RELEASE_VERSION=0.1.0-rc.2
+ARG APP_RELEASE_VERSION=0.1.0-rc.3
 ARG APP_RELEASE_SHA=unknown
 ENV NODE_ENV=production
 ENV APP_RELEASE_VERSION=$APP_RELEASE_VERSION
@@ -28,7 +28,7 @@ CMD ["./node_modules/.bin/prisma", "migrate", "deploy"]
 
 FROM node:22-alpine AS runtime
 WORKDIR /app
-ARG APP_RELEASE_VERSION=0.1.0-rc.2
+ARG APP_RELEASE_VERSION=0.1.0-rc.3
 ARG APP_RELEASE_SHA=unknown
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
