@@ -48,7 +48,7 @@ fail if an unresolved token remains.
 | `IMAGE_URI` | Approved ECR repository |
 | `IMAGE_DIGEST` | Recorded `sha256:` image digest |
 | `APP_BASE_URL` | Approved validation HTTPS origin |
-| `APP_RELEASE_VERSION` | `0.1.0-rc.2` |
+| `APP_RELEASE_VERSION` | `0.1.0-rc.3` |
 | `APP_RELEASE_SHA` | Full approved Git commit SHA |
 | `DATABASE_URL_SECRET_ARN` | Secrets Manager identifier |
 | `CRON_SECRET_ARN` | Secrets Manager identifier |
@@ -59,6 +59,13 @@ Register and deploy the rendered definition only after independent review. Run
 `npx prisma migrate deploy` as a one-time protected release task before routing
 traffic. Record the task-definition revision, image digest, migration output,
 operator, and timestamps in the controlled deployment record.
+
+The manual `AWS validation release` workflow separates plan from apply and uses
+the protected GitHub `validation` environment with OIDC. Its apply operation is
+currently restricted to updates of an existing service stack, whose ECS cluster,
+migration roles, and log group already exist. Initial service creation is blocked
+until those resources move into the foundation contract; separately creating
+same-named resources would conflict with this service template.
 
 ## Prohibited shortcuts
 

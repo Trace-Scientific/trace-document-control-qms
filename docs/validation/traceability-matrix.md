@@ -18,6 +18,7 @@ claim of regulatory certification.
 | UR-010 | Audit and authentication evidence cannot be silently changed | Database immutability triggers and append-only service behavior | `prisma/tests/integrity.sql`, security/session tests | Automated pass required |
 | UR-011 | Operations can detect unhealthy dependencies without secret disclosure | Separate liveness/readiness and generic structured telemetry | readiness and telemetry tests, runtime smoke check | Automated pass required |
 | UR-012 | Release artifacts are repeatable and recoverable | Dependency lockfile, frozen install, OCI build, backup/restore verification | CI, Security, restored-database integrity | Automated pass required |
+| UR-013 | AWS validation releases are approved, immutable, and migration-gated | Protected OIDC workflow, digest-addressed images, reviewed change set, private one-time migration | AWS deployment-control and migration-contract tests; plan/apply evidence | Automated pass plus external approval required |
 
 ## External validation evidence
 

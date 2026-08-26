@@ -57,6 +57,7 @@ jobs:
       - run: npm run test:aws-validation-template
       - run: npm run test:aws-service-template
       - run: npm run test:aws-migration-contract
+      - run: npm run test:aws-deployment-control
       - run: npm run build
       - name: Build production container
         run: |
@@ -73,7 +74,7 @@ jobs:
             --tag trace-document-control-qms-migration:${{ github.sha }} .
       - name: Run production smoke checks
         env:
-          APP_RELEASE_VERSION: 0.1.0-rc.2
+          APP_RELEASE_VERSION: 0.1.0-rc.3
           APP_RELEASE_SHA: ${{ github.sha }}
         run: |
           npm run start -- --hostname 127.0.0.1 > /tmp/qms-next.log 2>&1 &
