@@ -1,5 +1,9 @@
 import { DocumentControlDashboard } from "@/components/document-control-dashboard";
 
 export default function HomePage() {
-  return <DocumentControlDashboard />;
+  return (
+    <DocumentControlDashboard
+      developmentPreview={process.env.DEPLOYMENT_TIER === "development-preview"}
+    />
+  );
 }

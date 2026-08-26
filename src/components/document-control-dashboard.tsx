@@ -238,9 +238,9 @@ function mapDocument(row: DocumentApiRow): DocumentRow {
   };
 }
 
-export function DocumentControlDashboard() {
-  const developmentPreview =
-    process.env.NEXT_PUBLIC_DEPLOYMENT_TIER === "development-preview";
+export function DocumentControlDashboard({
+  developmentPreview = false,
+}: Readonly<{ developmentPreview?: boolean }>) {
   const [documents, setDocuments] = useState(initialDocuments),
     [documentTypes, setDocumentTypes] = useState<DocumentTypeOption[]>([]),
     [nextCursor, setNextCursor] = useState<string | null>(null),
