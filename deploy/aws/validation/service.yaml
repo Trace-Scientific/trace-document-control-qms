@@ -183,7 +183,7 @@ Resources:
       Memory: "1024"
       ExecutionRoleArn: !GetAtt ExecutionRole.Arn
       TaskRoleArn: !GetAtt TaskRole.Arn
-      RuntimePlatform: { CpuArchitecture: ARM64, OperatingSystemFamily: LINUX }
+      RuntimePlatform: { CpuArchitecture: X86_64, OperatingSystemFamily: LINUX }
       ContainerDefinitions:
         - Name: qms
           Image: !Sub ${ImageUri}@${ImageDigest}

@@ -56,6 +56,7 @@ jobs:
       - run: npm run test:validation-config
       - run: npm run test:aws-validation-template
       - run: npm run test:aws-service-template
+      - run: npm run test:aws-migration-contract
       - run: npm run build
       - name: Build production container
         run: |
@@ -63,6 +64,13 @@ jobs:
             --build-arg APP_RELEASE_VERSION="$(node -p "require('./package.json').version")" \
             --build-arg APP_RELEASE_SHA="${{ github.sha }}" \
             --tag trace-document-control-qms:${{ github.sha }} .
+      - name: Build private-network migration container
+        run: |
+          docker build \
+            --target migration \
+            --build-arg APP_RELEASE_VERSION="$(node -p "require('./package.json').version")" \
+            --build-arg APP_RELEASE_SHA="${{ github.sha }}" \
+            --tag trace-document-control-qms-migration:${{ github.sha }} .
       - name: Run production smoke checks
         env:
           APP_RELEASE_VERSION: 0.1.0-rc.2

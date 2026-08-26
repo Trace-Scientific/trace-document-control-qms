@@ -1,0 +1,36 @@
+{
+  "family": "trace-qms-validation-migration",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "${EXECUTION_ROLE_ARN}",
+  "taskRoleArn": "${TASK_ROLE_ARN}",
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "containerDefinitions": [
+    {
+      "name": "migration",
+      "image": "${IMAGE_URI}@${MIGRATION_IMAGE_DIGEST}",
+      "essential": true,
+      "readonlyRootFilesystem": true,
+      "environment": [
+        { "name": "APP_RELEASE_VERSION", "value": "${APP_RELEASE_VERSION}" },
+        { "name": "APP_RELEASE_SHA", "value": "${APP_RELEASE_SHA}" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL", "valueFrom": "${DATABASE_URL_SECRET_ARN}" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "${LOG_GROUP}",
+          "awslogs-region": "us-west-1",
+          "awslogs-stream-prefix": "migration"
+        }
+      }
+    }
+  ]
+}
