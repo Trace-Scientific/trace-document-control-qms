@@ -30,5 +30,6 @@ test("preview warning is derived from a server-side runtime boundary", () => {
   assert.match(config, /DEPLOYMENT_TIER: "development-preview"/);
   assert.doesNotMatch(config, /NEXT_PUBLIC_DEPLOYMENT_TIER/);
   assert.match(page, /process\.env\.DEPLOYMENT_TIER === "development-preview"/);
+  assert.match(page, /export const dynamic = "force-dynamic"/);
   assert.doesNotMatch(page, /NEXT_PUBLIC_/);
 });
