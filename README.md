@@ -47,6 +47,11 @@ in [`deploy/aws/validation`](deploy/aws/validation) and the
 [`Tier 1 recovery architecture`](docs/validation/tier-1-recovery-architecture.md).
 The service-layer deployment gates are listed in the
 [`AWS validation service preflight`](docs/operations/aws-validation-service-preflight.md).
+
+Low-cost product review uses the isolated Railway development preview described
+in the [`Railway preview runbook`](docs/operations/railway-preview-runbook.md).
+That environment is limited to synthetic data and is not validation or
+production evidence.
 - health endpoint
 - automated unit-test configuration
 - ESLint and strict TypeScript

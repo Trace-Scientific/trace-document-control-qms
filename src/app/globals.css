@@ -331,6 +331,18 @@ kbd {
   max-width: 1600px;
   margin: auto;
 }
+.environment-warning {
+  margin-bottom: 12px;
+  padding: 9px 12px;
+  color: #7a271a;
+  background: #fff1ef;
+  border: 1px solid #f5a898;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.45px;
+  text-align: center;
+}
 .preview-banner {
   margin-bottom: 18px;
   padding: 7px 10px;
