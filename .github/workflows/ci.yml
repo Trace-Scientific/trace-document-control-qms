@@ -67,6 +67,11 @@ jobs:
             --build-arg APP_RELEASE_VERSION="$(node -p "require('./package.json').version")" \
             --build-arg APP_RELEASE_SHA="${{ github.sha }}" \
             --tag trace-document-control-qms:${{ github.sha }} .
+      - name: Build Railway preview container
+        run: |
+          docker build \
+            --file Dockerfile.preview \
+            --tag trace-document-control-qms-preview:${{ github.sha }} .
       - name: Build private-network migration container
         run: |
           docker build \
