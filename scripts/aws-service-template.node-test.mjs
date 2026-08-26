@@ -24,11 +24,16 @@ test("keeps two healthy private tasks and fails deployments safely", async () =>
   assert.match(template, /HealthCheckPath: \/api\/health\/readiness/);
 });
 
-test("uses HTTPS, restricted secret access, retained logs, and alarms", async () => {
+test("uses HTTPS, foundation runtime controls, and alarms", async () => {
   const template = await readFile(serviceUrl, "utf8");
   assert.match(template, /SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06/);
-  assert.match(template, /Resource: \[!Ref DatabaseUrlSecretArn, !Ref CronSecretArn\]/);
-  assert.match(template, /RetentionInDays: 365/);
+  assert.match(template, /ExecutionRoleArn: !Ref ApplicationExecutionRoleArn/);
+  assert.match(template, /TaskRoleArn: !Ref ApplicationTaskRoleArn/);
+  assert.match(template, /awslogs-group: !Ref ApplicationLogGroupName/);
+  assert.match(template, /Cluster: !Ref ClusterName/);
+  assert.doesNotMatch(template, /^  Cluster:\n    Type: AWS::ECS::Cluster/m);
+  assert.doesNotMatch(template, /^  ApplicationLogGroup:\n    Type: AWS::Logs::LogGroup/m);
+  assert.doesNotMatch(template, /^  ApplicationExecutionRole:\n    Type: AWS::IAM::Role/m);
   assert.match(template, /UnhealthyHostAlarm:/);
   assert.match(template, /LoadBalancer5xxAlarm:/);
   assert.doesNotMatch(template, /postgresql:\/\//);

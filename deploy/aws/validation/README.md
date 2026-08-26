@@ -7,9 +7,12 @@ credentials, or secret values.
 The approved primary region is `us-west-1`, the hostname is `traceqms.com`, and
 the recovery class is Tier 1. Deploy `foundation.yaml` first with an explicit
 `--region us-west-1` argument and a reviewed copy of the example parameters.
-The foundation intentionally creates managed bootstrap credentials only. Create
-a least-privilege application role and a separate `DATABASE_URL` runtime secret
-before registering the service task definition.
+The foundation creates managed database bootstrap credentials plus the ECS
+cluster, encrypted application log group, and separate least-privilege
+application and migration execution/task roles required before the service stack
+exists. Name the secrets `trace-qms/validation/database-*` and
+`trace-qms/validation/cron-*` before registering a task. Foundation deployment
+or update requires `CAPABILITY_IAM` and explicit `--region us-west-1`.
 
 After foundation approval, review `service.yaml` and the
 [`AWS validation service preflight`](../../../docs/operations/aws-validation-service-preflight.md).
@@ -61,11 +64,10 @@ traffic. Record the task-definition revision, image digest, migration output,
 operator, and timestamps in the controlled deployment record.
 
 The manual `AWS validation release` workflow separates plan from apply and uses
-the protected GitHub `validation` environment with OIDC. Its apply operation is
-currently restricted to updates of an existing service stack, whose ECS cluster,
-migration roles, and log group already exist. Initial service creation is blocked
-until those resources move into the foundation contract; separately creating
-same-named resources would conflict with this service template.
+the protected GitHub `validation` environment with OIDC. It verifies that every
+foundation-derived repository variable still equals the qualified stack output,
+runs migration using those resources, and only then executes either a first-time
+`CREATE` or later `UPDATE` service change set.
 
 ## Prohibited shortcuts
 

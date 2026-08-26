@@ -11,7 +11,8 @@ Do not deploy `service.yaml` until every item is approved and recorded.
 - [ ] Immutable application image digest and full source SHA match the approved
       release record.
 - [ ] Least-privilege `DATABASE_URL` and 32-or-more-character `CRON_SECRET` are
-      stored in Secrets Manager under the foundation KMS key.
+      stored under `trace-qms/validation/database-*` and
+      `trace-qms/validation/cron-*` using the foundation KMS key.
 - [ ] Alert email owner is named and will confirm the SNS subscription.
 - [ ] Database migration execution method is approved and tested from the
       private application network before service traffic is enabled.

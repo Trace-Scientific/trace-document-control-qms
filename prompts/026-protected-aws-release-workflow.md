@@ -20,6 +20,5 @@ Create a manual, approval-gated AWS validation deployment path for
 ## Deferred work
 
 - Provision and qualify the AWS resources and GitHub environment.
-- Resolve first-deployment migration bootstrap resources through an approved
-  foundation update; apply is update-only until that contract exists.
+- First-deployment migration bootstrap resources are delivered by Prompt 027.
 - Execute deployment, qualification, UAT, recovery exercise, and owner approval.
