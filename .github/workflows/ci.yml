@@ -59,6 +59,7 @@ jobs:
       - run: npm run test:aws-migration-contract
       - run: npm run test:aws-deployment-control
       - run: npm run test:aws-foundation-control
+      - run: npm run test:railway-preview
       - run: npm run build
       - name: Build production container
         run: |

@@ -239,6 +239,8 @@ function mapDocument(row: DocumentApiRow): DocumentRow {
 }
 
 export function DocumentControlDashboard() {
+  const developmentPreview =
+    process.env.NEXT_PUBLIC_DEPLOYMENT_TIER === "development-preview";
   const [documents, setDocuments] = useState(initialDocuments),
     [documentTypes, setDocumentTypes] = useState<DocumentTypeOption[]>([]),
     [nextCursor, setNextCursor] = useState<string | null>(null),
@@ -882,6 +884,12 @@ export function DocumentControlDashboard() {
           </aside>
         )}
         <main className="workspace-main">
+          {developmentPreview && (
+            <div className="environment-warning" role="status">
+              DEVELOPMENT PREVIEW — SYNTHETIC DATA ONLY — NOT VALIDATED FOR
+              REGULATED USE
+            </div>
+          )}
           <div className="preview-banner">
             <span>
               {live ? "AUTHENTICATED WORKSPACE" : "VALIDATION WORKSPACE"}
