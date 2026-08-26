@@ -20,11 +20,10 @@ represent a deployed, validated, or production-approved system.
 
 The workflow is inert until the GitHub environment, OIDC trust, least-privilege
 AWS role, repository variables, ECR repository, certificate, DNS zone, secrets,
-and foundation networking exist. The current apply path supports updates to an
-existing service stack, whose ECS cluster, migration roles, and encrypted log
-group are available before migration. Initial service creation remains blocked
-until those bootstrap resources are moved into the foundation contract; creating
-same-named resources separately would conflict with the service template.
+and foundation networking exist. The foundation now owns the ECS cluster,
+separate application and migration execution/task roles, and encrypted log group
+needed before migration. The apply path verifies those outputs, runs migration
+first, and supports both first-time service creation and later updates.
 
 ## Approval boundary
 

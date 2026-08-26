@@ -30,12 +30,21 @@ test("plan publishes amd64 images and creates but does not execute a change set"
 test("apply verifies the plan and migration before activation", () => {
   assert.match(workflow, /inputs\.operation == 'apply'/);
   assert.match(workflow, /CREATE_COMPLETE/);
-  assert.match(workflow, /ChangeSetType --output text\)" = UPDATE/);
+  assert.match(workflow, /\^\(CREATE\|UPDATE\)\$/);
   assert.match(workflow, /tasks-stopped/);
   const exitCheck = workflow.indexOf('test "$exit_code" = 0');
   const execute = workflow.indexOf("execute-change-set");
   assert.ok(exitCheck > 0 && execute > exitCheck);
   assert.match(workflow, /assignPublicIp=DISABLED/);
+  assert.match(workflow, /stack-create-complete/);
+  assert.match(workflow, /stack-update-complete/);
+});
+
+test("release inputs must match qualified foundation outputs", () => {
+  assert.match(workflow, /Verify qualified foundation outputs/);
+  for (const output of ["VpcId", "RepositoryUri", "ClusterName", "ApplicationExecutionRoleArn", "MigrationExecutionRoleArn"]) {
+    assert.match(workflow, new RegExp(`foundation_output ${output}`));
+  }
 });
 
 test("workflow is fixed to the approved California region and hostname", () => {

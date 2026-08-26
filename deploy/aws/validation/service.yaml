@@ -13,6 +13,18 @@ Parameters:
   EncryptionKeyArn:
     Type: String
     AllowedPattern: "arn:aws[a-zA-Z-]*:kms:us-west-1:[0-9]{12}:key/.+"
+  ClusterName:
+    Type: String
+    AllowedPattern: "[a-zA-Z0-9_-]+"
+  ApplicationLogGroupName:
+    Type: String
+    AllowedPattern: "/trace-qms/validation/application"
+  ApplicationExecutionRoleArn:
+    Type: String
+    AllowedPattern: "arn:aws[a-zA-Z-]*:iam::[0-9]{12}:role/.+"
+  ApplicationTaskRoleArn:
+    Type: String
+    AllowedPattern: "arn:aws[a-zA-Z-]*:iam::[0-9]{12}:role/.+"
   CertificateArn:
     Type: String
     AllowedPattern: "arn:aws[a-zA-Z-]*:acm:us-west-1:[0-9]{12}:certificate/.+"
@@ -30,10 +42,10 @@ Parameters:
     AllowedPattern: "sha256:[0-9a-f]{64}"
   DatabaseUrlSecretArn:
     Type: String
-    AllowedPattern: "arn:aws[a-zA-Z-]*:secretsmanager:us-west-1:[0-9]{12}:secret:.+"
+    AllowedPattern: "arn:aws[a-zA-Z-]*:secretsmanager:us-west-1:[0-9]{12}:secret:trace-qms/validation/database-.+"
   CronSecretArn:
     Type: String
-    AllowedPattern: "arn:aws[a-zA-Z-]*:secretsmanager:us-west-1:[0-9]{12}:secret:.+"
+    AllowedPattern: "arn:aws[a-zA-Z-]*:secretsmanager:us-west-1:[0-9]{12}:secret:trace-qms/validation/cron-.+"
   ReleaseVersion:
     Type: String
     Default: 0.1.0-rc.3
@@ -125,54 +137,6 @@ Resources:
         HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
         EvaluateTargetHealth: true
 
-  Cluster:
-    Type: AWS::ECS::Cluster
-    Properties:
-      ClusterName: trace-qms-validation
-      ClusterSettings: [{ Name: containerInsights, Value: enabled }]
-
-  LogGroup:
-    Type: AWS::Logs::LogGroup
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      LogGroupName: /trace-qms/validation/application
-      RetentionInDays: 365
-      KmsKeyId: !Ref EncryptionKeyArn
-
-  ExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal: { Service: ecs-tasks.amazonaws.com }
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
-      Policies:
-        - PolicyName: ReadOnlyRuntimeSecrets
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action: secretsmanager:GetSecretValue
-                Resource: [!Ref DatabaseUrlSecretArn, !Ref CronSecretArn]
-              - Effect: Allow
-                Action: kms:Decrypt
-                Resource: !Ref EncryptionKeyArn
-
-  TaskRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal: { Service: ecs-tasks.amazonaws.com }
-            Action: sts:AssumeRole
-
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
@@ -181,8 +145,8 @@ Resources:
       RequiresCompatibilities: [FARGATE]
       Cpu: "512"
       Memory: "1024"
-      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
-      TaskRoleArn: !GetAtt TaskRole.Arn
+      ExecutionRoleArn: !Ref ApplicationExecutionRoleArn
+      TaskRoleArn: !Ref ApplicationTaskRoleArn
       RuntimePlatform: { CpuArchitecture: X86_64, OperatingSystemFamily: LINUX }
       ContainerDefinitions:
         - Name: qms
@@ -206,7 +170,7 @@ Resources:
           LogConfiguration:
             LogDriver: awslogs
             Options:
-              awslogs-group: !Ref LogGroup
+              awslogs-group: !Ref ApplicationLogGroupName
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: qms
 
@@ -215,7 +179,7 @@ Resources:
     DependsOn: HttpsListener
     Properties:
       ServiceName: trace-qms-validation
-      Cluster: !Ref Cluster
+      Cluster: !Ref ClusterName
       TaskDefinition: !Ref TaskDefinition
       LaunchType: FARGATE
       PlatformVersion: LATEST
@@ -242,7 +206,7 @@ Resources:
     Properties:
       MinCapacity: 2
       MaxCapacity: 6
-      ResourceId: !Join ["/", [service, !Ref Cluster, !GetAtt Service.Name]]
+      ResourceId: !Join ["/", [service, !Ref ClusterName, !GetAtt Service.Name]]
       ScalableDimension: ecs:service:DesiredCount
       ServiceNamespace: ecs
   CpuScalingPolicy:
@@ -299,7 +263,7 @@ Resources:
 
 Outputs:
   ApplicationUrl: { Value: !Sub "https://${DomainName}" }
-  ClusterName: { Value: !Ref Cluster }
+  ClusterName: { Value: !Ref ClusterName }
   ServiceName: { Value: !GetAtt Service.Name }
   TaskDefinitionArn: { Value: !Ref TaskDefinition }
   LoadBalancerDnsName: { Value: !GetAtt LoadBalancer.DNSName }

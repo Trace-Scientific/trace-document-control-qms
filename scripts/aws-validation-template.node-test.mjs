@@ -29,3 +29,18 @@ test("contains no credential values", async () => {
   assert.doesNotMatch(template, /^\s+MasterUserPassword:/m);
   assert.doesNotMatch(template, /postgresql:\/\//);
 });
+
+test("bootstraps migration-safe ECS resources before the service stack", async () => {
+  const template = await readFile(templateUrl, "utf8");
+  assert.match(template, /^  Cluster:\n    Type: AWS::ECS::Cluster/m);
+  assert.match(template, /^  ApplicationLogGroup:\n    Type: AWS::Logs::LogGroup/m);
+  assert.match(template, /RetentionInDays: 365/);
+  for (const role of ["ApplicationExecutionRole", "ApplicationTaskRole", "MigrationExecutionRole", "MigrationTaskRole"]) {
+    assert.match(template, new RegExp(`^  ${role}:\\n    Type: AWS::IAM::Role`, "m"));
+  }
+  assert.match(template, /secret:trace-qms\/validation\/database-\*/);
+  assert.match(template, /secret:trace-qms\/validation\/cron-\*/);
+  for (const output of ["ClusterName", "ApplicationLogGroupName", "ApplicationExecutionRoleArn", "ApplicationTaskRoleArn", "MigrationExecutionRoleArn", "MigrationTaskRoleArn"]) {
+    assert.match(template, new RegExp(`^  ${output}:`, "m"));
+  }
+});
