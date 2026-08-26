@@ -23,7 +23,9 @@ data only.
 3. Generate `CRON_SECRET` with at least 32 random characters in Railway. Do not
    commit or share its value.
 4. Set `APP_BASE_URL` to the assigned HTTPS Railway domain.
-5. Confirm both `DEPLOYMENT_TIER` variables equal `development-preview`.
+5. Confirm `DEPLOYMENT_TIER` equals `development-preview`. The server renders
+   the preview warning from this runtime value; no browser-exposed environment
+   variable is required.
 6. Apply the project configuration, then verify `/api/health/readiness` returns
    HTTP 200 and the application displays the development-preview banner.
 7. Configure the GitHub `QMS_BASE_URL` variable only if the overdue-review

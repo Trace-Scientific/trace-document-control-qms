@@ -21,7 +21,6 @@ export default defineRailway(() => {
     env: {
       DATABASE_URL: database.env.DATABASE_URL,
       DEPLOYMENT_TIER: "development-preview",
-      NEXT_PUBLIC_DEPLOYMENT_TIER: "development-preview",
     },
   });
 
