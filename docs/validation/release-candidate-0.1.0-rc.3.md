@@ -15,6 +15,8 @@ represent a deployed, validated, or production-approved system.
 - Private Fargate migration task with public IP disabled.
 - Fail-closed activation after migration exits successfully.
 - Non-secret plan/apply metadata retained as workflow evidence for 90 days.
+- Separate protected foundation plan/apply with cost acknowledgment and exact
+  source, change, cost, and capacity verification.
 
 ## External prerequisites
 

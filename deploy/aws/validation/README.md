@@ -5,14 +5,21 @@ environment. It deliberately does not contain account IDs, hostnames,
 credentials, or secret values.
 
 The approved primary region is `us-west-1`, the hostname is `traceqms.com`, and
-the recovery class is Tier 1. Deploy `foundation.yaml` first with an explicit
-`--region us-west-1` argument and a reviewed copy of the example parameters.
+the recovery class is Tier 1. Plan and apply `foundation.yaml` only through the
+protected `AWS validation foundation` workflow after completing the
+[`foundation preflight`](../../../docs/operations/aws-validation-foundation-preflight.md).
 The foundation creates managed database bootstrap credentials plus the ECS
 cluster, encrypted application log group, and separate least-privilege
 application and migration execution/task roles required before the service stack
 exists. Name the secrets `trace-qms/validation/database-*` and
 `trace-qms/validation/cron-*` before registering a task. Foundation deployment
 or update requires `CAPABILITY_IAM` and explicit `--region us-west-1`.
+
+The foundation workflow requires a controlled change reference, cost-review
+reference, explicit ongoing-cost acknowledgment, and a full source SHA on
+`main`. Plan creates an unexecuted change set. Apply is a separate protected run
+that verifies the exact named change set and all capacity parameters before
+execution.
 
 After foundation approval, review `service.yaml` and the
 [`AWS validation service preflight`](../../../docs/operations/aws-validation-service-preflight.md).

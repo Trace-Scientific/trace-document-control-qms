@@ -1,0 +1,177 @@
+name: AWS validation foundation
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Create a plan or apply an approved plan
+        required: true
+        type: choice
+        options: [plan, apply]
+      release_sha:
+        description: Full 40-character commit SHA from main
+        required: true
+        type: string
+      change_reference:
+        description: Controlled infrastructure change record
+        required: true
+        type: string
+      cost_review_reference:
+        description: Approved cost review record
+        required: true
+        type: string
+      cost_acknowledged:
+        description: I acknowledge this foundation incurs ongoing AWS charges
+        required: true
+        default: false
+        type: boolean
+      database_instance_class:
+        description: Approved PostgreSQL instance class
+        required: true
+        default: db.m7g.large
+        type: choice
+        options: [db.m7g.large, db.m7g.xlarge]
+      database_allocated_storage:
+        description: Approved encrypted database storage in GiB
+        required: true
+        default: "100"
+        type: choice
+        options: ["100", "200", "500"]
+      change_set_name:
+        description: Required for apply; optional override for plan
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-validation-foundation
+  cancel-in-progress: false
+
+jobs:
+  foundation:
+    runs-on: ubuntu-latest
+    environment: validation-foundation
+    env:
+      AWS_REGION: us-west-1
+      AWS_ROLE_ARN: ${{ vars.AWS_VALIDATION_FOUNDATION_ROLE_ARN }}
+      EXPECTED_AWS_ACCOUNT_ID: ${{ vars.AWS_VALIDATION_ACCOUNT_ID }}
+      STACK_NAME: trace-qms-validation-foundation
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify immutable source and approved inputs
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          OPERATION: ${{ inputs.operation }}
+          CHANGE_REFERENCE: ${{ inputs.change_reference }}
+          COST_REVIEW_REFERENCE: ${{ inputs.cost_review_reference }}
+          COST_ACKNOWLEDGED: ${{ inputs.cost_acknowledged }}
+          DATABASE_INSTANCE_CLASS: ${{ inputs.database_instance_class }}
+          DATABASE_ALLOCATED_STORAGE: ${{ inputs.database_allocated_storage }}
+          CHANGE_SET_NAME: ${{ inputs.change_set_name }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+          test "$AWS_REGION" = us-west-1
+          test -n "$AWS_ROLE_ARN"
+          [[ "$EXPECTED_AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]
+          test "$COST_ACKNOWLEDGED" = true
+          [[ "$CHANGE_REFERENCE" =~ ^[A-Za-z0-9._:/-]{3,128}$ ]]
+          [[ "$COST_REVIEW_REFERENCE" =~ ^[A-Za-z0-9._:/-]{3,128}$ ]]
+          [[ "$DATABASE_INSTANCE_CLASS" =~ ^db\.m7g\.(large|xlarge)$ ]]
+          [[ "$DATABASE_ALLOCATED_STORAGE" =~ ^(100|200|500)$ ]]
+          if test "$OPERATION" = apply; then test -n "$CHANGE_SET_NAME"; fi
+
+      - uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: us-west-1
+
+      - name: Verify target AWS account
+        run: test "$(aws sts get-caller-identity --query Account --output text)" = "$EXPECTED_AWS_ACCOUNT_ID"
+
+      - name: Validate foundation template
+        run: aws cloudformation validate-template --template-body file://deploy/aws/validation/foundation.yaml
+
+      - name: Create unexecuted foundation change set
+        if: inputs.operation == 'plan'
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          CHANGE_REFERENCE: ${{ inputs.change_reference }}
+          COST_REVIEW_REFERENCE: ${{ inputs.cost_review_reference }}
+          DATABASE_INSTANCE_CLASS: ${{ inputs.database_instance_class }}
+          DATABASE_ALLOCATED_STORAGE: ${{ inputs.database_allocated_storage }}
+          REQUESTED_CHANGE_SET_NAME: ${{ inputs.change_set_name }}
+        run: |
+          set -euo pipefail
+          change_set_name="${REQUESTED_CHANGE_SET_NAME:-trace-qms-foundation-${RELEASE_SHA:0:12}}"
+          aws cloudformation deploy \
+            --stack-name "$STACK_NAME" \
+            --template-file deploy/aws/validation/foundation.yaml \
+            --no-execute-changeset \
+            --change-set-name "$change_set_name" \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              EnvironmentName=trace-qms-validation \
+              DatabaseInstanceClass="$DATABASE_INSTANCE_CLASS" \
+              DatabaseAllocatedStorage="$DATABASE_ALLOCATED_STORAGE" \
+              BackupRetentionDays=35 \
+              FoundationSourceSha="$RELEASE_SHA" \
+              ChangeReference="$CHANGE_REFERENCE" \
+              CostReviewReference="$COST_REVIEW_REFERENCE"
+          mkdir -p foundation-evidence
+          template_sha256=$(sha256sum deploy/aws/validation/foundation.yaml | cut -d' ' -f1)
+          printf 'operation=plan\nchange_set_name=%s\nrelease_sha=%s\ntemplate_sha256=%s\nchange_reference=%s\ncost_review_reference=%s\ndatabase_instance_class=%s\ndatabase_allocated_storage=%s\nbackup_retention_days=35\n' "$change_set_name" "$RELEASE_SHA" "$template_sha256" "$CHANGE_REFERENCE" "$COST_REVIEW_REFERENCE" "$DATABASE_INSTANCE_CLASS" "$DATABASE_ALLOCATED_STORAGE" > foundation-evidence/plan.txt
+
+      - name: Verify and execute approved foundation change set
+        if: inputs.operation == 'apply'
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          CHANGE_REFERENCE: ${{ inputs.change_reference }}
+          COST_REVIEW_REFERENCE: ${{ inputs.cost_review_reference }}
+          DATABASE_INSTANCE_CLASS: ${{ inputs.database_instance_class }}
+          DATABASE_ALLOCATED_STORAGE: ${{ inputs.database_allocated_storage }}
+          CHANGE_SET_NAME: ${{ inputs.change_set_name }}
+        run: |
+          set -euo pipefail
+          describe=(aws cloudformation describe-change-set --stack-name "$STACK_NAME" --change-set-name "$CHANGE_SET_NAME")
+          test "$("${describe[@]}" --query Status --output text)" = CREATE_COMPLETE
+          change_set_type=$("${describe[@]}" --query ChangeSetType --output text)
+          [[ "$change_set_type" =~ ^(CREATE|UPDATE)$ ]]
+          planned_parameter() {
+            "${describe[@]}" --query "Parameters[?ParameterKey=='$1'].ParameterValue | [0]" --output text
+          }
+          test "$(planned_parameter EnvironmentName)" = trace-qms-validation
+          test "$(planned_parameter DatabaseInstanceClass)" = "$DATABASE_INSTANCE_CLASS"
+          test "$(planned_parameter DatabaseAllocatedStorage)" = "$DATABASE_ALLOCATED_STORAGE"
+          test "$(planned_parameter BackupRetentionDays)" = 35
+          test "$(planned_parameter FoundationSourceSha)" = "$RELEASE_SHA"
+          test "$(planned_parameter ChangeReference)" = "$CHANGE_REFERENCE"
+          test "$(planned_parameter CostReviewReference)" = "$COST_REVIEW_REFERENCE"
+          mkdir -p foundation-evidence
+          aws cloudformation get-template --stack-name "$STACK_NAME" --change-set-name "$CHANGE_SET_NAME" --template-stage Original --output json | jq -jr '.TemplateBody' > foundation-evidence/planned-template.yaml
+          cmp --silent deploy/aws/validation/foundation.yaml foundation-evidence/planned-template.yaml
+          aws cloudformation execute-change-set --stack-name "$STACK_NAME" --change-set-name "$CHANGE_SET_NAME"
+          if test "$change_set_type" = CREATE; then
+            aws cloudformation wait stack-create-complete --stack-name "$STACK_NAME"
+          else
+            aws cloudformation wait stack-update-complete --stack-name "$STACK_NAME"
+          fi
+          aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs' > foundation-evidence/outputs.json
+          printf 'operation=apply\nchange_set_name=%s\nchange_set_type=%s\nrelease_sha=%s\nchange_reference=%s\ncost_review_reference=%s\n' "$CHANGE_SET_NAME" "$change_set_type" "$RELEASE_SHA" "$CHANGE_REFERENCE" "$COST_REVIEW_REFERENCE" > foundation-evidence/apply.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: aws-validation-foundation-${{ inputs.operation }}-${{ inputs.release_sha }}
+          path: foundation-evidence/*
+          if-no-files-found: ignore
+          retention-days: 90

@@ -14,6 +14,7 @@
     "test:aws-service-template": "node --test scripts/aws-service-template.node-test.mjs",
     "test:aws-migration-contract": "node --test scripts/aws-migration-contract.node-test.mjs",
     "test:aws-deployment-control": "node --test scripts/render-migration-task.node-test.mjs scripts/aws-deployment-workflow.node-test.mjs",
+    "test:aws-foundation-control": "node --test scripts/aws-foundation-workflow.node-test.mjs",
     "test:watch": "vitest",
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",
