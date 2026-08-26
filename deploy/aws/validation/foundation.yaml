@@ -9,15 +9,24 @@ Parameters:
   DatabaseInstanceClass:
     Type: String
     Default: db.m7g.large
+    AllowedValues: [db.m7g.large, db.m7g.xlarge]
   DatabaseAllocatedStorage:
     Type: Number
     Default: 100
-    MinValue: 20
+    AllowedValues: [100, 200, 500]
   BackupRetentionDays:
     Type: Number
     Default: 35
-    MinValue: 1
-    MaxValue: 35
+    AllowedValues: [35]
+  FoundationSourceSha:
+    Type: String
+    AllowedPattern: "[0-9a-f]{40}"
+  ChangeReference:
+    Type: String
+    AllowedPattern: "[A-Za-z0-9._:/-]{3,128}"
+  CostReviewReference:
+    Type: String
+    AllowedPattern: "[A-Za-z0-9._:/-]{3,128}"
 
 Resources:
   EncryptionKey:
@@ -337,3 +346,6 @@ Outputs:
   ApplicationTaskRoleArn: { Value: !GetAtt ApplicationTaskRole.Arn }
   MigrationExecutionRoleArn: { Value: !GetAtt MigrationExecutionRole.Arn }
   MigrationTaskRoleArn: { Value: !GetAtt MigrationTaskRole.Arn }
+  FoundationSourceSha: { Value: !Ref FoundationSourceSha }
+  ChangeReference: { Value: !Ref ChangeReference }
+  CostReviewReference: { Value: !Ref CostReviewReference }
