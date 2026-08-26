@@ -12,6 +12,7 @@
     "test:validation-config": "node --test scripts/validation-smoke.node-test.mjs",
     "test:aws-validation-template": "node --test scripts/aws-validation-template.node-test.mjs",
     "test:aws-service-template": "node --test scripts/aws-service-template.node-test.mjs",
+    "test:aws-migration-contract": "node --test scripts/aws-migration-contract.node-test.mjs",
     "test:watch": "vitest",
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",

@@ -17,6 +17,11 @@ The service template creates the two-task ECS service, HTTPS load balancer,
 `traceqms.com` Route 53 alias, log retention, autoscaling, and operational alarms.
 It must not be deployed until the private-network migration procedure is ready.
 
+The migration procedure uses the dedicated Docker `migration` target and
+`migration-task-definition.json`. The one-time task must run in a private
+application subnet, use the application security group, and exit successfully
+before the application service is started or updated.
+
 ## Required provisioned controls
 
 - An approved AWS account and region dedicated to validation where practical.
