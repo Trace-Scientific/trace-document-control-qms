@@ -7,7 +7,7 @@ for (const key of required) if (!process.env[key]) throw new Error(`${key} is re
 if (process.env.BOOTSTRAP_ADMIN_CONFIRM !== "CREATE-FIRST-ADMIN") throw new Error("BOOTSTRAP_ADMIN_CONFIRM must equal CREATE-FIRST-ADMIN");
 if (process.env.BOOTSTRAP_ADMIN_PASSWORD.length < 12) throw new Error("Bootstrap password must contain at least 12 characters");
 
-const permissions = ["document.read", "document.create", "document.submit", "document.review", "document.review.complete", "document.review.manage", "document.approve", "document.make_effective", "document.distribute", "document.acknowledge", "document.delete", "notification.manage"];
+const permissions = ["administration.manage", "audit.read", "document.read", "document.create", "document.submit", "document.review", "document.review.complete", "document.review.manage", "document.approve", "document.make_effective", "document.distribute", "document.acknowledge", "document.delete", "notification.manage"];
 const salt = randomBytes(16);
 const passwordHash = ["scrypt", 16384, 8, 1, salt.toString("base64url"), scryptSync(process.env.BOOTSTRAP_ADMIN_PASSWORD, salt, 64, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }).toString("base64url")].join("$");
 

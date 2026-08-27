@@ -26,6 +26,10 @@ export async function GET(request: NextRequest) {
       organizationId,
       permission: "notification.manage",
     }).allowed;
+    const canManageAccess = evaluateAuthorization(context, {
+      organizationId,
+      permission: "administration.manage",
+    }).allowed;
     const canReadDocuments = evaluateAuthorization(context, {
       organizationId,
       permission: "document.read",
@@ -76,6 +80,7 @@ export async function GET(request: NextRequest) {
         capabilities: {
           canManageReviews,
           canManageNotifications,
+          canManageAccess,
           canReadDocuments,
           canCreateDocuments,
           canSubmitDocuments,
