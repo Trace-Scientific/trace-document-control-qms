@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Icon, type IconName } from "./icon";
 import {
   filterDashboardDocuments,
@@ -112,6 +113,7 @@ type DocumentDetail = {
 type LiveData = {
   organizationId: string;
   userId: string;
+  user: { firstName: string; lastName: string; email: string };
   capabilities: {
     canReadDocuments: boolean;
     canCreateDocuments: boolean;
@@ -241,6 +243,7 @@ function mapDocument(row: DocumentApiRow): DocumentRow {
 export function DocumentControlDashboard({
   developmentPreview = false,
 }: Readonly<{ developmentPreview?: boolean }>) {
+  const router = useRouter();
   const [documents, setDocuments] = useState(initialDocuments),
     [documentTypes, setDocumentTypes] = useState<DocumentTypeOption[]>([]),
     [nextCursor, setNextCursor] = useState<string | null>(null),
@@ -293,6 +296,13 @@ export function DocumentControlDashboard({
     }),
     unread = summary.unread,
     overdue = summary.overdue;
+  const initials = live ? `${live.user.firstName[0] ?? ""}${live.user.lastName[0] ?? ""}` : "";
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.replace("/login");
+    router.refresh();
+  }
 
   useEffect(() => {
     let active = true;
@@ -804,12 +814,12 @@ export function DocumentControlDashboard({
             </div>
           </div>
           <div className="user-card">
-            <div className="avatar">JR</div>
+            <div className="avatar">{initials}</div>
             <div>
-              <strong>James Ramsey</strong>
-              <span>Quality Administrator</span>
+              <strong>{live ? `${live.user.firstName} ${live.user.lastName}` : "Loading account"}</strong>
+              <span>{live?.user.email ?? "Authenticated user"}</span>
             </div>
-            <Icon name="more" />
+            <button type="button" onClick={logout}>Sign out</button>
           </div>
         </div>
       </aside>
@@ -839,7 +849,7 @@ export function DocumentControlDashboard({
             <Icon name="bell" />
             {unread > 0 && <span className="notification-count">{unread}</span>}
           </button>
-          <div className="top-avatar">JR</div>
+          <div className="top-avatar">{initials}</div>
         </header>
         {inboxOpen && (
           <aside className="notification-drawer" aria-label="Notifications">

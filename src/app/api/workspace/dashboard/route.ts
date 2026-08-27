@@ -8,11 +8,16 @@ import { PrismaDeliveryStore } from "@/lib/notifications/prisma-store";
 import { NotificationInboxService } from "@/lib/notifications/service";
 import { PrismaReviewStore } from "@/lib/reviews/prisma-store";
 import { DocumentReviewService } from "@/lib/reviews/service";
+import { db } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   try {
     const context = await authenticateRequest(request),
       organizationId = context.organizationId;
+    const user = await db.user.findUniqueOrThrow({
+      where: { id: context.userId },
+      select: { firstName: true, lastName: true, email: true },
+    });
     const canManageReviews = evaluateAuthorization(context, {
       organizationId,
       permission: "document.review.manage",
@@ -67,6 +72,7 @@ export async function GET(request: NextRequest) {
       data: {
         organizationId,
         userId: context.userId,
+        user,
         capabilities: {
           canManageReviews,
           canManageNotifications,
