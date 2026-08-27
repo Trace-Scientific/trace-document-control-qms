@@ -1,7 +1,7 @@
 BEGIN;
-INSERT INTO "Organization" ("id","legalName","displayName","updatedAt")
-VALUES ('00000000-0000-4000-8000-000000000001','Tenant One','Tenant One',CURRENT_TIMESTAMP),
-       ('00000000-0000-4000-8000-000000000002','Tenant Two','Tenant Two',CURRENT_TIMESTAMP);
+INSERT INTO "Organization" ("id","loginCode","legalName","displayName","updatedAt")
+VALUES ('00000000-0000-4000-8000-000000000001','tenant-one','Tenant One','Tenant One',CURRENT_TIMESTAMP),
+       ('00000000-0000-4000-8000-000000000002','tenant-two','Tenant Two','Tenant Two',CURRENT_TIMESTAMP);
 INSERT INTO "Site" ("id","organizationId","name","updatedAt")
 VALUES ('10000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','Site One',CURRENT_TIMESTAMP);
 INSERT INTO "User" ("id","organizationId","email","firstName","lastName","updatedAt")
