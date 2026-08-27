@@ -9,6 +9,7 @@ import {
 } from "@/lib/documents/dashboard";
 import { diffLines } from "@/lib/documents/diff";
 import { reviewStageSelectionsAreValid } from "@/lib/documents/workflow-ui";
+import { AccessAdministration } from "./access-administration";
 
 type ApiStatus =
   | "DRAFT"
@@ -123,6 +124,7 @@ type LiveData = {
     canMakeDocumentsEffective: boolean;
     canManageReviews: boolean;
     canManageNotifications: boolean;
+    canManageAccess: boolean;
   };
   notifications: NotificationRow[];
   reviews: ReviewRow[];
@@ -1202,6 +1204,7 @@ export function DocumentControlDashboard({
           )}
           {view === "Administration" && (
             <div className="admin-stack">
+            {live?.capabilities.canManageAccess && <AccessAdministration />}
             {live?.capabilities.canManageReviews && (
               <section className="panel documents-panel">
                 <div className="panel-header">
