@@ -9,6 +9,7 @@ datasource db {
 
 model Organization {
   id                   String                     @id @default(uuid()) @db.Uuid
+  loginCode            String                     @unique
   legalName            String
   displayName          String
   timezone             String                     @default("America/Los_Angeles")
