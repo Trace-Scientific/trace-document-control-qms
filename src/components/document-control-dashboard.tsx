@@ -10,6 +10,7 @@ import {
 import { diffLines } from "@/lib/documents/diff";
 import { reviewStageSelectionsAreValid } from "@/lib/documents/workflow-ui";
 import { AccessAdministration } from "./access-administration";
+import { ControlledFiles } from "./controlled-files";
 
 type ApiStatus =
   | "DRAFT"
@@ -992,6 +993,8 @@ export function DocumentControlDashboard({
             </article>
           </section>
           {view === "Documents" && (
+            <>
+            {live?.capabilities.canReadDocuments && <ControlledFiles canCreate={live.capabilities.canCreateDocuments} />}
             <section className="panel documents-panel">
               <div className="panel-header">
                 <div>
@@ -1136,6 +1139,7 @@ export function DocumentControlDashboard({
                 </>
               )}
             </section>
+            </>
           )}
           {view === "Review queue" && (
             <section className="panel documents-panel">

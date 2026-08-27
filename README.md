@@ -52,6 +52,12 @@ Low-cost product review uses the isolated Railway development preview described
 in the [`Railway preview runbook`](docs/operations/railway-preview-runbook.md).
 That environment is limited to synthetic data and is not validation or
 production evidence.
+
+Private controlled files use the S3-compatible boundary described in
+[`private-file-storage.md`](docs/operations/private-file-storage.md). Uploads
+fail closed when storage is not configured and remain unavailable until an
+external scanner submits an authenticated clean result.
+
 - health endpoint
 - automated unit-test configuration
 - ESLint and strict TypeScript
