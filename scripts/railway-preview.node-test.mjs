@@ -46,3 +46,11 @@ test("preview image deploys migrations without changing the AWS runtime", () => 
   assert.doesNotMatch(productionDockerfile, /prisma migrate deploy && node server\.js/);
   assert.match(runbook, /\/Dockerfile\.preview/);
 });
+
+test("preview image packages the controlled first-administrator bootstrap only in preview", () => {
+  assert.match(
+    previewDockerfile,
+    /COPY --from=builder --chown=qms:qms \/app\/scripts\/bootstrap-admin\.mjs \.\/scripts\/bootstrap-admin\.mjs/,
+  );
+  assert.doesNotMatch(productionDockerfile, /bootstrap-admin\.mjs/);
+});

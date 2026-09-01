@@ -23,6 +23,7 @@ COPY --from=dependencies --chown=qms:qms /app/node_modules ./node_modules
 COPY --from=builder --chown=qms:qms /app/.next/standalone ./
 COPY --from=builder --chown=qms:qms /app/.next/static ./.next/static
 COPY --from=builder --chown=qms:qms /app/prisma ./prisma
+COPY --from=builder --chown=qms:qms /app/scripts/bootstrap-admin.mjs ./scripts/bootstrap-admin.mjs
 USER qms
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
