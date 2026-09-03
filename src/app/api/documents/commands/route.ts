@@ -112,11 +112,13 @@ export async function POST(request: NextRequest) {
     if (error instanceof DocumentConcurrencyError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }
+    if (error instanceof DocumentConfigurationError) {
+      return NextResponse.json({ error: error.message }, { status: 422 });
+    }
     if (
       error instanceof z.ZodError ||
       error instanceof DocumentLifecycleError ||
-      error instanceof DocumentCommandError ||
-      error instanceof DocumentConfigurationError
+      error instanceof DocumentCommandError
     ) {
       return NextResponse.json(
         { error: "The document command is invalid" },

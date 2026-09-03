@@ -8,6 +8,7 @@ import { hashPassword } from "@/lib/security/crypto";
 
 const uuid = z.string().uuid();
 const documentTypeCode = z.string().trim().min(1).max(30).regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/).transform((value) => value.toUpperCase());
+const reviewMonths = z.number().int().min(1).max(120).nullable();
 const schema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("UPDATE_ORGANIZATION"), displayName: z.string().trim().min(2).max(120) }),
   z.object({ operation: z.literal("CREATE_SITE"), name: z.string().trim().min(2).max(120) }),
@@ -15,7 +16,8 @@ const schema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("CREATE_USER"), email: z.string().trim().toLowerCase().email().max(254), firstName: z.string().trim().min(1).max(80), lastName: z.string().trim().min(1).max(80), temporaryPassword: z.string().min(12).max(1024) }),
   z.object({ operation: z.literal("CREATE_ROLE"), name: z.string().trim().min(2).max(100), permissionKeys: z.array(z.string().min(1)).min(1).max(100) }),
   z.object({ operation: z.literal("ASSIGN_ROLE"), userId: uuid, roleId: uuid }),
-  z.object({ operation: z.literal("CREATE_DOCUMENT_TYPE"), code: documentTypeCode, name: z.string().trim().min(2).max(120), reviewMonths: z.number().int().min(1).max(120).nullable() }),
+  z.object({ operation: z.literal("CREATE_DOCUMENT_TYPE"), code: documentTypeCode, name: z.string().trim().min(2).max(120), reviewMonths }),
+  z.object({ operation: z.literal("UPDATE_DOCUMENT_TYPE_REVIEW_INTERVAL"), documentTypeId: uuid, reviewMonths }),
   z.object({ operation: z.literal("SET_DOCUMENT_TYPE_ACTIVE"), documentTypeId: uuid, active: z.boolean() }),
 ]);
 
@@ -50,6 +52,11 @@ export async function POST(request: NextRequest) {
         if (duplicate) throw new Error("Document type already exists");
         const row = await tx.documentType.create({ data: { organizationId: context.organizationId, code: input.code, name: input.name, reviewMonths: input.reviewMonths, active: true } });
         entityType = "DocumentType"; entityId = row.id; metadata = { ...metadata, code: row.code, name: row.name, reviewMonths: row.reviewMonths, active: row.active };
+      } else if (input.operation === "UPDATE_DOCUMENT_TYPE_REVIEW_INTERVAL") {
+        const row = await tx.documentType.findFirst({ where: { id: input.documentTypeId, organizationId: context.organizationId } });
+        if (!row) throw new Error("Access denied");
+        const updated = await tx.documentType.update({ where: { id: row.id }, data: { reviewMonths: input.reviewMonths } });
+        entityType = "DocumentType"; entityId = updated.id; metadata = { ...metadata, code: updated.code, name: updated.name, priorReviewMonths: row.reviewMonths, reviewMonths: updated.reviewMonths, active: updated.active };
       } else {
         const row = await tx.documentType.findFirst({ where: { id: input.documentTypeId, organizationId: context.organizationId } });
         if (!row) throw new Error("Access denied");
