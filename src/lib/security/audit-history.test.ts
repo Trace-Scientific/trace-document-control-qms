@@ -28,8 +28,11 @@ describe("audit history viewer boundary", () => {
       "newHash",
       "reason",
       "metadata",
-      "actor",
     ]) expect(route).toContain(`${field}: true`);
+    expect(route).toContain("actor: {");
+    expect(route).toContain("firstName: true");
+    expect(route).toContain("lastName: true");
+    expect(route).toContain("email: true");
     expect(route).not.toContain("export async function POST");
     expect(route).not.toContain("auditEvent.update");
     expect(route).not.toContain("auditEvent.delete");
