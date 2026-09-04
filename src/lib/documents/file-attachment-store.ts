@@ -16,6 +16,11 @@ export class PrismaDocumentFileAttachmentStore implements DocumentFileAttachment
   }
   async attach(input: Parameters<DocumentFileAttachmentStore["attach"]>[0]) {
     return db.$transaction(async (transaction) => {
+      const file = await transaction.fileObject.findFirst({
+        where: { organizationId: input.organizationId, id: input.fileId, status: "AVAILABLE" },
+        select: { id: true, sha256: true },
+      });
+      if (!file || file.sha256 !== input.sha256) return false;
       const changed = await transaction.documentVersion.updateMany({
         where: {
           organizationId: input.organizationId,
@@ -23,7 +28,6 @@ export class PrismaDocumentFileAttachmentStore implements DocumentFileAttachment
           status: "DRAFT",
           lockVersion: input.expectedLockVersion,
           fileId: null,
-          organization: { files: { some: { id: input.fileId, status: "AVAILABLE" } } },
         },
         data: { fileId: input.fileId, lockVersion: { increment: 1 } },
       });
