@@ -31,6 +31,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Invalid audit date filter" }, { status: 400 });
     }
 
+    if (cursor) {
+      const cursorRow = await db.auditEvent.findFirst({
+        where: { id: cursor, organizationId: context.organizationId },
+        select: { id: true },
+      });
+      if (!cursorRow) {
+        return NextResponse.json({ error: "Invalid audit cursor" }, { status: 400 });
+      }
+    }
+
     const rows = await db.auditEvent.findMany({
       where: {
         organizationId: context.organizationId,
