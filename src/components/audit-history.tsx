@@ -54,9 +54,25 @@ export function AuditHistory() {
   }
 
   useEffect(() => {
-    load(null, filters);
-    // Initial authorized read only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let active = true;
+    fetch("/api/audit?limit=25", { credentials: "same-origin" })
+      .then(async (response) => ({
+        response,
+        body: await response.json().catch(() => null),
+      }))
+      .then(({ response, body }) => {
+        if (!active) return;
+        if (!response.ok) {
+          setError(body?.error ?? "Audit history could not be loaded.");
+          return;
+        }
+        const page = body.data as AuditPage;
+        setRows(page.items);
+        setNextCursor(page.nextCursor);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   function applyFilters(event: FormEvent<HTMLFormElement>) {
