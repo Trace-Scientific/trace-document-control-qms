@@ -121,6 +121,15 @@ export class PrismaDocumentQueryStore implements DocumentQueryStore {
           },
         },
         author: { select: { firstName: true, lastName: true } },
+        file: {
+          select: {
+            id: true,
+            originalName: true,
+            mimeType: true,
+            sha256: true,
+            status: true,
+          },
+        },
       },
       orderBy: [{ versionNumber: "desc" }, { createdAt: "desc" }],
     });
@@ -141,6 +150,7 @@ export class PrismaDocumentQueryStore implements DocumentQueryStore {
         effectiveAt: row.effectiveAt,
         reviewDueAt: row.reviewDueAt,
         createdAt: row.createdAt,
+        file: row.file,
       })),
       versionIds = versions.map((row) => row.id);
     const [tasks, reviewerRows] = await Promise.all([

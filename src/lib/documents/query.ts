@@ -40,6 +40,7 @@ export interface DocumentDetailVersion {
   effectiveAt: Date | null;
   reviewDueAt: Date | null;
   createdAt: Date;
+  file: { id: string; originalName: string; mimeType: string; sha256: string; status: string } | null;
 }
 export interface ReviewAssignment {
   id: string;
