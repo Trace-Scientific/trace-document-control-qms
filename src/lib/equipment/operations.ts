@@ -5,7 +5,7 @@ export class EquipmentOperationsValidationError extends Error {}
 export type EquipmentServiceOutcome="COMPLETED"|"FAILED";
 export type EquipmentServiceRecord={id:string;organizationId:string;equipmentId:string;servicedAt:Date;provider:string|null;description:string;outcome:EquipmentServiceOutcome;evidenceFileId:string|null;createdByUserId:string;createdAt:Date};
 export type EquipmentAnalytics={total:number;active:number;outOfService:number;retired:number;activeHolds:number;calibrationDue30:number;maintenanceDue30:number;serviceFailures90:number};
-export type EquipmentWorkspaceItem={id:string;equipmentNumber:string;name:string;status:string;nextCalibrationDueAt:Date|null;nextMaintenanceDueAt:Date|null;activeHoldCount:number;usable:boolean};
+export type EquipmentWorkspaceItem={id:string;equipmentNumber:string;name:string;status:string;calibrationRequired:boolean;maintenanceRequired:boolean;nextCalibrationDueAt:Date|null;nextMaintenanceDueAt:Date|null;activeHoldCount:number;usable:boolean};
 
 export interface EquipmentOperationsStore{
   listServiceRecords(organizationId:string,equipmentId:string):Promise<EquipmentServiceRecord[]>;
