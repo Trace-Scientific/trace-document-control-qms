@@ -267,6 +267,14 @@
   background: #fff;
 }
 
+.equipment-admin-form > .equipment-schedule-date-field {
+  align-self: start;
+}
+
+.equipment-admin-form > .equipment-schedule-date-field .field-help {
+  min-height: 30px;
+}
+
 .equipment-form-span {
   grid-column: 1 / -1;
 }
