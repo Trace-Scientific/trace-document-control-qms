@@ -26,17 +26,9 @@ function validGovernedDate(value:string){
 export function EquipmentScheduleCorrectionWorkspace(){
   const [equipment,setEquipment]=useState<EquipmentItem[]>([]);
   const [selected,setSelected]=useState("");
-  const [nextCalibrationDueAt,setNextCalibrationDueAt]=useState("");
-  const [nextMaintenanceDueAt,setNextMaintenanceDueAt]=useState("");
-  const [reason,setReason]=useState("");
   const [message,setMessage]=useState("");
   const [error,setError]=useState("");
   const selectedItem=useMemo(()=>equipment.find(item=>item.id===selected)??null,[equipment,selected]);
-
-  function applySchedule(item:EquipmentItem|null){
-    setNextCalibrationDueAt(normalizedDate(item?.nextCalibrationDueAt));
-    setNextMaintenanceDueAt(normalizedDate(item?.nextMaintenanceDueAt));
-  }
 
   async function loadEquipment(preferredId?:string){
     const response=await fetch("/api/equipment/operations",{cache:"no-store"});
@@ -46,7 +38,6 @@ export function EquipmentScheduleCorrectionWorkspace(){
     setEquipment(items);
     const nextSelected=preferredId&&items.some(item=>item.id===preferredId)?preferredId:items[0]?.id??"";
     setSelected(nextSelected);
-    applySchedule(items.find(item=>item.id===nextSelected)??null);
     setError("");
   }
 
@@ -56,20 +47,23 @@ export function EquipmentScheduleCorrectionWorkspace(){
     if(cancelled)return;
     if(!response.ok){setError(body?.error??"Unable to load equipment");return;}
     const items:EquipmentItem[]=(body?.data?.equipment??[]).filter((item:EquipmentItem)=>item.status!=="RETIRED");
-    const first=items[0]??null;
-    setEquipment(items);setSelected(first?.id??"");applySchedule(first);
+    setEquipment(items);setSelected(items[0]?.id??"");
   }void initialLoad();return()=>{cancelled=true;};},[]);
 
   function changeEquipment(equipmentId:string){
-    setSelected(equipmentId);setMessage("");setReason("");
-    applySchedule(equipment.find(item=>item.id===equipmentId)??null);
+    setSelected(equipmentId);setMessage("");
   }
 
-  async function correctSchedule(event:React.FormEvent){
+  async function correctSchedule(event:React.FormEvent<HTMLFormElement>){
     event.preventDefault();
     if(!selected||!selectedItem)return;
+    const formData=new FormData(event.currentTarget);
+    const nextCalibrationDueAt=String(formData.get("nextCalibrationDueAt")??"").trim();
+    const nextMaintenanceDueAt=String(formData.get("nextMaintenanceDueAt")??"").trim();
+    const reason=String(formData.get("reason")??"").trim();
     if(selectedItem.calibrationRequired&&!validGovernedDate(nextCalibrationDueAt)){setMessage("Enter the next calibration due date as YYYY-MM-DD using a year from 1900 through 9999.");return;}
     if(selectedItem.maintenanceRequired&&!validGovernedDate(nextMaintenanceDueAt)){setMessage("Enter the next maintenance due date as YYYY-MM-DD using a year from 1900 through 9999.");return;}
+    if(!reason){setMessage("Enter the required correction reason before saving.");return;}
     setMessage("");
     const response=await fetch(`/api/equipment/${selected}`,{
       method:"PATCH",
@@ -85,27 +79,23 @@ export function EquipmentScheduleCorrectionWorkspace(){
     setMessage(response.ok?"Equipment compliance schedule corrected with governed audit history.":body?.error??"Equipment schedule correction failed");
     if(response.ok){
       const changedEquipmentId=selected;
-      setReason("");
+      event.currentTarget.reset();
       await loadEquipment(changedEquipmentId);
       window.dispatchEvent(new CustomEvent("qms:equipment-changed",{detail:{equipmentId:changedEquipmentId}}));
     }
   }
 
-  const calibrationMissing=Boolean(selectedItem?.calibrationRequired)&&!nextCalibrationDueAt.trim();
-  const maintenanceMissing=Boolean(selectedItem?.maintenanceRequired)&&!nextMaintenanceDueAt.trim();
-  const missingReason=!reason.trim();
-
   return <section className="card form-stack equipment-register-style">
     <h3>Correct compliance schedule</h3>
     <p>Correct an equipment calibration or maintenance due date when a documented data-entry error is identified. A required reason and before/after values are preserved in the audit trail and Operational history.</p>
-    <form className="admin-form equipment-admin-form" onSubmit={correctSchedule}>
+    <form key={selected||"no-equipment"} className="admin-form equipment-admin-form" onSubmit={correctSchedule}>
       <label>Equipment<select required value={selected} onChange={event=>changeEquipment(event.target.value)} disabled={!equipment.length}>{equipment.length?equipment.map(item=><option key={item.id} value={item.id}>{item.equipmentNumber} — {item.name}</option>):<option value="">No equipment registered</option>}</select></label>
       {selectedItem&&<p className="equipment-form-span"><strong>Current calibration due:</strong> {normalizedDate(selectedItem.nextCalibrationDueAt)||"—"} · <strong>Current maintenance due:</strong> {normalizedDate(selectedItem.nextMaintenanceDueAt)||"—"}</p>}
-      <label>Next calibration due<input type="text" inputMode="numeric" placeholder="YYYY-MM-DD" required={Boolean(selectedItem?.calibrationRequired)} disabled={!selectedItem?.calibrationRequired} value={nextCalibrationDueAt} onChange={event=>setNextCalibrationDueAt(event.target.value)} maxLength={10} aria-describedby="equipment-calibration-date-help"/><span id="equipment-calibration-date-help" className="field-help">YYYY-MM-DD. Existing legacy values remain editable so they can be corrected through this governed workflow.</span></label>
-      <label>Next maintenance due<input type="text" inputMode="numeric" placeholder="YYYY-MM-DD" required={Boolean(selectedItem?.maintenanceRequired)} disabled={!selectedItem?.maintenanceRequired} value={nextMaintenanceDueAt} onChange={event=>setNextMaintenanceDueAt(event.target.value)} maxLength={10} aria-describedby="equipment-maintenance-date-help"/><span id="equipment-maintenance-date-help" className="field-help">YYYY-MM-DD. Enter the intended corrected due date; this does not record completed maintenance.</span></label>
-      <label className="equipment-form-wide">Required correction reason<textarea required rows={3} maxLength={1000} value={reason} onChange={event=>setReason(event.target.value)}/></label>
-      {(calibrationMissing||maintenanceMissing||missingReason)&&selectedItem&&<p className="equipment-form-span" role="status">To save this governed correction, complete {calibrationMissing?"the next calibration due date":maintenanceMissing?"the next maintenance due date":"the required correction reason"}.</p>}
-      <button type="submit" disabled={!selected||calibrationMissing||maintenanceMissing||missingReason}>Save governed schedule correction</button>
+      <label>Next calibration due<input name="nextCalibrationDueAt" type="text" inputMode="numeric" placeholder="YYYY-MM-DD" required={Boolean(selectedItem?.calibrationRequired)} disabled={!selectedItem?.calibrationRequired} defaultValue={normalizedDate(selectedItem?.nextCalibrationDueAt)} maxLength={10} pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}" aria-describedby="equipment-calibration-date-help"/><span id="equipment-calibration-date-help" className="field-help">YYYY-MM-DD. This native editable field preserves the current value until you deliberately correct it.</span></label>
+      <label>Next maintenance due<input name="nextMaintenanceDueAt" type="text" inputMode="numeric" placeholder="YYYY-MM-DD" required={Boolean(selectedItem?.maintenanceRequired)} disabled={!selectedItem?.maintenanceRequired} defaultValue={normalizedDate(selectedItem?.nextMaintenanceDueAt)} maxLength={10} pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}" aria-describedby="equipment-maintenance-date-help"/><span id="equipment-maintenance-date-help" className="field-help">YYYY-MM-DD. Enter the intended corrected due date; this does not record completed maintenance.</span></label>
+      <label className="equipment-form-wide">Required correction reason<textarea name="reason" required rows={3} maxLength={1000}/></label>
+      <p className="equipment-form-span" role="status">Enter the complete governed correction, then save. The server revalidates dates, permissions, reason, and audit requirements.</p>
+      <button type="submit" disabled={!selected}>Save governed schedule correction</button>
       {message&&<p className="equipment-form-span" role="status">{message}</p>}
       {error&&<p className="status-error equipment-form-span">{error}</p>}
     </form>
