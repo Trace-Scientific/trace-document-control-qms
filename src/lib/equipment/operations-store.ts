@@ -30,7 +30,7 @@ export class PrismaEquipmentOperationsStore implements EquipmentOperationsStore{
     `);return rows[0]??{total:0,active:0,outOfService:0,retired:0,activeHolds:0,calibrationDue30:0,maintenanceDue30:0,serviceFailures90:0};
   }
   workspace(organizationId:string){return db.$queryRaw<EquipmentWorkspaceItem[]>(Prisma.sql`
-    SELECT e.id,e."equipmentNumber",e.name,e.status,e."nextCalibrationDueAt",e."nextMaintenanceDueAt",count(DISTINCT h.id)::int AS "activeHoldCount",
+    SELECT e.id,e."equipmentNumber",e.name,e.status,e."calibrationRequired",e."maintenanceRequired",e."nextCalibrationDueAt",e."nextMaintenanceDueAt",count(DISTINCT h.id)::int AS "activeHoldCount",
       (e.status='ACTIVE' AND count(DISTINCT h.id)=0 AND count(DISTINCT r.id)=0 AND (NOT e."calibrationRequired" OR e."nextCalibrationDueAt">=CURRENT_DATE) AND (NOT e."maintenanceRequired" OR e."nextMaintenanceDueAt">=CURRENT_DATE)) AS usable
     FROM "Equipment" e
     LEFT JOIN "EquipmentComplianceHold" h ON h."organizationId"=e."organizationId" AND h."equipmentId"=e.id AND h."clearedAt" IS NULL
