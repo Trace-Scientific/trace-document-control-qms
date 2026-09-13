@@ -275,6 +275,25 @@
   min-height: 30px;
 }
 
+.equipment-register-style .equipment-admin-form:has(select option[value="CALIBRATED"]) > .equipment-schedule-date-field {
+  grid-column: span 4;
+}
+
+.equipment-register-style .equipment-admin-form:has(select option[value="CALIBRATED"]) > .equipment-schedule-date-field > input[type="date"],
+.equipment-register-style .equipment-admin-form:has(select option[value="CALIBRATED"]) > .equipment-schedule-date-field > select {
+  height: 38px;
+  min-height: 38px;
+}
+
+.equipment-register-style .equipment-admin-form:has(select option[value="RETIRED"]) > .equipment-form-wide {
+  grid-column: span 6;
+}
+
+.equipment-register-style .equipment-admin-form:has(select option[value="RETIRED"]) > .equipment-form-wide > textarea {
+  height: 48px;
+  min-height: 48px;
+}
+
 .equipment-form-span {
   grid-column: 1 / -1;
 }
