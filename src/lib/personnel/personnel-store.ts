@@ -140,15 +140,38 @@ export class PrismaPersonnelStore implements PersonnelStore {
   }
 
   async listAssignments(organizationId: string, employeeId?: string): Promise<EmployeeJobAssignmentRecord[]> {
-    return db.$queryRaw<EmployeeJobAssignmentRecord[]>(employeeId ? Prisma.sql`
-      SELECT * FROM "EmployeeJobAssignment"
+    type AssignmentReadRow = Omit<EmployeeJobAssignmentRecord, "assignedAt" | "endedAt" | "createdAt"> & {
+      assignedAt: string;
+      endedAt: string | null;
+      createdAt: string;
+    };
+    const rows = await db.$queryRaw<AssignmentReadRow[]>(employeeId ? Prisma.sql`
+      SELECT
+        "id", "organizationId", "employeeId", "jobDescriptionId", "siteId", "departmentId", "isPrimary",
+        "assignedAt"::text AS "assignedAt",
+        "endedAt"::text AS "endedAt",
+        "createdByUserId",
+        "createdAt"::text AS "createdAt"
+      FROM "EmployeeJobAssignment"
       WHERE "organizationId" = ${organizationId}::uuid AND "employeeId" = ${employeeId}::uuid
       ORDER BY "assignedAt" DESC, "createdAt" DESC
     ` : Prisma.sql`
-      SELECT * FROM "EmployeeJobAssignment"
+      SELECT
+        "id", "organizationId", "employeeId", "jobDescriptionId", "siteId", "departmentId", "isPrimary",
+        "assignedAt"::text AS "assignedAt",
+        "endedAt"::text AS "endedAt",
+        "createdByUserId",
+        "createdAt"::text AS "createdAt"
+      FROM "EmployeeJobAssignment"
       WHERE "organizationId" = ${organizationId}::uuid
       ORDER BY "assignedAt" DESC, "createdAt" DESC
     `);
+    return rows.map((row) => ({
+      ...row,
+      assignedAt: new Date(`${row.assignedAt}T00:00:00.000Z`),
+      endedAt: row.endedAt ? new Date(`${row.endedAt}T00:00:00.000Z`) : null,
+      createdAt: new Date(row.createdAt),
+    }));
   }
 
   async createAssignment(input: { organizationId: string; employeeId: string; jobDescriptionId: string; siteId: string | null; departmentId: string | null; isPrimary: boolean; assignedAt: Date; actorUserId: string }): Promise<EmployeeJobAssignmentRecord> {

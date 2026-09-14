@@ -7,6 +7,15 @@ type Job = { id: string; code: string; title: string; summary: string | null; ac
 type Assignment = { id: string; employeeId: string; jobDescriptionId: string; siteId: string | null; departmentId: string | null; isPrimary: boolean; assignedAt: string; endedAt: string | null };
 type PersonnelSection = "library" | "employee" | "assignments" | "jobs";
 
+function formatDateOnly(value: string | null) {
+  if (!value) return "—";
+  const datePart = value.slice(0, 10);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+  if (!match) return datePart;
+  const [, year, month, day] = match;
+  return `${Number(month)}/${Number(day)}/${year}`;
+}
+
 export function PersonnelManagementWorkspace({ canManage }: { canManage: boolean }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -17,19 +26,38 @@ export function PersonnelManagementWorkspace({ canManage }: { canManage: boolean
   const [section, setSection] = useState<PersonnelSection>("library");
 
   async function load() {
-    const [employeeResponse, jobResponse, assignmentResponse] = await Promise.all([fetch("/api/personnel", { credentials: "same-origin" }), fetch("/api/personnel/jobs", { credentials: "same-origin" }), fetch("/api/personnel/assignments", { credentials: "same-origin" })]);
+    const [employeeResponse, jobResponse, assignmentResponse] = await Promise.all([
+      fetch("/api/personnel", { credentials: "same-origin", cache: "no-store" }),
+      fetch("/api/personnel/jobs", { credentials: "same-origin", cache: "no-store" }),
+      fetch("/api/personnel/assignments", { credentials: "same-origin", cache: "no-store" }),
+    ]);
     if (employeeResponse.ok) setEmployees((await employeeResponse.json()).data ?? []);
     if (jobResponse.ok) setJobs((await jobResponse.json()).data ?? []);
-    if (assignmentResponse.ok) setAssignments((await assignmentResponse.json()).data ?? []);
+    if (assignmentResponse.ok) {
+      setAssignments((await assignmentResponse.json()).data ?? []);
+    } else {
+      const body = await assignmentResponse.json().catch(() => null);
+      setNotice(body?.error || "Personnel assignments could not be loaded.");
+    }
   }
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([fetch("/api/personnel", { credentials: "same-origin" }), fetch("/api/personnel/jobs", { credentials: "same-origin" }), fetch("/api/personnel/assignments", { credentials: "same-origin" })]).then(async ([employeeResponse, jobResponse, assignmentResponse]) => {
+    void Promise.all([
+      fetch("/api/personnel", { credentials: "same-origin", cache: "no-store" }),
+      fetch("/api/personnel/jobs", { credentials: "same-origin", cache: "no-store" }),
+      fetch("/api/personnel/assignments", { credentials: "same-origin", cache: "no-store" }),
+    ]).then(async ([employeeResponse, jobResponse, assignmentResponse]) => {
       if (cancelled) return;
       if (employeeResponse.ok) { const body = await employeeResponse.json(); if (!cancelled) setEmployees(body.data ?? []); }
       if (jobResponse.ok) { const body = await jobResponse.json(); if (!cancelled) setJobs(body.data ?? []); }
-      if (assignmentResponse.ok) { const body = await assignmentResponse.json(); if (!cancelled) setAssignments(body.data ?? []); }
+      if (assignmentResponse.ok) {
+        const body = await assignmentResponse.json();
+        if (!cancelled) setAssignments(body.data ?? []);
+      } else {
+        const body = await assignmentResponse.json().catch(() => null);
+        if (!cancelled) setNotice(body?.error || "Personnel assignments could not be loaded.");
+      }
     });
     return () => { cancelled = true; };
   }, []);
@@ -54,11 +82,11 @@ export function PersonnelManagementWorkspace({ canManage }: { canManage: boolean
 
   return <section className="workspace-section" aria-labelledby="personnel-management-heading">
     <div className="section-heading"><div><p className="eyebrow">Personnel</p><h2 id="personnel-management-heading">Personnel management</h2><p>Open one governed personnel function at a time while preserving employee and assignment history.</p></div></div>
-    <nav className="module-subnav" aria-label="Personnel management sections">{sections.map((item) => <button key={item.id} type="button" className={section === item.id ? "active" : ""} onClick={() => setSection(item.id)}><strong>{item.label}</strong><span>{item.description}</span></button>)}</nav>
+    <nav className="module-subnav" aria-label="Personnel management sections">{sections.map((item) => <button key={item.id} type="button" className={section === item.id ? "active" : ""} onClick={() => { setSection(item.id); if (item.id === "library") void load(); }}><strong>{item.label}</strong><span>{item.description}</span></button>)}</nav>
     {notice && <p role="status">{notice}</p>}
 
     {section === "library" && <div className="module-section-stack"><div className="section-heading"><div><h3>Personnel library</h3><p>Browse governed employee identities, current status, and active assignments.</p></div></div><label>Search personnel<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Employee number, name, or status" /></label><div className="table-wrap"><table><thead><tr><th>Employee</th><th>Name</th><th>Status</th><th>Hire date</th><th>Active assignments</th><th>Actions</th></tr></thead><tbody>
-      {visibleEmployees.map((employee) => { const active = assignments.filter((assignment) => assignment.employeeId === employee.id && !assignment.endedAt); return <tr key={employee.id}><td>{employee.employeeNumber}</td><td>{employee.lastName}, {employee.firstName}</td><td>{employee.status}{employee.terminationDate ? ` · ${new Date(employee.terminationDate).toLocaleDateString()}` : ""}</td><td>{employee.hireDate ? new Date(employee.hireDate).toLocaleDateString() : "—"}</td><td>{active.length ? active.map((assignment) => { const job = jobById.get(assignment.jobDescriptionId); return <span key={assignment.id}>{job?.code ?? assignment.jobDescriptionId}{assignment.isPrimary ? " (Primary)" : ""}{canManage && <button type="button" disabled={busy} onClick={() => void endAssignment(assignment)}>End</button>}</span>; }) : "—"}</td><td>{canManage && employee.status !== "TERMINATED" ? <>{employee.status !== "ACTIVE" && <button type="button" disabled={busy} onClick={() => void changeStatus(employee, "ACTIVE")}>Activate</button>}{employee.status !== "INACTIVE" && <button type="button" disabled={busy} onClick={() => void changeStatus(employee, "INACTIVE")}>Inactivate</button>}<button type="button" disabled={busy} onClick={() => void changeStatus(employee, "TERMINATED")}>Terminate</button></> : "—"}</td></tr>; })}
+      {visibleEmployees.map((employee) => { const active = assignments.filter((assignment) => assignment.employeeId === employee.id && !assignment.endedAt); return <tr key={employee.id}><td>{employee.employeeNumber}</td><td>{employee.lastName}, {employee.firstName}</td><td>{employee.status}{employee.terminationDate ? ` · ${formatDateOnly(employee.terminationDate)}` : ""}</td><td>{formatDateOnly(employee.hireDate)}</td><td>{active.length ? active.map((assignment) => { const job = jobById.get(assignment.jobDescriptionId); return <span key={assignment.id}>{job?.code ?? assignment.jobDescriptionId}{assignment.isPrimary ? " (Primary)" : ""}{canManage && <button type="button" disabled={busy} onClick={() => void endAssignment(assignment)}>End</button>}</span>; }) : "—"}</td><td>{canManage && employee.status !== "TERMINATED" ? <>{employee.status !== "ACTIVE" && <button type="button" disabled={busy} onClick={() => void changeStatus(employee, "ACTIVE")}>Activate</button>}{employee.status !== "INACTIVE" && <button type="button" disabled={busy} onClick={() => void changeStatus(employee, "INACTIVE")}>Inactivate</button>}<button type="button" disabled={busy} onClick={() => void changeStatus(employee, "TERMINATED")}>Terminate</button></> : "—"}</td></tr>; })}
       {!visibleEmployees.length && <tr><td colSpan={6}>{employees.length ? "No personnel match the current search." : "No governed personnel records have been created."}</td></tr>}
     </tbody></table></div></div>}
 
