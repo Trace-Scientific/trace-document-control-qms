@@ -50,7 +50,29 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     setAssignments(assignmentBody.data ?? []);
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      fetch("/api/personnel", { credentials: "same-origin", cache: "no-store" }),
+      fetch("/api/training/courses", { credentials: "same-origin", cache: "no-store" }),
+      fetch("/api/training/assignments", { credentials: "same-origin", cache: "no-store" }),
+    ]).then(async ([employeeResponse, courseResponse, assignmentResponse]) => {
+      if (cancelled) return;
+      if (!employeeResponse.ok || !courseResponse.ok || !assignmentResponse.ok) {
+        if (!cancelled) setNotice("Training data could not be refreshed. Reload before making governed changes.");
+        return;
+      }
+      const [employeeBody, courseBody, assignmentBody] = await Promise.all([
+        employeeResponse.json(), courseResponse.json(), assignmentResponse.json(),
+      ]);
+      if (!cancelled) {
+        setEmployees(employeeBody.data ?? []);
+        setCourses(courseBody.data ?? []);
+        setAssignments(assignmentBody.data ?? []);
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
   const courseById = useMemo(() => new Map(courses.map((course) => [course.id, course])), [courses]);
