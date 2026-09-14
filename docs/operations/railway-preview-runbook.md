@@ -37,6 +37,37 @@ data only.
    monitor should exercise this preview. Store the matching `CRON_SECRET` as a
    GitHub Actions secret.
 
+## Equipment overdue monitor
+
+The application exposes a protected `POST /api/internal/equipment-overdue`
+endpoint. The Equipment workspace immediately marks ACTIVE equipment unusable
+when a required calibration or maintenance date is overdue, but the formal
+`EquipmentComplianceHold` record is created by this monitor.
+
+For the Railway development preview, configure a separate Railway cron service
+from the same GitHub repository. Do not run the cron inside the long-running web
+service.
+
+1. Create a new Railway service from `Trace-Scientific/trace-document-control-qms`
+   on branch `main` and name it `equipment-overdue-monitor`.
+2. Set its Start Command to `node scripts/run-equipment-overdue.mjs`.
+3. Set its Cron Schedule to `*/15 * * * *` (every 15 minutes, UTC).
+4. Set Restart Policy to `Never` so each scheduled run exits after one monitor
+   request.
+5. Configure `APP_BASE_URL` with the HTTPS URL of the `qms-preview` web service.
+6. Configure `CRON_SECRET` with the same secret used by the application service.
+   Use Railway service variables; never commit the value.
+7. Do not attach a public domain to the cron service and do not configure a
+   health check for it.
+8. After deployment, use Railway's one-time service execution/redeploy controls
+   to verify the runner exits successfully and logs the monitor response before
+   relying on the schedule.
+
+The runner fails closed if `APP_BASE_URL` is absent, if `CRON_SECRET` is missing
+or shorter than 32 characters, or if the protected endpoint returns a non-2xx
+response. Railway cron jobs must terminate after the task completes; a run that
+remains active can cause subsequent scheduled executions to be skipped.
+
 The preview image applies committed Prisma migrations before starting Next.js.
 Migration failure prevents the application from starting and from passing its
 readiness check. Never run
