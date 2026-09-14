@@ -12,12 +12,19 @@ function csvEscape(value:unknown){
   return /[",\n\r]/.test(text)?`"${text.replaceAll('"','""')}"`:text;
 }
 
+function governedCsvHeaders(row:Record<string,unknown>):string[]{
+  const keys=Object.keys(row);
+  const preferred=["status","count"].filter(key=>keys.includes(key));
+  const remaining=keys.filter(key=>!preferred.includes(key)).sort();
+  return [...preferred,...remaining];
+}
+
 export function renderGovernedCsv(result:unknown):string{
   if(!Array.isArray(result))throw new ReportingError("Finalized report result is not tabular");
   if(result.length===0)return "";
   if(result.some(row=>!row||typeof row!=="object"||Array.isArray(row)))throw new ReportingError("Finalized report result is not tabular");
   const rows=result as Array<Record<string,unknown>>;
-  const headers=Object.keys(rows[0]);
+  const headers=governedCsvHeaders(rows[0]);
   if(headers.length===0||rows.some(row=>Object.keys(row).some(key=>!headers.includes(key))||headers.some(key=>!(key in row))))throw new ReportingError("Finalized report result has inconsistent columns");
   return [headers.map(csvEscape).join(","),...rows.map(row=>headers.map(header=>csvEscape(row[header])).join(","))].join("\n");
 }
