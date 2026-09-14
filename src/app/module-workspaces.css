@@ -317,6 +317,68 @@
   font-weight: 700;
 }
 
+.reporting-workspace .reporting-stat-grid {
+  margin-top: 0;
+}
+
+.reporting-workspace .reporting-admin-form {
+  margin-top: 0;
+  background: #f8fafc;
+}
+
+.reporting-workspace .reporting-admin-form > h3,
+.reporting-workspace .reporting-admin-form > p {
+  grid-column: 1 / -1;
+}
+
+.reporting-workspace .reporting-admin-form > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.reporting-workspace .reporting-admin-form > button[type="submit"] {
+  min-height: 36px;
+  margin-top: 0;
+  grid-column: span 3;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.reporting-workspace .reporting-history-card {
+  display: grid;
+  gap: 10px;
+}
+
+.reporting-workspace .reporting-history-card ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.reporting-workspace .reporting-history-card li {
+  margin: 6px 0;
+  color: #475467;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.reporting-workspace .reporting-history-card .link-button,
+.reporting-workspace .reporting-history-card a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  margin-left: 8px;
+  padding: 0 10px;
+  border: 1px solid #cfd8e6;
+  border-radius: 6px;
+  background: #fff;
+  color: #315f9e;
+  font-size: 10px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
 @media (max-width: 1180px) {
   .admin-form > label,
   .admin-form > button {
@@ -330,6 +392,10 @@
   .admin-form > .equipment-form-wide {
     grid-column: span 8;
   }
+
+  .reporting-workspace .reporting-admin-form > button[type="submit"] {
+    grid-column: span 4;
+  }
 }
 
 @media (max-width: 900px) {
@@ -341,6 +407,10 @@
   .admin-form > label:has(textarea),
   .admin-form > button,
   .admin-form > .equipment-form-wide {
+    grid-column: span 6;
+  }
+
+  .reporting-workspace .reporting-admin-form > button[type="submit"] {
     grid-column: span 6;
   }
 
@@ -366,7 +436,8 @@
   .admin-form > label:has(textarea),
   .admin-form > button,
   .admin-form > .equipment-form-wide,
-  .equipment-form-span {
+  .equipment-form-span,
+  .reporting-workspace .reporting-admin-form > button[type="submit"] {
     grid-column: 1;
   }
 
