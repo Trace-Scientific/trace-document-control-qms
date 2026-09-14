@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     const context = await authenticateRequest(request);
     return NextResponse.json({ data: await service.listEmployees(context, context.organizationId) });
   } catch (error) {
-    return respond(error);
+    return respond(error, "list employees");
   }
 }
 
@@ -53,14 +53,15 @@ export async function POST(request: NextRequest) {
       hireDate: input.hireDate ? new Date(`${input.hireDate}T00:00:00.000Z`) : null,
     }) }, { status: 201 });
   } catch (error) {
-    return respond(error);
+    return respond(error, "mutate employee");
   }
 }
 
-function respond(error: unknown) {
+function respond(error: unknown, operation: string) {
   if (error instanceof AuthenticationRequiredError) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   if (error instanceof z.ZodError) return NextResponse.json({ error: "Invalid personnel request" }, { status: 422 });
   if (error instanceof PersonnelValidationError || error instanceof PersonnelEligibilityError) return NextResponse.json({ error: error.message }, { status: 409 });
   if (error instanceof Error && error.message === "Access denied") return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  console.error(`[personnel] Unexpected failure during ${operation}`, error);
   return NextResponse.json({ error: "Personnel operation failed" }, { status: 500 });
 }
