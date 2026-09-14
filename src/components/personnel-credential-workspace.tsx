@@ -6,6 +6,22 @@ import { GovernedEvidenceFilePicker } from "@/components/governed-evidence-file-
 type Employee = { id: string; employeeNumber: string; firstName: string; lastName: string; status: "ACTIVE" | "INACTIVE" | "TERMINATED" };
 type Credential = { id: string; employeeId: string; credentialType: string; credentialNumber: string | null; issuingAuthority: string | null; issuedAt: string | null; expiresAt: string | null; fileId: string | null; createdAt: string };
 
+function formatDateOnly(value: string | null) {
+  if (!value) return "—";
+  const calendar = value.slice(0, 10);
+  const [year, month, day] = calendar.split("-").map(Number);
+  if (!year || !month || !day) return calendar;
+  return `${month}/${day}/${year}`;
+}
+
+function dateOnlyTime(value: string | null) {
+  if (!value) return null;
+  const calendar = value.slice(0, 10);
+  const [year, month, day] = calendar.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return Date.UTC(year, month - 1, day);
+}
+
 export function PersonnelCredentialWorkspace({ canManage, today }: { canManage: boolean; today: string }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [credentials, setCredentials] = useState<Credential[]>([]);
@@ -14,8 +30,8 @@ export function PersonnelCredentialWorkspace({ canManage, today }: { canManage: 
 
   async function load() {
     const [employeeResponse, credentialResponse] = await Promise.all([
-      fetch("/api/personnel", { credentials: "same-origin" }),
-      fetch("/api/personnel/credentials", { credentials: "same-origin" }),
+      fetch("/api/personnel", { credentials: "same-origin", cache: "no-store" }),
+      fetch("/api/personnel/credentials", { credentials: "same-origin", cache: "no-store" }),
     ]);
     if (employeeResponse.ok) setEmployees((await employeeResponse.json()).data ?? []);
     if (credentialResponse.ok) setCredentials((await credentialResponse.json()).data ?? []);
@@ -24,8 +40,8 @@ export function PersonnelCredentialWorkspace({ canManage, today }: { canManage: 
   useEffect(() => {
     let cancelled = false;
     void Promise.all([
-      fetch("/api/personnel", { credentials: "same-origin" }),
-      fetch("/api/personnel/credentials", { credentials: "same-origin" }),
+      fetch("/api/personnel", { credentials: "same-origin", cache: "no-store" }),
+      fetch("/api/personnel/credentials", { credentials: "same-origin", cache: "no-store" }),
     ]).then(async ([employeeResponse, credentialResponse]) => {
       if (cancelled) return;
       if (employeeResponse.ok) {
@@ -41,7 +57,7 @@ export function PersonnelCredentialWorkspace({ canManage, today }: { canManage: 
   }, []);
 
   const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
-  const todayStart = useMemo(() => new Date(`${today}T00:00:00.000Z`).getTime(), [today]);
+  const todayStart = useMemo(() => dateOnlyTime(today) ?? 0, [today]);
 
   async function createCredential(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -83,8 +99,9 @@ export function PersonnelCredentialWorkspace({ canManage, today }: { canManage: 
     <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Credential</th><th>Number</th><th>Issuer</th><th>Issued</th><th>Expires</th><th>Status</th><th>Evidence</th></tr></thead><tbody>
       {credentials.map((credential) => {
         const employee = employeeById.get(credential.employeeId);
-        const expired = credential.expiresAt ? new Date(credential.expiresAt).getTime() < todayStart : false;
-        return <tr key={credential.id}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : credential.employeeId}</td><td>{credential.credentialType}</td><td>{credential.credentialNumber ?? "—"}</td><td>{credential.issuingAuthority ?? "—"}</td><td>{credential.issuedAt ? new Date(credential.issuedAt).toLocaleDateString() : "—"}</td><td>{credential.expiresAt ? new Date(credential.expiresAt).toLocaleDateString() : "—"}</td><td>{expired ? "EXPIRED" : "CURRENT"}</td><td>{credential.fileId ? "Attached" : "—"}</td></tr>;
+        const expirationTime = dateOnlyTime(credential.expiresAt);
+        const expired = expirationTime !== null ? expirationTime < todayStart : false;
+        return <tr key={credential.id}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : credential.employeeId}</td><td>{credential.credentialType}</td><td>{credential.credentialNumber ?? "—"}</td><td>{credential.issuingAuthority ?? "—"}</td><td>{formatDateOnly(credential.issuedAt)}</td><td>{formatDateOnly(credential.expiresAt)}</td><td>{expired ? "EXPIRED" : "CURRENT"}</td><td>{credential.fileId ? "Attached" : "—"}</td></tr>;
       })}
       {!credentials.length && <tr><td colSpan={8}>No governed personnel credentials have been recorded.</td></tr>}
     </tbody></table></div>
