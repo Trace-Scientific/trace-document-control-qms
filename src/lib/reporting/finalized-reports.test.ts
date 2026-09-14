@@ -11,6 +11,10 @@ describe("finalized governed reports",()=>{
     expect(renderGovernedCsv([{status:"OPEN",count:2},{status:"CLOSED",count:1}])).toBe("status,count\nOPEN,2\nCLOSED,1");
   });
 
+  it("keeps governed summary columns stable after jsonb key reordering",()=>{
+    expect(renderGovernedCsv([{count:2,status:"ACTIVE"}])).toBe("status,count\nACTIVE,2");
+  });
+
   it("escapes CSV fields",()=>{
     expect(renderGovernedCsv([{status:'A,"B"',count:1}])).toBe('status,count\n"A,""B""",1');
   });
