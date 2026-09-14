@@ -17,6 +17,7 @@ export function ReportingWorkspace({canManage,canExport}:{canManage:boolean;canE
   const [definitions,setDefinitions]=useState<Definition[]>([]),[selected,setSelected]=useState<string>(""),[status,setStatus]=useState(""),[executions,setExecutions]=useState<Execution[]>([]),[finalized,setFinalized]=useState<Finalized[]>([]),[savedViews,setSavedViews]=useState<SavedView[]>([]),[savedViewId,setSavedViewId]=useState(""),[savedViewName,setSavedViewName]=useState(""),[message,setMessage]=useState("");
   const [newCode,setNewCode]=useState(""),[newName,setNewName]=useState(""),[newDescription,setNewDescription]=useState(""),[newSource,setNewSource]=useState<SourceKey>("QUALITY_EVENT_SUMMARY");
   const selectedDefinition=useMemo(()=>definitions.find(definition=>definition.id===selected)??null,[definitions,selected]);
+  const finalizedExecutionIds=useMemo(()=>new Set(finalized.map(report=>report.reportExecutionId)),[finalized]);
   const allowedStatuses=selectedDefinition?statusOptions[selectedDefinition.sourceKey]:[];
   const loadDefinitions=async()=>{const r=await fetch("/api/reporting");if(r.ok){const data=(await r.json()).data??[];setDefinitions(data);return data as Definition[];}return[];};
   const loadExecutions=async(id:string)=>{const r=await fetch(`/api/reporting?reportDefinitionId=${encodeURIComponent(id)}`);if(r.ok)setExecutions((await r.json()).data??[]);};
@@ -86,7 +87,7 @@ export function ReportingWorkspace({canManage,canExport}:{canManage:boolean;canE
 
     {message&&<p role="status">{message}</p>}
 
-    <section className="card equipment-register-style reporting-history-card" aria-labelledby="reporting-execution-history"><h3 id="reporting-execution-history">Execution history</h3>{executions.length===0?<p>No executions.</p>:<ul>{executions.map(e=><li key={e.id}><strong>{e.reportCode}</strong> — {e.rowCount} rows — {new Date(e.executedAt).toLocaleString()} {canManage&&<button type="button" className="link-button" onClick={()=>finalize(e.id)}>Finalize</button>}</li>)}</ul>}</section>
+    <section className="card equipment-register-style reporting-history-card" aria-labelledby="reporting-execution-history"><h3 id="reporting-execution-history">Execution history</h3>{executions.length===0?<p>No executions.</p>:<ul>{executions.map(e=><li key={e.id}><strong>{e.reportCode}</strong> — {e.rowCount} rows — {new Date(e.executedAt).toLocaleString()} {finalizedExecutionIds.has(e.id)?<span>Finalized</span>:canManage&&<button type="button" className="link-button" onClick={()=>finalize(e.id)}>Finalize</button>}</li>)}</ul>}</section>
 
     <section className="card equipment-register-style reporting-history-card" aria-labelledby="reporting-finalized-reports"><h3 id="reporting-finalized-reports">Finalized reports</h3>{finalized.length===0?<p>No finalized reports.</p>:<ul>{finalized.map(f=><li key={f.id}><strong>{f.reportCode}</strong> — {f.rowCount} rows — {new Date(f.finalizedAt).toLocaleString()} {canExport&&<a href={`/api/reporting/finalized?finalizedReportId=${encodeURIComponent(f.id)}`}>Export CSV</a>}</li>)}</ul>}</section>
   </section>;
