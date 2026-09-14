@@ -10,6 +10,10 @@ const runbook = await readFile(
 const page = await readFile("src/app/page.tsx", "utf8");
 const previewDockerfile = await readFile("Dockerfile.preview", "utf8");
 const productionDockerfile = await readFile("Dockerfile", "utf8");
+const equipmentOverdueRunner = await readFile(
+  "scripts/run-equipment-overdue.mjs",
+  "utf8",
+);
 
 test("preview infrastructure remains small and isolated", () => {
   assert.match(config, /postgres\("preview-postgres"\)/);
@@ -53,4 +57,16 @@ test("preview image packages the controlled first-administrator bootstrap only i
     /COPY --from=builder --chown=qms:qms \/app\/scripts\/bootstrap-admin\.mjs \.\/scripts\/bootstrap-admin\.mjs/,
   );
   assert.doesNotMatch(productionDockerfile, /bootstrap-admin\.mjs/);
+});
+
+test("equipment overdue cron runner is documented and fails closed on configuration", () => {
+  assert.match(runbook, /equipment-overdue-monitor/);
+  assert.match(runbook, /node scripts\/run-equipment-overdue\.mjs/);
+  assert.match(runbook, /\*\/15 \* \* \* \*/);
+  assert.match(equipmentOverdueRunner, /process\.env\.APP_BASE_URL/);
+  assert.match(equipmentOverdueRunner, /process\.env\.CRON_SECRET/);
+  assert.match(equipmentOverdueRunner, /secret\.length < 32/);
+  assert.match(equipmentOverdueRunner, /\/api\/internal\/equipment-overdue/);
+  assert.match(equipmentOverdueRunner, /authorization: `Bearer \$\{secret\}`/);
+  assert.doesNotMatch(equipmentOverdueRunner, /a-secure-overdue-monitor-secret/);
 });
