@@ -45,6 +45,22 @@ export class PrismaPersonnelCredentialStore implements PersonnelCredentialStore 
         if (file.status !== "AVAILABLE") throw new PersonnelEligibilityError("Credential evidence file must be AVAILABLE");
       }
 
+      const duplicate = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT "id" FROM "EmployeeCredential"
+        WHERE "organizationId" = ${input.organizationId}::uuid
+          AND "employeeId" = ${input.employeeId}::uuid
+          AND "credentialType" = ${input.credentialType}
+          AND "credentialNumber" IS NOT DISTINCT FROM ${input.credentialNumber}
+          AND "issuingAuthority" IS NOT DISTINCT FROM ${input.issuingAuthority}
+          AND "issuedAt" IS NOT DISTINCT FROM ${input.issuedAt}
+          AND "expiresAt" IS NOT DISTINCT FROM ${input.expiresAt}
+          AND "fileId" IS NOT DISTINCT FROM ${input.fileId}::uuid
+        LIMIT 1
+      `);
+      if (duplicate.length) {
+        throw new PersonnelValidationError("An identical credential record already exists. Record renewals or corrected credentials with their new governed details instead of duplicating the same entry.");
+      }
+
       const rows = await tx.$queryRaw<EmployeeCredentialRecord[]>(Prisma.sql`
         INSERT INTO "EmployeeCredential" (
           "organizationId", "employeeId", "credentialType", "credentialNumber", "issuingAuthority",
