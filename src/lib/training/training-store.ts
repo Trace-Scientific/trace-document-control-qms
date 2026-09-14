@@ -113,6 +113,21 @@ export class PrismaTrainingStore implements TrainingStore {
     `);
     if (!courses[0]) throw new Error("Access denied");
     if (!courses[0].active) throw new TrainingEligibilityError("Inactive training course cannot be assigned");
+
+    const duplicate = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id" FROM "TrainingAssignment"
+      WHERE "organizationId" = ${input.organizationId}::uuid
+        AND "employeeId" = ${input.employeeId}::uuid
+        AND "courseId" = ${input.courseId}::uuid
+        AND "assignedAt" = ${input.assignedAt}
+        AND "dueAt" IS NOT DISTINCT FROM ${input.dueAt}
+        AND "status" = 'ASSIGNED'
+      LIMIT 1
+    `);
+    if (duplicate.length) {
+      throw new TrainingValidationError("An identical active training assignment already exists. Use lifecycle reassign for governed schedule changes instead of duplicating the same assignment.");
+    }
+
     const rows = await tx.$queryRaw<TrainingAssignmentRecord[]>(Prisma.sql`
       INSERT INTO "TrainingAssignment" ("organizationId", "employeeId", "courseId", "assignedAt", "dueAt", "createdByUserId")
       VALUES (${input.organizationId}::uuid, ${input.employeeId}::uuid, ${input.courseId}::uuid, ${input.assignedAt}, ${input.dueAt}, ${input.actorUserId}::uuid) RETURNING *
