@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
 import type { AuthorizationContext } from "../security/authorization";
 import { requireAuthorization } from "../security/authorization";
+import { sha256Json,stableJsonStringify } from "./report-integrity";
 
 export type ReportSourceKey="QUALITY_EVENT_SUMMARY"|"EQUIPMENT_SUMMARY";
 export const reportSourceKeys:readonly ReportSourceKey[]=["QUALITY_EVENT_SUMMARY","EQUIPMENT_SUMMARY"] as const;
@@ -106,8 +106,8 @@ export class ReportingService{
       }
       const parameters=validateReportingParameters(definition.sourceKey,rawParameters);
       const result=await executeSource(tx,input.organizationId,definition.sourceKey,parameters);
-      const canonical=JSON.stringify(result);
-      const resultSha256=createHash("sha256").update(canonical).digest("hex");
+      const canonical=stableJsonStringify(result);
+      const resultSha256=sha256Json(result);
       const execution=(await tx.$queryRaw<Array<{id:string;executedAt:Date}>>(Prisma.sql`INSERT INTO "ReportExecution" ("organizationId","reportDefinitionId","reportCode","reportName","sourceKey",parameters,result,"resultSha256","rowCount","executedByUserId") VALUES (${input.organizationId}::uuid,${definition.id}::uuid,${definition.code},${definition.name},${definition.sourceKey}::"ReportSourceKey",${JSON.stringify(parameters)}::jsonb,${canonical}::jsonb,${resultSha256},${result.length},${context.userId}::uuid) RETURNING id,"executedAt"`))[0];
       if(!execution)throw new ReportingError("Report execution could not be recorded");
       await tx.auditEvent.create({data:{organizationId:input.organizationId,actorUserId:context.userId,action:"REPORT_EXECUTED",entityType:"ReportExecution",entityId:execution.id,metadata:{reportDefinitionId:definition.id,reportCode:definition.code,sourceKey:definition.sourceKey,rowCount:result.length,resultSha256,savedViewId:input.savedViewId??null}}});

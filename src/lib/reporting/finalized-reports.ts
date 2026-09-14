@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
 import type { AuthorizationContext } from "../security/authorization";
 import { requireAuthorization } from "../security/authorization";
+import { sha256Json,verifyReportResultDigest } from "./report-integrity";
 import { ReportingError } from "./reporting";
 
 type FinalizedReportRow={id:string;reportExecutionId:string;reportCode:string;reportName:string;sourceKey:string;parameters:unknown;result:unknown;resultSha256:string;rowCount:number;finalizedAt:Date};
@@ -28,11 +28,11 @@ export class FinalizedReportService{
     return db.$transaction(async tx=>{
       const execution=(await tx.$queryRaw<Array<{id:string;reportCode:string;reportName:string;sourceKey:string;parameters:unknown;result:unknown;resultSha256:string;rowCount:number}>>(Prisma.sql`SELECT id,"reportCode","reportName","sourceKey"::text AS "sourceKey",parameters,result,"resultSha256","rowCount" FROM "ReportExecution" WHERE "organizationId"=${input.organizationId}::uuid AND id=${input.reportExecutionId}::uuid FOR SHARE`))[0];
       if(!execution)throw new ReportingError("Report execution not found");
-      const digest=createHash("sha256").update(JSON.stringify(execution.result)).digest("hex");
-      if(digest!==execution.resultSha256)throw new ReportingError("Report execution integrity verification failed");
-      const row=(await tx.$queryRaw<Array<{id:string}>>(Prisma.sql`INSERT INTO "FinalizedReport" ("organizationId","reportExecutionId","reportCode","reportName","sourceKey",parameters,result,"resultSha256","rowCount","finalizedByUserId") VALUES (${input.organizationId}::uuid,${execution.id}::uuid,${execution.reportCode},${execution.reportName},${execution.sourceKey}::"ReportSourceKey",${JSON.stringify(execution.parameters)}::jsonb,${JSON.stringify(execution.result)}::jsonb,${execution.resultSha256},${execution.rowCount},${context.userId}::uuid) ON CONFLICT ("organizationId","reportExecutionId") DO NOTHING RETURNING id`))[0];
+      if(!verifyReportResultDigest(execution.result,execution.resultSha256))throw new ReportingError("Report execution integrity verification failed");
+      const finalizedDigest=sha256Json(execution.result);
+      const row=(await tx.$queryRaw<Array<{id:string}>>(Prisma.sql`INSERT INTO "FinalizedReport" ("organizationId","reportExecutionId","reportCode","reportName","sourceKey",parameters,result,"resultSha256","rowCount","finalizedByUserId") VALUES (${input.organizationId}::uuid,${execution.id}::uuid,${execution.reportCode},${execution.reportName},${execution.sourceKey}::"ReportSourceKey",${JSON.stringify(execution.parameters)}::jsonb,${JSON.stringify(execution.result)}::jsonb,${finalizedDigest},${execution.rowCount},${context.userId}::uuid) ON CONFLICT ("organizationId","reportExecutionId") DO NOTHING RETURNING id`))[0];
       if(!row)throw new ReportingError("Report execution is already finalized");
-      await tx.auditEvent.create({data:{organizationId:input.organizationId,actorUserId:context.userId,action:"REPORT_FINALIZED",entityType:"FinalizedReport",entityId:row.id,metadata:{reportExecutionId:execution.id,resultSha256:execution.resultSha256,rowCount:execution.rowCount}}});
+      await tx.auditEvent.create({data:{organizationId:input.organizationId,actorUserId:context.userId,action:"REPORT_FINALIZED",entityType:"FinalizedReport",entityId:row.id,metadata:{reportExecutionId:execution.id,resultSha256:finalizedDigest,rowCount:execution.rowCount}}});
       return row;
     });
   }
@@ -47,8 +47,7 @@ export class FinalizedReportService{
     return db.$transaction(async tx=>{
       const report=(await tx.$queryRaw<FinalizedReportRow[]>(Prisma.sql`SELECT id,"reportExecutionId","reportCode","reportName","sourceKey"::text AS "sourceKey",parameters,result,"resultSha256","rowCount","finalizedAt" FROM "FinalizedReport" WHERE "organizationId"=${input.organizationId}::uuid AND id=${input.finalizedReportId}::uuid`))[0];
       if(!report)throw new ReportingError("Finalized report not found");
-      const digest=createHash("sha256").update(JSON.stringify(report.result)).digest("hex");
-      if(digest!==report.resultSha256)throw new ReportingError("Finalized report integrity verification failed");
+      if(!verifyReportResultDigest(report.result,report.resultSha256))throw new ReportingError("Finalized report integrity verification failed");
       const csv=renderGovernedCsv(report.result);
       await tx.auditEvent.create({data:{organizationId:input.organizationId,actorUserId:context.userId,action:"REPORT_EXPORTED_CSV",entityType:"FinalizedReport",entityId:report.id,metadata:{reportExecutionId:report.reportExecutionId,resultSha256:report.resultSha256,rowCount:report.rowCount,format:"CSV"}}});
       return{filename:`${report.reportCode.toLowerCase().replace(/[^a-z0-9_-]+/g,"-")}.csv`,csv};
