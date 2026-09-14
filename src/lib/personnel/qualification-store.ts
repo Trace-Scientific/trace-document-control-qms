@@ -44,6 +44,21 @@ export class PrismaPersonnelQualificationStore implements PersonnelQualification
         if (file.status !== "AVAILABLE") throw new PersonnelEligibilityError("Qualification evidence file must be AVAILABLE");
       }
 
+      const duplicate = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT "id" FROM "EmployeeQualification"
+        WHERE "organizationId" = ${input.organizationId}::uuid
+          AND "employeeId" = ${input.employeeId}::uuid
+          AND "qualificationType" = ${input.qualificationType}
+          AND "qualificationScope" IS NOT DISTINCT FROM ${input.qualificationScope}
+          AND "qualifiedAt" = ${input.qualifiedAt}
+          AND "expiresAt" IS NOT DISTINCT FROM ${input.expiresAt}
+          AND "fileId" IS NOT DISTINCT FROM ${input.fileId}::uuid
+        LIMIT 1
+      `);
+      if (duplicate.length) {
+        throw new PersonnelValidationError("An identical qualification record already exists. Record requalification or corrected qualification evidence with its new governed details instead of duplicating the same entry.");
+      }
+
       const rows = await tx.$queryRaw<EmployeeQualificationRecord[]>(Prisma.sql`
         INSERT INTO "EmployeeQualification" (
           "organizationId", "employeeId", "qualificationType", "qualificationScope",
