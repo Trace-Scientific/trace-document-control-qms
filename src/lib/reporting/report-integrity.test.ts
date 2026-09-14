@@ -9,11 +9,14 @@ describe("report result integrity",()=>{
     expect(sha256Json([{status:"ACTIVE",count:2}])).toBe(sha256Json([{count:2,status:"ACTIVE"}]));
   });
 
-  it("verifies the legacy governed summary digest after jsonb key reordering",()=>{
-    const legacyValue=[{status:"ACTIVE",count:2}];
-    const legacyDigest=createHash("sha256").update(JSON.stringify(legacyValue)).digest("hex");
-    const jsonbReadback=[{count:2,status:"ACTIVE"}];
-    expect(verifyReportResultDigest(jsonbReadback,legacyDigest)).toBe(true);
+  it("verifies a legacy status-count digest after jsonb key reordering",()=>{
+    const legacyDigest=createHash("sha256").update(JSON.stringify([{status:"ACTIVE",count:2}])).digest("hex");
+    expect(verifyReportResultDigest([{count:2,status:"ACTIVE"}],legacyDigest)).toBe(true);
+  });
+
+  it("verifies a legacy count-status digest after jsonb key reordering",()=>{
+    const legacyDigest=createHash("sha256").update(JSON.stringify([{count:2,status:"ACTIVE"}])).digest("hex");
+    expect(verifyReportResultDigest([{status:"ACTIVE",count:2}],legacyDigest)).toBe(true);
   });
 
   it("rejects changed report results",()=>{
