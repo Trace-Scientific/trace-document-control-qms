@@ -49,17 +49,45 @@ export function ReportingWorkspace({canManage,canExport}:{canManage:boolean;canE
   const finalize=async(reportExecutionId:string)=>{const r=await fetch("/api/reporting/finalized",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operation:"finalize-execution",reportExecutionId})});setMessage(r.ok?"Report finalized.":((await r.json()).error??"Finalization failed"));if(r.ok)void loadFinalized();};
   const createDefinition=async()=>{if(!canManage||!newCode.trim()||!newName.trim())return;const r=await fetch("/api/reporting",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operation:"create-definition",code:newCode.trim(),name:newName.trim(),description:newDescription.trim()||null,sourceKey:newSource})});setMessage(r.ok?"Governed report definition created.":((await r.json()).error??"Creation failed"));if(r.ok){setNewCode("");setNewName("");setNewDescription("");const data=await loadDefinitions();if(data[0]&&!selected)setSelected(data[0].id);}};
 
-  return <section className="workspace-section" aria-labelledby="reporting-workspace-title">
+  return <section className="workspace-section reporting-workspace" aria-labelledby="reporting-workspace-title">
     <div className="workspace-heading"><div><p className="eyebrow">Reporting & analytics</p><h2 id="reporting-workspace-title">Reporting & Analytics</h2><p>Run governed reports, apply approved filters, save personal views, review execution history, and access finalized report exports.</p></div></div>
 
-    {canManage&&<form className="card admin-form equipment-admin-form" onSubmit={e=>{e.preventDefault();void createDefinition();}}><h3 className="equipment-form-span">Governed report definitions</h3><p className="equipment-form-span">Create definitions only from approved server-backed report sources.</p><label>Code<input value={newCode} onChange={e=>setNewCode(e.target.value)} /></label><label>Name<input value={newName} onChange={e=>setNewName(e.target.value)} /></label><label className="equipment-form-wide">Description<input value={newDescription} onChange={e=>setNewDescription(e.target.value)} /></label><label>Approved source<select value={newSource} onChange={e=>setNewSource(e.target.value as SourceKey)}>{(Object.keys(sourceLabels) as SourceKey[]).map(key=><option key={key} value={key}>{sourceLabels[key]}</option>)}</select></label><button type="submit" disabled={!newCode.trim()||!newName.trim()}>Create governed report</button></form>}
+    <div className="stat-grid reporting-stat-grid">
+      <article><strong>{definitions.length}</strong><span>Governed reports</span></article>
+      <article><strong>{executions.length}</strong><span>Executions for selected report</span></article>
+      <article><strong>{savedViews.length}</strong><span>Personal saved views</span></article>
+      <article><strong>{finalized.length}</strong><span>Finalized reports</span></article>
+    </div>
 
-    <div className="card form-stack equipment-register-style"><h3>Run governed report</h3><div className="admin-form equipment-admin-form"><label>Report<select value={selected} onChange={e=>chooseReport(e.target.value)}><option value="">Select report</option>{definitions.map(d=><option key={d.id} value={d.id}>{d.code} — {d.name}</option>)}</select></label><label>Status filter<select value={status} onChange={e=>{setStatus(e.target.value);setSavedViewId("");}} disabled={!selectedDefinition}><option value="">All approved statuses</option>{allowedStatuses.map(value=><option key={value} value={value}>{value}</option>)}</select></label><label>Personal saved view<select value={savedViewId} onChange={e=>chooseSavedView(e.target.value)} disabled={!selected}><option value="">Use current filter</option>{savedViews.map(view=><option key={view.id} value={view.id}>{view.name}</option>)}</select></label><button type="button" onClick={execute} disabled={!selected}>Run report</button></div><div className="admin-form equipment-admin-form"><label className="equipment-form-wide">Save current filter as<input value={savedViewName} onChange={e=>setSavedViewName(e.target.value)} disabled={!selected}/></label><button type="button" onClick={saveView} disabled={!selected||!savedViewName.trim()}>Save personal view</button><button type="button" onClick={deleteView} disabled={!savedViewId}>Delete selected view</button></div></div>
+    {canManage&&<form className="card admin-form reporting-admin-form" onSubmit={e=>{e.preventDefault();void createDefinition();}}>
+      <h3 className="equipment-form-span">Governed report definitions</h3>
+      <p className="equipment-form-span">Create definitions only from approved server-backed report sources.</p>
+      <label>Code<input value={newCode} onChange={e=>setNewCode(e.target.value)} /></label>
+      <label>Name<input value={newName} onChange={e=>setNewName(e.target.value)} /></label>
+      <label className="equipment-form-wide">Description<input value={newDescription} onChange={e=>setNewDescription(e.target.value)} /></label>
+      <label>Approved source<select value={newSource} onChange={e=>setNewSource(e.target.value as SourceKey)}>{(Object.keys(sourceLabels) as SourceKey[]).map(key=><option key={key} value={key}>{sourceLabels[key]}</option>)}</select></label>
+      <button type="submit" disabled={!newCode.trim()||!newName.trim()}>Create governed report</button>
+    </form>}
+
+    <form className="card admin-form reporting-admin-form" onSubmit={e=>{e.preventDefault();void execute();}}>
+      <h3 className="equipment-form-span">Run governed report</h3>
+      <label>Report<select value={selected} onChange={e=>chooseReport(e.target.value)}><option value="">Select report</option>{definitions.map(d=><option key={d.id} value={d.id}>{d.code} — {d.name}</option>)}</select></label>
+      <label>Status filter<select value={status} onChange={e=>{setStatus(e.target.value);setSavedViewId("");}} disabled={!selectedDefinition}><option value="">All approved statuses</option>{allowedStatuses.map(value=><option key={value} value={value}>{value}</option>)}</select></label>
+      <label>Personal saved view<select value={savedViewId} onChange={e=>chooseSavedView(e.target.value)} disabled={!selected}><option value="">Use current filter</option>{savedViews.map(view=><option key={view.id} value={view.id}>{view.name}</option>)}</select></label>
+      <button type="submit" disabled={!selected}>Run report</button>
+    </form>
+
+    <div className="card admin-form reporting-admin-form">
+      <h3 className="equipment-form-span">Personal saved views</h3>
+      <label className="equipment-form-wide">Save current filter as<input value={savedViewName} onChange={e=>setSavedViewName(e.target.value)} disabled={!selected}/></label>
+      <button type="button" onClick={saveView} disabled={!selected||!savedViewName.trim()}>Save personal view</button>
+      <button type="button" onClick={deleteView} disabled={!savedViewId}>Delete selected view</button>
+    </div>
 
     {message&&<p role="status">{message}</p>}
 
-    <section className="card form-stack equipment-register-style" aria-labelledby="reporting-execution-history"><h3 id="reporting-execution-history">Execution history</h3>{executions.length===0?<p>No executions.</p>:<ul>{executions.map(e=><li key={e.id}><strong>{e.reportCode}</strong> — {e.rowCount} rows — {new Date(e.executedAt).toLocaleString()} {canManage&&<button type="button" className="link-button" onClick={()=>finalize(e.id)}>Finalize</button>}</li>)}</ul>}</section>
+    <section className="card equipment-register-style reporting-history-card" aria-labelledby="reporting-execution-history"><h3 id="reporting-execution-history">Execution history</h3>{executions.length===0?<p>No executions.</p>:<ul>{executions.map(e=><li key={e.id}><strong>{e.reportCode}</strong> — {e.rowCount} rows — {new Date(e.executedAt).toLocaleString()} {canManage&&<button type="button" className="link-button" onClick={()=>finalize(e.id)}>Finalize</button>}</li>)}</ul>}</section>
 
-    <section className="card form-stack equipment-register-style" aria-labelledby="reporting-finalized-reports"><h3 id="reporting-finalized-reports">Finalized reports</h3>{finalized.length===0?<p>No finalized reports.</p>:<ul>{finalized.map(f=><li key={f.id}><strong>{f.reportCode}</strong> — {f.rowCount} rows — {new Date(f.finalizedAt).toLocaleString()} {canExport&&<a href={`/api/reporting/finalized?finalizedReportId=${encodeURIComponent(f.id)}`}>Export CSV</a>}</li>)}</ul>}</section>
+    <section className="card equipment-register-style reporting-history-card" aria-labelledby="reporting-finalized-reports"><h3 id="reporting-finalized-reports">Finalized reports</h3>{finalized.length===0?<p>No finalized reports.</p>:<ul>{finalized.map(f=><li key={f.id}><strong>{f.reportCode}</strong> — {f.rowCount} rows — {new Date(f.finalizedAt).toLocaleString()} {canExport&&<a href={`/api/reporting/finalized?finalizedReportId=${encodeURIComponent(f.id)}`}>Export CSV</a>}</li>)}</ul>}</section>
   </section>;
 }
