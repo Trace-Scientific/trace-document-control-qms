@@ -72,6 +72,22 @@ export class PrismaTrainingStore implements TrainingStore {
     });
   }
 
+  async listCompletions(organizationId: string, employeeId?: string): Promise<TrainingCompletionRecord[]> {
+    return db.$queryRaw<TrainingCompletionRecord[]>(employeeId ? Prisma.sql`
+      SELECT r.*, f."originalName" AS "evidenceName", f."status"::text AS "evidenceStatus"
+      FROM "TrainingRecord" r
+      LEFT JOIN "FileObject" f ON f."organizationId" = r."organizationId" AND f."id" = r."fileId"
+      WHERE r."organizationId" = ${organizationId}::uuid AND r."employeeId" = ${employeeId}::uuid
+      ORDER BY r."completedAt" DESC, r."createdAt" DESC
+    ` : Prisma.sql`
+      SELECT r.*, f."originalName" AS "evidenceName", f."status"::text AS "evidenceStatus"
+      FROM "TrainingRecord" r
+      LEFT JOIN "FileObject" f ON f."organizationId" = r."organizationId" AND f."id" = r."fileId"
+      WHERE r."organizationId" = ${organizationId}::uuid
+      ORDER BY r."completedAt" DESC, r."createdAt" DESC
+    `);
+  }
+
   async completeAssignment(input: { organizationId: string; assignmentId: string; completedAt: Date; result: string | null; fileId: string | null; actorUserId: string }): Promise<TrainingCompletionRecord> {
     return db.$transaction(async (tx) => {
       const assignment = await this.lockAssignable(tx, input.organizationId, input.assignmentId);

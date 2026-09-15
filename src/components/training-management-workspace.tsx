@@ -6,7 +6,8 @@ import { GovernedEvidenceFilePicker } from "./governed-evidence-file-picker";
 type Employee = { id: string; employeeNumber: string; firstName: string; lastName: string; status: "ACTIVE" | "INACTIVE" | "TERMINATED" };
 type Course = { id: string; code: string; title: string; active: boolean };
 type Assignment = { id: string; employeeId: string; courseId: string; assignedAt: string; dueAt: string | null; status: "ASSIGNED" | "COMPLETED" | "CANCELLED"; cancelReason?: string | null };
-type Section = "assignments" | "assign" | "complete" | "lifecycle" | "courses";
+type Completion = { id: string; assignmentId: string; employeeId: string; courseId: string; completedAt: string; result: string | null; fileId: string | null; evidenceName?: string | null; evidenceStatus?: string | null };
+type Section = "assignments" | "assign" | "complete" | "history" | "lifecycle" | "courses";
 
 function formatDateOnly(value: string | null) {
   if (!value) return "—";
@@ -28,26 +29,29 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [completions, setCompletions] = useState<Completion[]>([]);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [section, setSection] = useState<Section>("assignments");
 
   async function load() {
-    const [employeeResponse, courseResponse, assignmentResponse] = await Promise.all([
+    const [employeeResponse, courseResponse, assignmentResponse, completionResponse] = await Promise.all([
       fetch("/api/personnel", { credentials: "same-origin", cache: "no-store" }),
       fetch("/api/training/courses", { credentials: "same-origin", cache: "no-store" }),
       fetch("/api/training/assignments", { credentials: "same-origin", cache: "no-store" }),
+      fetch("/api/training/completions", { credentials: "same-origin", cache: "no-store" }),
     ]);
-    if (!employeeResponse.ok || !courseResponse.ok || !assignmentResponse.ok) {
+    if (!employeeResponse.ok || !courseResponse.ok || !assignmentResponse.ok || !completionResponse.ok) {
       setNotice("Training data could not be refreshed. Reload before making governed changes.");
       return;
     }
-    const [employeeBody, courseBody, assignmentBody] = await Promise.all([
-      employeeResponse.json(), courseResponse.json(), assignmentResponse.json(),
+    const [employeeBody, courseBody, assignmentBody, completionBody] = await Promise.all([
+      employeeResponse.json(), courseResponse.json(), assignmentResponse.json(), completionResponse.json(),
     ]);
     setEmployees(employeeBody.data ?? []);
     setCourses(courseBody.data ?? []);
     setAssignments(assignmentBody.data ?? []);
+    setCompletions(completionBody.data ?? []);
   }
 
   useEffect(() => {
@@ -56,19 +60,21 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
       fetch("/api/personnel", { credentials: "same-origin", cache: "no-store" }),
       fetch("/api/training/courses", { credentials: "same-origin", cache: "no-store" }),
       fetch("/api/training/assignments", { credentials: "same-origin", cache: "no-store" }),
-    ]).then(async ([employeeResponse, courseResponse, assignmentResponse]) => {
+      fetch("/api/training/completions", { credentials: "same-origin", cache: "no-store" }),
+    ]).then(async ([employeeResponse, courseResponse, assignmentResponse, completionResponse]) => {
       if (cancelled) return;
-      if (!employeeResponse.ok || !courseResponse.ok || !assignmentResponse.ok) {
+      if (!employeeResponse.ok || !courseResponse.ok || !assignmentResponse.ok || !completionResponse.ok) {
         if (!cancelled) setNotice("Training data could not be refreshed. Reload before making governed changes.");
         return;
       }
-      const [employeeBody, courseBody, assignmentBody] = await Promise.all([
-        employeeResponse.json(), courseResponse.json(), assignmentResponse.json(),
+      const [employeeBody, courseBody, assignmentBody, completionBody] = await Promise.all([
+        employeeResponse.json(), courseResponse.json(), assignmentResponse.json(), completionResponse.json(),
       ]);
       if (!cancelled) {
         setEmployees(employeeBody.data ?? []);
         setCourses(courseBody.data ?? []);
         setAssignments(assignmentBody.data ?? []);
+        setCompletions(completionBody.data ?? []);
       }
     });
     return () => { cancelled = true; };
@@ -116,6 +122,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     { id: "assignments" as const, label: "Training assignments", description: "Browse active, completed, cancelled, and overdue training." },
     { id: "assign" as const, label: "Assign training", description: "Assign an approved course to an eligible employee." },
     { id: "complete" as const, label: "Record completion", description: "Record completion results and governed supporting evidence." },
+    { id: "history" as const, label: "Completion history", description: "Review immutable completion results, timestamps, and evidence." },
     { id: "lifecycle" as const, label: "Lifecycle actions", description: "Cancel or reassign active training with a controlled reason." },
     { id: "courses" as const, label: "Course configuration", description: "Create governed training courses." },
   ];
@@ -135,6 +142,11 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     {section === "assign" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Assign training</h3><p>Assign an active course to an eligible employee with governed dates.</p></div></div><form onSubmit={createAssignment} className="admin-form"><label>Employee<select name="employeeId" defaultValue="" required><option value="" disabled>Select employee</option>{employees.filter((employee) => employee.status !== "TERMINATED").map((employee) => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.lastName}, {employee.firstName}</option>)}</select></label><label>Course<select name="courseId" defaultValue="" required><option value="" disabled>Select course</option>{courses.filter((course) => course.active).map((course) => <option key={course.id} value={course.id}>{course.code} · {course.title}</option>)}</select></label><label>Assigned date<input name="assignedAt" type="date" required /></label><label>Due date<input name="dueAt" type="date" /></label><button type="submit" disabled={busy}>Assign training</button></form></div>}
 
     {section === "complete" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record completion</h3><p>Record completion results with optional governed supporting evidence.</p></div></div><form onSubmit={complete} className="admin-form"><label>Assignment<select name="assignmentId" defaultValue="" required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label><label>Completed at<input name="completedAt" type="datetime-local" required /></label><label>Result<input name="result" maxLength={500} /></label><GovernedEvidenceFilePicker domain="training" disabled={busy} /><button type="submit" disabled={busy}>Record completion</button></form></div>}
+
+    {section === "history" && <div className="module-section-stack"><div className="section-heading"><div><h3>Completion history</h3><p>Review immutable training completion results, event timestamps, and governed evidence references.</p></div></div><div className="table-wrap"><table><thead><tr><th>Employee</th><th>Course</th><th>Completed at</th><th>Result</th><th>Evidence</th></tr></thead><tbody>{completions.map((completion) => {
+      const employee = employeeById.get(completion.employeeId); const course = courseById.get(completion.courseId);
+      return <tr key={completion.id}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : completion.employeeId}</td><td>{course ? `${course.code} · ${course.title}` : completion.courseId}</td><td>{new Date(completion.completedAt).toLocaleString()}</td><td>{completion.result ?? "—"}</td><td>{completion.fileId ? `${completion.evidenceName ?? "Attached file"} · ${completion.evidenceStatus ?? "Linked"}` : "—"}</td></tr>;
+    })}{!completions.length && <tr><td colSpan={5}>No training completions have been recorded.</td></tr>}</tbody></table></div></div>}
 
     {section === "lifecycle" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Lifecycle actions</h3><p>Cancel or reassign active training without rewriting assignment history.</p></div></div><form onSubmit={lifecycle} className="admin-form"><label>Assignment<select name="assignmentId" defaultValue="" required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label><label>Action<select name="action" defaultValue="cancel"><option value="cancel">Cancel</option><option value="reassign">Reassign</option></select></label><label>Reason<input name="reason" maxLength={500} required /></label><label>New assigned date<input name="assignedAt" type="date" /></label><label>New due date<input name="dueAt" type="date" /></label><button type="submit" disabled={busy}>Apply lifecycle action</button></form></div>}
 
