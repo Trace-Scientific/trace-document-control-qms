@@ -4,6 +4,14 @@ import { authenticateRequest, AuthenticationRequiredError } from "@/lib/security
 import { requireAuthorization } from "@/lib/security/authorization";
 import { db } from "@/lib/db";
 
+const responseOptions = {
+  headers: {
+    "cache-control": "private, no-store, max-age=0",
+    "pragma": "no-cache",
+    "vary": "Cookie",
+  },
+};
+
 type ScopedRoleAssignment = {
   userId: string;
   roleId: string;
@@ -32,10 +40,10 @@ export async function GET(request: NextRequest) {
         ORDER BY "assignedAt" ASC
       `),
     ]);
-    return NextResponse.json({ data: { organization, sites, departments, users, roles, permissions, documentTypes, roleAssignments } });
+    return NextResponse.json({ data: { organization, sites, departments, users, roles, permissions, documentTypes, roleAssignments } }, responseOptions);
   } catch (error) {
-    if (error instanceof AuthenticationRequiredError) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-    if (error instanceof Error && error.message === "Access denied") return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    return NextResponse.json({ error: "Unable to load administration" }, { status: 500 });
+    if (error instanceof AuthenticationRequiredError) return NextResponse.json({ error: "Authentication required" }, { status: 401, ...responseOptions });
+    if (error instanceof Error && error.message === "Access denied") return NextResponse.json({ error: "Access denied" }, { status: 403, ...responseOptions });
+    return NextResponse.json({ error: "Unable to load administration" }, { status: 500, ...responseOptions });
   }
 }
