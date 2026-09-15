@@ -1,22 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { authenticateRequest, AuthenticationRequiredError } from "@/lib/security/authenticated-request";
 import { requireAuthorization } from "@/lib/security/authorization";
 import { db } from "@/lib/db";
+
+type ScopedRoleAssignment = {
+  userId: string;
+  roleId: string;
+  scopeType: "ORGANIZATION" | "SITE" | "DEPARTMENT";
+  scopeId: string | null;
+  assignedAt: Date;
+  assignedBy: string | null;
+};
 
 export async function GET(request: NextRequest) {
   try {
     const context = await authenticateRequest(request);
     requireAuthorization(context, { organizationId: context.organizationId, permission: "administration.manage" });
-    const [organization, sites, departments, users, roles, permissions, documentTypes] = await Promise.all([
+    const [organization, sites, departments, users, roles, permissions, documentTypes, roleAssignments] = await Promise.all([
       db.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { displayName: true, loginCode: true } }),
       db.site.findMany({ where: { organizationId: context.organizationId }, orderBy: { name: "asc" } }),
       db.department.findMany({ where: { organizationId: context.organizationId }, orderBy: { name: "asc" } }),
-      db.user.findMany({ where: { organizationId: context.organizationId }, select: { id: true, email: true, firstName: true, lastName: true, status: true, roles: { select: { roleId: true } } }, orderBy: { email: "asc" } }),
+      db.user.findMany({ where: { organizationId: context.organizationId }, select: { id: true, email: true, firstName: true, lastName: true, status: true }, orderBy: { email: "asc" } }),
       db.role.findMany({ where: { organizationId: context.organizationId }, select: { id: true, name: true, systemRole: true, permissions: { select: { permission: { select: { key: true } } } } }, orderBy: { name: "asc" } }),
       db.permission.findMany({ select: { key: true, description: true }, orderBy: { key: "asc" } }),
       db.documentType.findMany({ where: { organizationId: context.organizationId }, select: { id: true, code: true, name: true, reviewMonths: true, active: true }, orderBy: [{ active: "desc" }, { name: "asc" }] }),
+      db.$queryRaw<ScopedRoleAssignment[]>(Prisma.sql`
+        SELECT "userId", "roleId", "scopeType", "scopeId", "assignedAt", "assignedBy"
+        FROM "UserRole"
+        WHERE "organizationId"=${context.organizationId}::uuid
+        ORDER BY "assignedAt" ASC
+      `),
     ]);
-    return NextResponse.json({ data: { organization, sites, departments, users, roles, permissions, documentTypes } });
+    return NextResponse.json({ data: { organization, sites, departments, users, roles, permissions, documentTypes, roleAssignments } });
   } catch (error) {
     if (error instanceof AuthenticationRequiredError) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     if (error instanceof Error && error.message === "Access denied") return NextResponse.json({ error: "Access denied" }, { status: 403 });

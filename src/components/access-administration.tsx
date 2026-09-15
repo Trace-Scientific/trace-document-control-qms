@@ -7,7 +7,8 @@ import { NotificationDeliveryAdministration } from "./notification-delivery-admi
 import { WorkflowTemplateAdministration } from "./workflow-template-administration";
 
 type AdminSection = "overview" | "organization" | "access" | "memberships" | "documents" | "workflows" | "notifications" | "audit";
-type AdminData = { organization: { displayName: string; loginCode: string }; sites: Array<{ id: string; name: string }>; departments: Array<{ id: string; name: string; siteId: string | null }>; users: Array<{ id: string; email: string; firstName: string; lastName: string; status: string; roles: Array<{ roleId: string }> }>; roles: Array<{ id: string; name: string; permissions: Array<{ permission: { key: string } }> }>; permissions: Array<{ key: string; description: string | null }>; documentTypes: Array<{ id: string; code: string; name: string; reviewMonths: number | null; active: boolean }> };
+type RoleAssignment = { userId: string; roleId: string; scopeType: "ORGANIZATION" | "SITE" | "DEPARTMENT"; scopeId: string | null; assignedAt: string; assignedBy: string | null };
+type AdminData = { organization: { displayName: string; loginCode: string }; sites: Array<{ id: string; name: string }>; departments: Array<{ id: string; name: string; siteId: string | null }>; users: Array<{ id: string; email: string; firstName: string; lastName: string; status: string }>; roles: Array<{ id: string; name: string; permissions: Array<{ permission: { key: string } }> }>; permissions: Array<{ key: string; description: string | null }>; documentTypes: Array<{ id: string; code: string; name: string; reviewMonths: number | null; active: boolean }>; roleAssignments: RoleAssignment[] };
 
 function permissionDescription(permission: { key: string; description: string | null }) {
   if (permission.description) return permission.description;
@@ -56,6 +57,16 @@ export function AccessAdministration() {
     { id: "audit", label: "Audit trail", description: "Append-only administration history." },
   ];
 
+  const roleById = new Map(data.roles.map((role) => [role.id, role]));
+  const userById = new Map(data.users.map((user) => [user.id, user]));
+  const sites = data.sites;
+  const departments = data.departments;
+  function scopeLabel(assignment: RoleAssignment) {
+    if (assignment.scopeType === "ORGANIZATION") return "Entire organization";
+    if (assignment.scopeType === "SITE") return `Site · ${sites.find((site) => site.id === assignment.scopeId)?.name ?? "Unknown site"}`;
+    return `Department · ${departments.find((department) => department.id === assignment.scopeId)?.name ?? "Unknown department"}`;
+  }
+
   return <>
     <section className="panel documents-panel admin-hub">
       <div className="panel-header"><div><h2>Administration</h2><p>{data.organization.displayName} · {data.organization.loginCode}</p></div></div>
@@ -73,7 +84,7 @@ export function AccessAdministration() {
         <form className="template-form" onSubmit={form("CREATE_USER", (f) => ({ email: String(f.get("email")), firstName: String(f.get("firstName")), lastName: String(f.get("lastName")), temporaryPassword: String(f.get("temporaryPassword")) }))}><strong>Add user</strong><label>First name<input name="firstName" required /></label><label>Last name<input name="lastName" required /></label><label>Email<input name="email" type="email" required /></label><label>Temporary password<input name="temporaryPassword" type="password" minLength={12} required autoComplete="new-password" /></label><button className="primary-button">Create user</button></form>
         <form className="template-form" onSubmit={form("CREATE_ROLE", (f) => ({ name: String(f.get("name")), permissionKeys: f.getAll("permissionKeys").map(String) }))}><strong>Add role</strong><label>Name<input name="name" required /></label><fieldset><legend>Permissions</legend>{data.permissions.map((permission) => <label key={permission.key}><span><input type="checkbox" name="permissionKeys" value={permission.key} /> <strong>{permission.key}</strong></span><small>{permissionDescription(permission)}</small></label>)}</fieldset><button className="primary-button">Create role</button></form>
         <form className="template-form" onSubmit={form("ASSIGN_ROLE", (f) => ({ userId: String(f.get("userId")), roleId: String(f.get("roleId")), ...scopePayload(String(f.get("scopeTarget"))) }))}><strong>Assign role</strong><p>Choose the smallest scope required. Reassigning the same role updates its scope.</p><label>User<select name="userId" required>{data.users.map((user) => <option value={user.id} key={user.id}>{user.firstName} {user.lastName} · {user.email}</option>)}</select></label><label>Role<select name="roleId" required>{data.roles.map((role) => <option value={role.id} key={role.id}>{role.name}</option>)}</select></label><label>Scope<select name="scopeTarget" required><option value="ORGANIZATION">Entire organization</option>{data.sites.map((site) => <option value={`SITE:${site.id}`} key={`site-${site.id}`}>Site · {site.name}</option>)}{data.departments.map((department) => <option value={`DEPARTMENT:${department.id}`} key={`department-${department.id}`}>Department · {department.name}</option>)}</select></label><button className="primary-button">Assign scoped role</button></form>
-      </div></div>}
+      </div><div className="detail-section"><h3>Existing role assignments &amp; effective access</h3><p>Review current scoped assignments before making access changes. Effective permissions are the union of assigned roles within their applicable scopes.</p>{data.users.map((user) => { const assignments = data.roleAssignments.filter((assignment) => assignment.userId === user.id); const effectivePermissions = [...new Set(assignments.flatMap((assignment) => roleById.get(assignment.roleId)?.permissions.map((item) => item.permission.key) ?? []))].sort(); return <div className="template-form" key={`access-${user.id}`}><strong>{user.firstName} {user.lastName} · {user.email}</strong><p>Status: {user.status}</p>{assignments.length === 0 ? <p>No role assignments.</p> : <div className="table-scroll"><table><thead><tr><th>Role</th><th>Scope</th><th>Assigned</th><th>Assigned by</th></tr></thead><tbody>{assignments.map((assignment) => { const assigner = assignment.assignedBy ? userById.get(assignment.assignedBy) : null; return <tr key={`${assignment.userId}-${assignment.roleId}`}><td>{roleById.get(assignment.roleId)?.name ?? "Unknown role"}</td><td>{scopeLabel(assignment)}</td><td>{new Date(assignment.assignedAt).toLocaleString()}</td><td>{assigner ? `${assigner.firstName} ${assigner.lastName}` : "System / historical"}</td></tr>; })}</tbody></table></div>}<details><summary>Effective permissions ({effectivePermissions.length})</summary>{effectivePermissions.length === 0 ? <p>No permissions granted.</p> : <p>{effectivePermissions.join(", ")}</p>}</details></div>; })}</div></div>}
 
       {section === "memberships" && <MembershipAdministration embedded />}
 
