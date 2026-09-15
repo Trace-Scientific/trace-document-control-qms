@@ -11,7 +11,7 @@ export type TrainingAssignmentRecord = {
   id: string; organizationId: string; employeeId: string; courseId: string; assignedAt: Date; dueAt: Date | null; status: "ASSIGNED" | "COMPLETED" | "CANCELLED"; createdByUserId: string; createdAt: Date; updatedAt: Date; cancelledAt?: Date | null; cancelReason?: string | null; cancelledByUserId?: string | null;
 };
 export type TrainingCompletionRecord = {
-  id: string; organizationId: string; assignmentId: string; employeeId: string; courseId: string; completedAt: Date; result: string | null; fileId: string | null; createdByUserId: string; createdAt: Date;
+  id: string; organizationId: string; assignmentId: string; employeeId: string; courseId: string; completedAt: Date; result: string | null; fileId: string | null; createdByUserId: string; createdAt: Date; evidenceName?: string | null; evidenceStatus?: string | null;
 };
 
 export interface TrainingStore {
@@ -21,6 +21,7 @@ export interface TrainingStore {
   createAssignment(input: { organizationId: string; employeeId: string; courseId: string; assignedAt: Date; dueAt: Date | null; actorUserId: string }): Promise<TrainingAssignmentRecord>;
   cancelAssignment(input: { organizationId: string; assignmentId: string; reason: string; actorUserId: string }): Promise<TrainingAssignmentRecord>;
   reassignAssignment(input: { organizationId: string; assignmentId: string; assignedAt: Date; dueAt: Date | null; reason: string; actorUserId: string }): Promise<TrainingAssignmentRecord>;
+  listCompletions(organizationId: string, employeeId?: string): Promise<TrainingCompletionRecord[]>;
   completeAssignment(input: { organizationId: string; assignmentId: string; completedAt: Date; result: string | null; fileId: string | null; actorUserId: string }): Promise<TrainingCompletionRecord>;
 }
 
@@ -69,6 +70,11 @@ export class TrainingService {
     validateAssignmentDates(input.assignedAt, dueAt);
     if (!reason || reason.length > 500) throw new TrainingValidationError("Training reassignment reason is required");
     return this.store.reassignAssignment({ organizationId: input.organizationId, assignmentId: input.assignmentId, assignedAt: input.assignedAt, dueAt, reason, actorUserId: context.userId });
+  }
+
+  listCompletions(context: AuthorizationContext, organizationId: string, employeeId?: string) {
+    requireAuthorization(context, { organizationId, permission: "training.read" });
+    return this.store.listCompletions(organizationId, employeeId);
   }
 
   completeAssignment(context: AuthorizationContext, input: { organizationId: string; assignmentId: string; completedAt: Date; result?: string | null; fileId?: string | null }) {
