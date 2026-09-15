@@ -59,10 +59,12 @@ export function AccessAdministration() {
 
   const roleById = new Map(data.roles.map((role) => [role.id, role]));
   const userById = new Map(data.users.map((user) => [user.id, user]));
+  const sites = data.sites;
+  const departments = data.departments;
   function scopeLabel(assignment: RoleAssignment) {
     if (assignment.scopeType === "ORGANIZATION") return "Entire organization";
-    if (assignment.scopeType === "SITE") return `Site · ${data.sites.find((site) => site.id === assignment.scopeId)?.name ?? "Unknown site"}`;
-    return `Department · ${data.departments.find((department) => department.id === assignment.scopeId)?.name ?? "Unknown department"}`;
+    if (assignment.scopeType === "SITE") return `Site · ${sites.find((site) => site.id === assignment.scopeId)?.name ?? "Unknown site"}`;
+    return `Department · ${departments.find((department) => department.id === assignment.scopeId)?.name ?? "Unknown department"}`;
   }
 
   return <>
