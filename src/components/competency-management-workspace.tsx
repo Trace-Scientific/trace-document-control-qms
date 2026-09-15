@@ -10,6 +10,14 @@ type Element = { id: string; programId: string; code: string; title: string; req
 type Assessment = CompetencyAssessmentSummary & { fileId: string | null; notes: string | null };
 type Section = "status" | "assessment" | "programs" | "elements";
 
+function formatDateOnly(value: string | null) {
+  if (!value) return "—";
+  const calendar = value.slice(0, 10);
+  const [year, month, day] = calendar.split("-").map(Number);
+  if (!year || !month || !day) return calendar;
+  return `${month}/${day}/${year}`;
+}
+
 export function CompetencyManagementWorkspace({ canManage, today }: { canManage: boolean; today: string }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
@@ -128,7 +136,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
       <div className="stats-grid">
         <article><strong>{dashboard.total}</strong><span>Tracked</span></article><article><strong>{dashboard.current}</strong><span>Current</span></article><article><strong>{dashboard.dueSoon}</strong><span>Due within 30 days</span></article><article><strong>{dashboard.expired}</strong><span>Expired</span></article><article><strong>{dashboard.notQualified}</strong><span>Not qualified</span></article><article><strong>{dashboard.conditional}</strong><span>Conditional</span></article>
       </div>
-      <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Latest assessment</th><th>Expires</th><th>Status</th></tr></thead><tbody>{rollups.map((rollup) => { const employee = employeeById.get(rollup.employeeId); const program = programById.get(rollup.programId); return <tr key={`${rollup.employeeId}:${rollup.programId}`}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : rollup.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : rollup.programId}</td><td>{new Date(rollup.assessedAt).toLocaleDateString()}</td><td>{rollup.expiresAt ? new Date(rollup.expiresAt).toLocaleDateString() : "—"}</td><td>{rollup.status}</td></tr>; })}{!rollups.length && <tr><td colSpan={5}>No competency assessments have been recorded.</td></tr>}</tbody></table></div>
+      <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Latest assessment</th><th>Expires</th><th>Status</th></tr></thead><tbody>{rollups.map((rollup) => { const employee = employeeById.get(rollup.employeeId); const program = programById.get(rollup.programId); return <tr key={`${rollup.employeeId}:${rollup.programId}`}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : rollup.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : rollup.programId}</td><td>{new Date(rollup.assessedAt).toLocaleDateString()}</td><td>{formatDateOnly(rollup.expiresAt)}</td><td>{rollup.status}</td></tr>; })}{!rollups.length && <tr><td colSpan={5}>No competency assessments have been recorded.</td></tr>}</tbody></table></div>
     </div>}
 
     {section === "assessment" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record competency assessment</h3><p>Record an append-only assessment decision and supporting evidence.</p></div></div><form onSubmit={createAssessment} className="admin-form">
