@@ -7,6 +7,15 @@ import { TrainingEligibilityError, TrainingService, TrainingValidationError } fr
 const service = new TrainingService(new PrismaTrainingStore());
 const createSchema = z.object({ assignmentId: z.string().uuid(), completedAt: z.string().datetime(), result: z.string().max(500).nullish(), fileId: z.string().uuid().nullish() });
 
+export async function GET(request: NextRequest) {
+  try {
+    const context = await authenticateRequest(request);
+    const employeeId = request.nextUrl.searchParams.get("employeeId") || undefined;
+    if (employeeId && !z.string().uuid().safeParse(employeeId).success) return NextResponse.json({ error: "Invalid employee filter" }, { status: 422 });
+    return NextResponse.json({ data: await service.listCompletions(context, context.organizationId, employeeId) }, { headers: { "cache-control": "private, no-store" } });
+  } catch (error) { return respond(error); }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const context = await authenticateRequest(request);
