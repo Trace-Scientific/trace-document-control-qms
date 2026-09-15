@@ -24,6 +24,7 @@ function store(): TrainingStore {
     async createAssignment(input) { return assignment(input); },
     async cancelAssignment(input) { return { ...assignment({ assignedAt: new Date(), dueAt: null, actorUserId: input.actorUserId }), status: "CANCELLED" as const, cancelReason: input.reason, cancelledAt: new Date(), cancelledByUserId: input.actorUserId }; },
     async reassignAssignment(input) { return assignment(input); },
+    async listCompletions() { return []; },
     async completeAssignment(input) { return { id: "66666666-6666-4666-8666-666666666666", organizationId: input.organizationId, assignmentId: input.assignmentId, employeeId, courseId, completedAt: input.completedAt, result: input.result, fileId: input.fileId, createdByUserId: input.actorUserId, createdAt: new Date() }; },
   };
 }
@@ -32,6 +33,12 @@ describe("training service", () => {
   it("requires training.read for listings", () => {
     const service = new TrainingService(store());
     expect(() => service.listCourses({ ...context("training.read"), grants: [] }, organizationId)).toThrow("Access denied");
+    expect(() => service.listCompletions({ ...context("training.read"), grants: [] }, organizationId)).toThrow("Access denied");
+  });
+
+  it("allows completion history with training.read", async () => {
+    const service = new TrainingService(store());
+    await expect(service.listCompletions(context("training.read"), organizationId)).resolves.toEqual([]);
   });
 
   it("requires training.manage for course creation", () => {
