@@ -13,3 +13,4 @@ export * from "./system-health";
 export * from "./integration-framework";
 export * from "./integration-operations";
 export * from "./integration-runtime";
+export * from "./integration-inbound";
