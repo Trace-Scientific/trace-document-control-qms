@@ -8,6 +8,18 @@ INSERT INTO "PlatformPermission" ("id", "key", "description") VALUES
   (gen_random_uuid(), 'platform.reporting.read', 'Read platform commercial and operational reports.')
 ON CONFLICT ("key") DO NOTHING;
 
+-- Existing platform-security administrators receive the new PR 8 permissions so
+-- the control plane remains operable after deployment. Other platform roles stay
+-- unchanged and can be granted these permissions explicitly through platform RBAC.
+INSERT INTO "PlatformRolePermission" ("roleId", "permissionId")
+SELECT DISTINCT existing."roleId", added."id"
+FROM "PlatformRolePermission" existing
+INNER JOIN "PlatformPermission" security_permission ON security_permission."id" = existing."permissionId"
+CROSS JOIN "PlatformPermission" added
+WHERE security_permission."key" = 'platform.security.manage'
+  AND added."key" IN ('platform.notification.read', 'platform.notification.manage', 'platform.reporting.read')
+ON CONFLICT ("roleId", "permissionId") DO NOTHING;
+
 CREATE TYPE "PlatformNotificationChannel" AS ENUM ('IN_APP', 'EMAIL');
 CREATE TYPE "PlatformNotificationStatus" AS ENUM ('PENDING', 'PROCESSING', 'RETRY', 'SENT', 'DEAD_LETTER');
 
@@ -38,6 +50,7 @@ CREATE TABLE "PlatformNotification" (
     (("status" = 'PROCESSING') = ("claimedAt" IS NOT NULL AND "claimedBy" IS NOT NULL))
     AND (("status" = 'SENT') = ("sentAt" IS NOT NULL))
     AND (("status" = 'DEAD_LETTER') = ("deadLetteredAt" IS NOT NULL))
+    AND ("readAt" IS NULL OR ("channel" = 'IN_APP' AND "status" = 'SENT'))
   )
 );
 
