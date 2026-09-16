@@ -28,7 +28,7 @@ function amzDates(now: Date) {
 
 function requireRegion() {
   const region = (process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "").trim();
-  if (!/^us-west-1$/.test(region)) {
+  if (region !== "us-west-1") {
     throw new PlatformIntegrationConfigurationError("AWS integration secret region is not configured for the governed release region");
   }
   return region;
@@ -37,7 +37,14 @@ function requireRegion() {
 function validateReference(reference: string) {
   const match = REFERENCE_PATTERN.exec(reference);
   if (!match) throw new PlatformIntegrationConfigurationError("Credential reference is not an approved AWS integration secret reference");
-  return { secretId: match[1], environment: match[2] };
+  const deploymentEnvironment = process.env.TRACE_DEPLOYMENT_ENV?.trim();
+  if (!deploymentEnvironment || !["validation", "production"].includes(deploymentEnvironment)) {
+    throw new PlatformIntegrationConfigurationError("Governed deployment environment is not configured");
+  }
+  if (deploymentEnvironment !== match[2]) {
+    throw new PlatformIntegrationConfigurationError("Credential reference does not match the governed deployment environment");
+  }
+  return { secretId: match[1] };
 }
 
 async function readEcsTaskCredentials(): Promise<AwsCredentials> {
