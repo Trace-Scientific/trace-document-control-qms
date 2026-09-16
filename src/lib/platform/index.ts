@@ -18,3 +18,5 @@ export * from "./environment-credential-resolver";
 export * from "./stripe-adapter";
 export * from "./quickbooks-adapter";
 export * from "./salesforce-adapter";
+export * from "./sendgrid-email-adapter";
+export * from "./twilio-sms-adapter";
