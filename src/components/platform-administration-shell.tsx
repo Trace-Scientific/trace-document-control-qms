@@ -45,8 +45,8 @@ const sections: SectionDefinition[] = [
   { id: "customers", label: "Customers", description: "Commercial customer accounts and tenant bindings.", anyPermission: ["platform.organization.read", "platform.organization.manage"], phase: "available" },
   { id: "subscriptions", label: "Subscriptions & entitlements", description: "Product plans, subscriptions, and feature access.", anyPermission: ["platform.subscription.read", "platform.subscription.manage", "platform.entitlement.manage"], phase: "foundation" },
   { id: "support", label: "Support access", description: "Case-bound controlled tenant support access.", anyPermission: ["platform.support.request", "platform.support.approve", "platform.support.access"], phase: "available" },
-  { id: "sales", label: "Sales", description: "Sales ownership and customer attribution.", anyPermission: ["platform.sales.read", "platform.sales.manage"], phase: "planned" },
-  { id: "commissions", label: "Commissions", description: "Governed commission accruals and payments.", anyPermission: ["platform.commission.read", "platform.commission.manage"], phase: "planned" },
+  { id: "sales", label: "Sales", description: "Sales ownership and customer attribution.", anyPermission: ["platform.sales.read", "platform.sales.manage"], phase: "foundation" },
+  { id: "commissions", label: "Commissions", description: "Governed commission accruals and payments.", anyPermission: ["platform.commission.read", "platform.commission.manage"], phase: "foundation" },
   { id: "help", label: "Help content", description: "Help Center and controlled user-manual publishing.", anyPermission: ["platform.help.manage"], phase: "planned" },
   { id: "audit", label: "Platform audit", description: "Trace-side control-plane audit history.", anyPermission: ["platform.audit.read"], phase: "foundation" },
   { id: "health", label: "System health", description: "Sanitized application and service health.", anyPermission: ["platform.health.read"], phase: "planned" },
@@ -237,6 +237,24 @@ function SectionContent({
       <div className={styles.grid}>
         <article className={styles.card}><h3>Catalog foundation</h3><p>Products, features, plans, plan versions, and immutable activated feature matrices are available through the governed platform APIs.</p></article>
         <article className={styles.card}><h3>Subscription foundation</h3><p>Customer subscriptions and effective-dated entitlement overrides are available. Tenant RBAC remains a separate authorization layer.</p></article>
+      </div>
+    );
+  }
+
+  if (section.id === "sales") {
+    return (
+      <div className={styles.grid}>
+        <article className={styles.card}><h3>Sales representatives</h3><p>Trace-side sales representative profiles are linked to active platform identities and governed by separate sales permissions.</p></article>
+        <article className={styles.card}><h3>Customer attribution</h3><p>Effective-dated sales assignments preserve which representative owned a customer relationship at the time of a commission event.</p></article>
+      </div>
+    );
+  }
+
+  if (section.id === "commissions") {
+    return (
+      <div className={styles.grid}>
+        <article className={styles.card}><h3>Versioned commission rules</h3><p>Draft plan versions and rules become immutable historical configuration when activated.</p></article>
+        <article className={styles.card}><h3>Governed lifecycle</h3><p>Accruals progress PENDING → EARNED → APPROVED → PAID, with separate append-only adjustments, reversals, and payment evidence.</p></article>
       </div>
     );
   }
