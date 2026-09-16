@@ -8,8 +8,10 @@ export class QualityClosureReauthenticationFailedError extends Error { construct
 export class QualityClosureReauthenticationThrottledError extends Error { constructor(){super("Too many reauthentication attempts");this.name="QualityClosureReauthenticationThrottledError";} }
 
 export type QualityClosureEvidence={organizationId:string;userId:string;passwordHash:string;eventId:string;eventNumber:string;status:string};
+export type QualityClosureRecord={closureId:string;eventId:string;eventNumber:string;closureReason:string;closedAt:Date;signerUserId:string;signerName:string;signerEmail:string;signatureId:string;meaning:string;meaningText:string;signedAt:Date;authenticationEventId:string;authenticationMethod:string;authenticationOutcome:string;payloadHash:string};
 export interface QualityClosureStore{
   loadEvidence(organizationId:string,userId:string,eventId:string):Promise<QualityClosureEvidence|null>;
+  loadClosure(organizationId:string,eventId:string):Promise<QualityClosureRecord|null>;
   recentFailedReauthentications(organizationId:string,userId:string,since:Date):Promise<number>;
   recordFailedReauthentication(evidence:QualityClosureEvidence,occurredAt:Date):Promise<void>;
   commitClosure(input:{organizationId:string;eventId:string;eventNumber:string;signerUserId:string;closureReason:string;payloadHash:string;signedAt:Date;authenticationValidUntil:Date}):Promise<{closureId:string;signatureId:string}>;
@@ -17,6 +19,7 @@ export interface QualityClosureStore{
 
 export class QualityClosureService{
   constructor(private readonly store:QualityClosureStore,private readonly clock:()=>Date=()=>new Date()){}
+  read(context:AuthorizationContext,organizationId:string,eventId:string){requireAuthorization(context,{organizationId,permission:"quality_event.read"});return this.store.loadClosure(organizationId,eventId);}
   async close(context:AuthorizationContext,input:{organizationId:string;eventId:string;closureReason:string;password:string;confirmed:boolean}){
     requireAuthorization(context,{organizationId:input.organizationId,permission:"quality_event.manage"});
     const closureReason=input.closureReason.trim();
