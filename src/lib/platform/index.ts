@@ -14,3 +14,5 @@ export * from "./integration-framework";
 export * from "./integration-operations";
 export * from "./integration-runtime";
 export * from "./integration-inbound";
+export * from "./environment-credential-resolver";
+export * from "./stripe-adapter";

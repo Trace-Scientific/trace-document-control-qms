@@ -1,9 +1,12 @@
-import { PlatformIntegrationRegistry, PlatformIntegrationService, UnavailableCredentialResolver } from "./integration-framework";
+import { PlatformIntegrationRegistry, PlatformIntegrationService } from "./integration-framework";
+import { EnvironmentPlatformCredentialResolver } from "./environment-credential-resolver";
+import { StripeBillingAdapter } from "./stripe-adapter";
 
-// Provider-specific PRs register adapters here through an explicit reviewed composition change.
-// PR 10 intentionally ships with no provider adapters and no credential backend.
-export const platformIntegrationRegistry = new PlatformIntegrationRegistry([]);
-export const platformCredentialResolver = new UnavailableCredentialResolver();
+// Provider adapters are registered only through explicit reviewed composition changes.
+export const platformIntegrationRegistry = new PlatformIntegrationRegistry([
+  new StripeBillingAdapter(),
+]);
+export const platformCredentialResolver = new EnvironmentPlatformCredentialResolver();
 export const platformIntegrationService = new PlatformIntegrationService(
   platformIntegrationRegistry,
   platformCredentialResolver,
