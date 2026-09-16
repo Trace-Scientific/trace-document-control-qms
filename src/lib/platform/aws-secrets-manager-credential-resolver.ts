@@ -1,7 +1,7 @@
 import { createHash, createHmac } from "node:crypto";
 import { PlatformIntegrationConfigurationError, type PlatformCredentialResolver } from "./integration-framework";
 
-const REFERENCE_PATTERN = /^aws-sm:\/\/(trace-qms\/(validation|production)\/integrations\/[A-Za-z0-9/_+=.@-]{1,180})$/;
+const REFERENCE_PATTERN = /^aws-sm:\/\/(trace-qms\/validation\/integrations\/[A-Za-z0-9/_+=.@-]{1,180})$/;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_SECRET_BYTES = 64 * 1024;
 
@@ -29,21 +29,14 @@ function amzDates(now: Date) {
 function requireRegion() {
   const region = (process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "").trim();
   if (region !== "us-west-1") {
-    throw new PlatformIntegrationConfigurationError("AWS integration secret region is not configured for the governed release region");
+    throw new PlatformIntegrationConfigurationError("AWS integration secret region is not configured for the governed validation region");
   }
   return region;
 }
 
 function validateReference(reference: string) {
   const match = REFERENCE_PATTERN.exec(reference);
-  if (!match) throw new PlatformIntegrationConfigurationError("Credential reference is not an approved AWS integration secret reference");
-  const deploymentEnvironment = process.env.TRACE_DEPLOYMENT_ENV?.trim();
-  if (!deploymentEnvironment || !["validation", "production"].includes(deploymentEnvironment)) {
-    throw new PlatformIntegrationConfigurationError("Governed deployment environment is not configured");
-  }
-  if (deploymentEnvironment !== match[2]) {
-    throw new PlatformIntegrationConfigurationError("Credential reference does not match the governed deployment environment");
-  }
+  if (!match) throw new PlatformIntegrationConfigurationError("Credential reference is not an approved AWS validation integration secret reference");
   return { secretId: match[1] };
 }
 
