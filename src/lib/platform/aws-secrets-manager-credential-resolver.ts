@@ -77,8 +77,9 @@ async function getSecretValue(secretId: string, credentials: AwsCredentials, reg
   const endpoint = `https://${host}/`;
   const body = JSON.stringify({ SecretId: secretId });
   const { amzDate, dateStamp } = amzDates(new Date());
-  const canonicalHeaders = `content-type:application/x-amz-json-1.1\nhost:${host}\nx-amz-date:${amzDate}\nx-amz-target:secretsmanager.GetSecretValue\n${credentials.sessionToken ? `x-amz-security-token:${credentials.sessionToken}\n` : ""}`;
-  const signedHeaders = `content-type;host;x-amz-date;x-amz-target${credentials.sessionToken ? ";x-amz-security-token" : ""}`;
+  const tokenHeader = credentials.sessionToken ? `x-amz-security-token:${credentials.sessionToken}\n` : "";
+  const canonicalHeaders = `content-type:application/x-amz-json-1.1\nhost:${host}\nx-amz-date:${amzDate}\n${tokenHeader}x-amz-target:secretsmanager.GetSecretValue\n`;
+  const signedHeaders = `content-type;host;x-amz-date${credentials.sessionToken ? ";x-amz-security-token" : ""};x-amz-target`;
   const canonicalRequest = ["POST", "/", "", canonicalHeaders, signedHeaders, sha256(body)].join("\n");
   const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
   const stringToSign = ["AWS4-HMAC-SHA256", amzDate, credentialScope, sha256(canonicalRequest)].join("\n");
