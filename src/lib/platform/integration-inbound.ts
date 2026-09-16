@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import { PlatformIntegrationConfigurationError, PlatformIntegrationNotFoundError } from "./integration-framework";
+import {
+  PlatformIntegrationConfigurationError,
+  PlatformIntegrationNotFoundError,
+  type PlatformIntegrationWebhookEvidence,
+} from "./integration-framework";
 import { platformCredentialResolver, platformIntegrationRegistry } from "./integration-runtime";
 
 function requireIdempotency(value: string) {
@@ -11,15 +15,7 @@ function requireIdempotency(value: string) {
   return normalized;
 }
 
-export type ProviderSafeWebhookEvidence = {
-  rawBody: string;
-  rawBodyBytes: Uint8Array;
-  requestUrl: string;
-  formParameters?: Readonly<Record<string, readonly string[]>>;
-  headers: Headers;
-};
-
-export async function receivePlatformIntegrationWebhook(input: ProviderSafeWebhookEvidence & {
+export async function receivePlatformIntegrationWebhook(input: PlatformIntegrationWebhookEvidence & {
   connectionId: string;
   idempotencyKey: string;
   correlationId?: string | null;
@@ -47,7 +43,7 @@ export async function receivePlatformIntegrationWebhook(input: ProviderSafeWebho
     const adapter = platformIntegrationRegistry.get(connection.adapterKey);
     if (!adapter) throw new PlatformIntegrationConfigurationError("Adapter is not registered in this release");
     const credential = await platformCredentialResolver.resolve(connection.credentialRef);
-    const webhookEvidence = {
+    const normalized = await adapter.verifyAndNormalizeWebhook({
       rawBody: input.rawBody,
       rawBodyBytes: input.rawBodyBytes,
       requestUrl: input.requestUrl,
@@ -55,8 +51,7 @@ export async function receivePlatformIntegrationWebhook(input: ProviderSafeWebho
       headers: input.headers,
       configuration: connection.configuration,
       credential,
-    };
-    const normalized = await adapter.verifyAndNormalizeWebhook(webhookEvidence);
+    });
     await db.$transaction(async (tx) => {
       await tx.$executeRaw(Prisma.sql`
         UPDATE "PlatformInboundWebhookReceipt"
