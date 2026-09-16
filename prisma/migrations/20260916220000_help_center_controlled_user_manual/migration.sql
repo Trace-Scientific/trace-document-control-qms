@@ -176,13 +176,25 @@ BEFORE UPDATE ON "UserManualRelease"
 FOR EACH ROW EXECUTE FUNCTION protect_published_manual_release();
 
 CREATE OR REPLACE FUNCTION protect_manual_release_sections() RETURNS trigger AS $$
-DECLARE release_status "ManualReleaseStatus";
+DECLARE
+  release_status "ManualReleaseStatus";
+  target_release_id UUID;
 BEGIN
-  SELECT "status" INTO release_status FROM "UserManualRelease" WHERE "id" = COALESCE(NEW."releaseId", OLD."releaseId");
+  IF TG_OP = 'DELETE' THEN
+    target_release_id := OLD."releaseId";
+  ELSE
+    target_release_id := NEW."releaseId";
+  END IF;
+
+  SELECT "status" INTO release_status FROM "UserManualRelease" WHERE "id" = target_release_id;
   IF release_status <> 'DRAFT' THEN
     RAISE EXCEPTION 'Sections for a published or archived UserManualRelease are immutable';
   END IF;
-  RETURN COALESCE(NEW, OLD);
+
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
