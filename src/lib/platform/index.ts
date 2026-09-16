@@ -17,3 +17,4 @@ export * from "./integration-inbound";
 export * from "./environment-credential-resolver";
 export * from "./stripe-adapter";
 export * from "./quickbooks-adapter";
+export * from "./salesforce-adapter";
