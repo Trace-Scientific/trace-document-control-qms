@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authenticatePlatformRequest } from "@/lib/platform/authenticated-request";
-import { PlatformIntegrationService } from "@/lib/platform/integration-framework";
+import { platformIntegrationService } from "@/lib/platform/integration-runtime";
 import { respondPlatformIntegrationError } from "@/lib/platform/integration-framework-api";
 
 const createSchema = z.object({
@@ -12,12 +12,10 @@ const createSchema = z.object({
   reason: z.string().min(1).max(1000),
 });
 
-const service = new PlatformIntegrationService();
-
 export async function GET(request: NextRequest) {
   try {
     const context = await authenticatePlatformRequest(request);
-    return NextResponse.json({ data: await service.listConnections(context) }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ data: await platformIntegrationService.listConnections(context) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return respondPlatformIntegrationError(error);
   }
@@ -27,7 +25,7 @@ export async function POST(request: NextRequest) {
   try {
     const context = await authenticatePlatformRequest(request);
     const input = createSchema.parse(await request.json());
-    return NextResponse.json({ data: await service.createConnection(context, input) }, { status: 201 });
+    return NextResponse.json({ data: await platformIntegrationService.createConnection(context, input) }, { status: 201 });
   } catch (error) {
     return respondPlatformIntegrationError(error);
   }
