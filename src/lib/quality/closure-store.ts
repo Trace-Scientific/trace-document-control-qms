@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import { QualityClosureValidationError, type QualityClosureEvidence, type QualityClosureStore } from "./closure";
+import { QualityClosureValidationError, type QualityClosureEvidence, type QualityClosureRecord, type QualityClosureStore } from "./closure";
 
 export class PrismaQualityClosureStore implements QualityClosureStore{
   recentFailedReauthentications(organizationId:string,userId:string,since:Date){return db.authenticationEvent.count({where:{organizationId,userId,eventType:"REAUTHENTICATION",outcome:"FAILURE",occurredAt:{gte:since},metadata:{path:["purpose"],equals:"QUALITY_EVENT_CLOSURE"}}});}
@@ -8,6 +8,10 @@ export class PrismaQualityClosureStore implements QualityClosureStore{
     const user=await db.user.findFirst({where:{organizationId,id:userId,status:"ACTIVE",credential:{disabledAt:null}},select:{credential:{select:{passwordHash:true}}}});if(!user?.credential)return null;
     const rows=await db.$queryRaw<Array<{id:string;eventNumber:string;status:string}>>(Prisma.sql`SELECT "id","eventNumber","status"::text AS "status" FROM "QualityEvent" WHERE "organizationId"=${organizationId}::uuid AND "id"=${eventId}::uuid`);const event=rows[0];if(!event)return null;
     return {organizationId,userId,passwordHash:user.credential.passwordHash,eventId:event.id,eventNumber:event.eventNumber,status:event.status};
+  }
+  async loadClosure(organizationId:string,eventId:string):Promise<QualityClosureRecord|null>{
+    const rows=await db.$queryRaw<QualityClosureRecord[]>(Prisma.sql`SELECT c."id" AS "closureId",c."eventId",q."eventNumber",c."closureReason",c."closedAt",c."closedByUserId" AS "signerUserId",TRIM(CONCAT(u."firstName",' ',u."lastName")) AS "signerName",u."email" AS "signerEmail",s."id" AS "signatureId",s."meaning"::text AS "meaning",s."meaningText",s."signedAt",s."authenticationEventId",a."method"::text AS "authenticationMethod",a."outcome"::text AS "authenticationOutcome",s."payloadHash" FROM "QualityEventClosure" c JOIN "QualityEvent" q ON q."organizationId"=c."organizationId" AND q."id"=c."eventId" JOIN "ElectronicSignature" s ON s."organizationId"=c."organizationId" AND s."id"=c."signatureId" JOIN "AuthenticationEvent" a ON a."organizationId"=c."organizationId" AND a."id"=s."authenticationEventId" JOIN "User" u ON u."organizationId"=c."organizationId" AND u."id"=c."closedByUserId" WHERE c."organizationId"=${organizationId}::uuid AND c."eventId"=${eventId}::uuid LIMIT 1`);
+    return rows[0]??null;
   }
   async recordFailedReauthentication(evidence:QualityClosureEvidence,occurredAt:Date){await db.$transaction([db.authenticationEvent.create({data:{organizationId:evidence.organizationId,userId:evidence.userId,eventType:"REAUTHENTICATION",outcome:"FAILURE",method:"PASSWORD",occurredAt,metadata:{purpose:"QUALITY_EVENT_CLOSURE"}}}),db.auditEvent.create({data:{organizationId:evidence.organizationId,actorUserId:evidence.userId,action:"QUALITY_EVENT_CLOSURE_REAUTHENTICATION_FAILED",entityType:"QualityEvent",entityId:evidence.eventId,occurredAt,metadata:{eventNumber:evidence.eventNumber}}})]);}
   async commitClosure(input:Parameters<QualityClosureStore["commitClosure"]>[0]){
