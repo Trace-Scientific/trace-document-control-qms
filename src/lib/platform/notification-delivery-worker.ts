@@ -8,14 +8,16 @@ export interface PlatformNotificationTransport {
 
 export class InAppPlatformNotificationTransport implements PlatformNotificationTransport {
   readonly channel = "IN_APP" as const;
-  async send(_notification: ClaimedPlatformNotification): Promise<void> {
+  async send(notification: ClaimedPlatformNotification): Promise<void> {
+    void notification;
     // In-app delivery is complete once the durable row reaches SENT.
   }
 }
 
 export class UnconfiguredEmailPlatformNotificationTransport implements PlatformNotificationTransport {
   readonly channel = "EMAIL" as const;
-  async send(_notification: ClaimedPlatformNotification): Promise<void> {
+  async send(notification: ClaimedPlatformNotification): Promise<void> {
+    void notification;
     throw new Error("Platform email provider is not configured");
   }
 }
