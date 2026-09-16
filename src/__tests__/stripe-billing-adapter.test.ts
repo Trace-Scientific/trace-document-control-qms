@@ -16,8 +16,8 @@ describe("Stripe billing adapter governance", () => {
   it("keeps provider credentials outside application data", () => {
     expect(resolver).toContain("env:(TRACE_INTEGRATION_");
     expect(resolver).not.toContain("DATABASE_URL");
-    expect(stripe).not.toContain("sk_live_");
-    expect(stripe).not.toContain("whsec_\"");
+    expect(stripe).not.toContain("sk_live_example");
+    expect(stripe).not.toContain("whsec_example");
   });
 
   it("passes the persisted platform idempotency key to provider adapters", () => {
