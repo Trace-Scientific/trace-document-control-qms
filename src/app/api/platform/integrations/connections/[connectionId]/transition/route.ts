@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authenticatePlatformRequest } from "@/lib/platform/authenticated-request";
-import { PlatformIntegrationService } from "@/lib/platform/integration-framework";
+import { platformIntegrationService } from "@/lib/platform/integration-runtime";
 import { respondPlatformIntegrationError } from "@/lib/platform/integration-framework-api";
 
 const schema = z.object({
@@ -15,8 +15,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const context = await authenticatePlatformRequest(request);
     const { connectionId } = await params;
     const input = schema.parse(await request.json());
-    const service = new PlatformIntegrationService();
-    return NextResponse.json({ data: await service.transitionConnection(context, { connectionId, ...input }) });
+    return NextResponse.json({ data: await platformIntegrationService.transitionConnection(context, { connectionId, ...input }) });
   } catch (error) {
     return respondPlatformIntegrationError(error);
   }
