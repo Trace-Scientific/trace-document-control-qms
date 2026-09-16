@@ -1,5 +1,6 @@
 -- PR 18: provider-neutral OAuth credential lifecycle metadata.
--- Access tokens, refresh tokens, client secrets, authorization codes, and PKCE verifiers are never stored here.
+-- Access tokens, refresh tokens, client secrets, authorization codes, OAuth state values,
+-- and PKCE verifiers are never stored here.
 
 CREATE TYPE "PlatformOAuthLifecycleStatus" AS ENUM ('ACTIVE','REFRESHING','REVOKING','REAUTH_REQUIRED','REVOKED','ERROR');
 
@@ -33,3 +34,20 @@ CREATE INDEX "PlatformOAuthCredentialLifecycle_refresh_idx"
   ON "PlatformOAuthCredentialLifecycle"("status","nextRefreshAt");
 CREATE INDEX "PlatformOAuthCredentialLifecycle_provider_idx"
   ON "PlatformOAuthCredentialLifecycle"("providerKey","status");
+
+CREATE TABLE "PlatformOAuthAuthorizationSession" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "connectionId" UUID NOT NULL REFERENCES "PlatformIntegrationConnection"("id") ON DELETE RESTRICT,
+  "providerKey" TEXT NOT NULL,
+  "stateSha256" TEXT NOT NULL UNIQUE,
+  "pkceChallenge" TEXT NOT NULL,
+  "expiresAt" TIMESTAMPTZ NOT NULL,
+  "consumedAt" TIMESTAMPTZ,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "PlatformOAuthAuthorizationSession_state_hash_check" CHECK (char_length("stateSha256") = 64),
+  CONSTRAINT "PlatformOAuthAuthorizationSession_pkce_check" CHECK (char_length("pkceChallenge") BETWEEN 43 AND 128),
+  CONSTRAINT "PlatformOAuthAuthorizationSession_expiry_check" CHECK ("expiresAt" > "createdAt")
+);
+
+CREATE INDEX "PlatformOAuthAuthorizationSession_connection_idx"
+  ON "PlatformOAuthAuthorizationSession"("connectionId","expiresAt");
