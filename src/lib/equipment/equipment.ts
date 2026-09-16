@@ -22,6 +22,7 @@ function validateEquipmentDate(label:string,value:Date|null|undefined){
   const year=value.getUTCFullYear();
   if(year<1900||year>9999)throw new EquipmentValidationError(`${label} year must be between 1900 and 9999`);
 }
+function governedDateKey(value:Date|null|undefined){return value?value.toISOString().slice(0,10):null;}
 
 export class EquipmentService{
   constructor(private readonly store:EquipmentStore){}
@@ -54,12 +55,14 @@ export class EquipmentService{
     if(!reason||reason.length>1000)throw new EquipmentValidationError("Equipment lifecycle reason is required and must not exceed 1000 characters");
     return this.store.transition({...input,reason,actorUserId:context.userId});
   }
-  correctSchedule(context:AuthorizationContext,input:{organizationId:string;equipmentId:string;nextCalibrationDueAt:Date|null;nextMaintenanceDueAt:Date|null;reason:string}){
+  async correctSchedule(context:AuthorizationContext,input:{organizationId:string;equipmentId:string;nextCalibrationDueAt:Date|null;nextMaintenanceDueAt:Date|null;reason:string}){
     requireAuthorization(context,{organizationId:input.organizationId,permission:"equipment.manage"});
     const reason=input.reason.trim();
     if(!reason||reason.length>1000)throw new EquipmentValidationError("Schedule correction reason is required and must not exceed 1000 characters");
     validateEquipmentDate("Next calibration due date",input.nextCalibrationDueAt);
     validateEquipmentDate("Next maintenance due date",input.nextMaintenanceDueAt);
+    const current=(await this.store.list(input.organizationId)).find(item=>item.id===input.equipmentId);
+    if(current&&governedDateKey(current.nextCalibrationDueAt)===governedDateKey(input.nextCalibrationDueAt)&&governedDateKey(current.nextMaintenanceDueAt)===governedDateKey(input.nextMaintenanceDueAt))throw new EquipmentValidationError("Schedule correction must change at least one governed due date");
     return this.store.correctSchedule({...input,reason,actorUserId:context.userId});
   }
 }
