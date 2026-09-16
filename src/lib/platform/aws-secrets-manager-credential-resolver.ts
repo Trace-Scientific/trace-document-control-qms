@@ -1,5 +1,6 @@
 import { createHash, createHmac } from "node:crypto";
-import { PlatformIntegrationConfigurationError, type PlatformCredentialResolver } from "./integration-framework";
+import { PlatformIntegrationConfigurationError } from "./integration-framework";
+import type { PlatformCredentialStore } from "./credential-store";
 
 const REFERENCE_PATTERN = /^aws-sm:\/\/(trace-qms\/validation\/integrations\/[A-Za-z0-9/_+=.@-]{1,180})$/;
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -40,6 +41,13 @@ function validateReference(reference: string) {
   return { secretId: match[1] };
 }
 
+function validateSecretValue(value: string) {
+  if (!value) throw new PlatformIntegrationConfigurationError("AWS integration credential cannot be empty");
+  if (Buffer.byteLength(value, "utf8") > MAX_SECRET_BYTES) {
+    throw new PlatformIntegrationConfigurationError("AWS integration credential exceeds the allowed size");
+  }
+}
+
 async function readEcsTaskCredentials(): Promise<AwsCredentials> {
   const relative = process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI?.trim();
   const full = process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI?.trim();
@@ -71,14 +79,19 @@ async function readEcsTaskCredentials(): Promise<AwsCredentials> {
   return { accessKeyId, secretAccessKey, sessionToken };
 }
 
-async function getSecretValue(secretId: string, credentials: AwsCredentials, region: string) {
+async function secretsManagerRequest(
+  target: "GetSecretValue" | "PutSecretValue",
+  payload: Record<string, string>,
+  credentials: AwsCredentials,
+  region: string,
+) {
   const service = "secretsmanager";
   const host = `${service}.${region}.amazonaws.com`;
   const endpoint = `https://${host}/`;
-  const body = JSON.stringify({ SecretId: secretId });
+  const body = JSON.stringify(payload);
   const { amzDate, dateStamp } = amzDates(new Date());
   const tokenHeader = credentials.sessionToken ? `x-amz-security-token:${credentials.sessionToken}\n` : "";
-  const canonicalHeaders = `content-type:application/x-amz-json-1.1\nhost:${host}\nx-amz-date:${amzDate}\n${tokenHeader}x-amz-target:secretsmanager.GetSecretValue\n`;
+  const canonicalHeaders = `content-type:application/x-amz-json-1.1\nhost:${host}\nx-amz-date:${amzDate}\n${tokenHeader}x-amz-target:secretsmanager.${target}\n`;
   const signedHeaders = `content-type;host;x-amz-date${credentials.sessionToken ? ";x-amz-security-token" : ""};x-amz-target`;
   const canonicalRequest = ["POST", "/", "", canonicalHeaders, signedHeaders, sha256(body)].join("\n");
   const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
@@ -93,24 +106,21 @@ async function getSecretValue(secretId: string, credentials: AwsCredentials, reg
   const headers = new Headers({
     "Content-Type": "application/x-amz-json-1.1",
     "X-Amz-Date": amzDate,
-    "X-Amz-Target": "secretsmanager.GetSecretValue",
+    "X-Amz-Target": `secretsmanager.${target}`,
     "Authorization": authorization,
   });
   if (credentials.sessionToken) headers.set("X-Amz-Security-Token", credentials.sessionToken);
 
   const response = await fetch(endpoint, { method: "POST", headers, body, cache: "no-store" });
-  if (!response.ok) throw new PlatformIntegrationConfigurationError("AWS integration credential could not be resolved");
-  const data = await response.json() as Record<string, unknown>;
-  if (typeof data.SecretString !== "string" || !data.SecretString) {
-    throw new PlatformIntegrationConfigurationError("AWS integration credential is not a supported string secret");
+  if (!response.ok) {
+    throw new PlatformIntegrationConfigurationError(
+      target === "GetSecretValue" ? "AWS integration credential could not be resolved" : "AWS integration credential could not be updated",
+    );
   }
-  if (Buffer.byteLength(data.SecretString, "utf8") > MAX_SECRET_BYTES) {
-    throw new PlatformIntegrationConfigurationError("AWS integration credential exceeds the allowed size");
-  }
-  return data.SecretString;
+  return await response.json() as Record<string, unknown>;
 }
 
-export class AwsSecretsManagerPlatformCredentialResolver implements PlatformCredentialResolver {
+export class AwsSecretsManagerPlatformCredentialResolver implements PlatformCredentialStore {
   private readonly cache = new Map<string, CacheEntry>();
 
   async resolve(reference: string | null): Promise<string | null> {
@@ -122,8 +132,21 @@ export class AwsSecretsManagerPlatformCredentialResolver implements PlatformCred
 
     const region = requireRegion();
     const credentials = await readEcsTaskCredentials();
-    const value = await getSecretValue(secretId, credentials, region);
-    this.cache.set(reference, { value, expiresAt: now + CACHE_TTL_MS });
-    return value;
+    const data = await secretsManagerRequest("GetSecretValue", { SecretId: secretId }, credentials, region);
+    if (typeof data.SecretString !== "string") {
+      throw new PlatformIntegrationConfigurationError("AWS integration credential is not a supported string secret");
+    }
+    validateSecretValue(data.SecretString);
+    this.cache.set(reference, { value: data.SecretString, expiresAt: now + CACHE_TTL_MS });
+    return data.SecretString;
+  }
+
+  async replace(reference: string, value: string): Promise<void> {
+    const { secretId } = validateReference(reference);
+    validateSecretValue(value);
+    const region = requireRegion();
+    const credentials = await readEcsTaskCredentials();
+    await secretsManagerRequest("PutSecretValue", { SecretId: secretId, SecretString: value }, credentials, region);
+    this.cache.set(reference, { value, expiresAt: Date.now() + CACHE_TTL_MS });
   }
 }
