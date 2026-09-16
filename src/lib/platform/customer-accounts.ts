@@ -114,6 +114,9 @@ export class CustomerAccountService {
     validateText(input.displayName, "Display name", 300);
 
     const created = await db.$transaction(async (tx) => {
+      if (input.organizationId) await ensureOrganizationAvailable(tx, input.organizationId, null);
+      await ensureAccountCodeAvailable(tx, input.accountCode.trim(), null);
+
       const rows = await tx.$queryRaw<CustomerAccountRow[]>(Prisma.sql`
         INSERT INTO "CustomerAccount" (
           "id", "organizationId", "accountCode", "legalName", "displayName",
@@ -160,11 +163,29 @@ export class CustomerAccountService {
     if (input.accountCode !== undefined) validateText(input.accountCode, "Account code", 120);
     if (input.legalName !== undefined) validateText(input.legalName, "Legal name", 300);
     if (input.displayName !== undefined) validateText(input.displayName, "Display name", 300);
+    if (
+      input.accountCode === undefined &&
+      input.legalName === undefined &&
+      input.displayName === undefined &&
+      input.organizationId === undefined &&
+      input.commercialMetadata === undefined
+    ) {
+      throw new CustomerAccountValidationError("At least one customer account field must be changed");
+    }
 
     const updated = await db.$transaction(async (tx) => {
       const existing = await lockAccount(tx, input.customerAccountId);
       if (existing.lockVersion !== input.expectedLockVersion) throw new CustomerAccountConflictError();
-      if (existing.status === "TERMINATED") throw new CustomerAccountValidationError("Terminated customer accounts cannot be edited");
+      if (existing.status === "TERMINATED") {
+        throw new CustomerAccountValidationError("Terminated customer accounts cannot be edited");
+      }
+      if (
+        existing.organizationId !== null &&
+        input.organizationId !== undefined &&
+        input.organizationId !== existing.organizationId
+      ) {
+        throw new CustomerAccountValidationError("A bound tenant organization cannot be reassigned or cleared");
+      }
 
       const nextAccountCode = input.accountCode?.trim() ?? existing.accountCode;
       const nextLegalName = input.legalName?.trim() ?? existing.legalName;
@@ -173,6 +194,13 @@ export class CustomerAccountService {
       const nextMetadata = input.commercialMetadata === undefined
         ? asMetadata(existing.commercialMetadata)
         : input.commercialMetadata;
+
+      if (nextOrganizationId && nextOrganizationId !== existing.organizationId) {
+        await ensureOrganizationAvailable(tx, nextOrganizationId, existing.id);
+      }
+      if (nextAccountCode !== existing.accountCode) {
+        await ensureAccountCodeAvailable(tx, nextAccountCode, existing.id);
+      }
 
       const rows = await tx.$queryRaw<CustomerAccountRow[]>(Prisma.sql`
         UPDATE "CustomerAccount"
@@ -220,6 +248,9 @@ export class CustomerAccountService {
       if (existing.lockVersion !== input.expectedLockVersion) throw new CustomerAccountConflictError();
       if (!TRANSITIONS[existing.status].includes(input.toStatus)) {
         throw new CustomerAccountTransitionError(existing.status, input.toStatus);
+      }
+      if (input.toStatus === "ACTIVE" && existing.organizationId === null) {
+        throw new CustomerAccountValidationError("An active customer account must be bound to a tenant organization");
       }
 
       const rows = await tx.$queryRaw<CustomerAccountRow[]>(Prisma.sql`
@@ -285,6 +316,43 @@ async function lockAccount(
   return rows[0];
 }
 
+async function ensureOrganizationAvailable(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  currentCustomerAccountId: string | null,
+): Promise<void> {
+  const rows = await tx.$queryRaw<Array<{ organizationExists: boolean; assignedCustomerAccountId: string | null }>>(Prisma.sql`
+    SELECT
+      TRUE AS "organizationExists",
+      ca."id" AS "assignedCustomerAccountId"
+    FROM "Organization" o
+    LEFT JOIN "CustomerAccount" ca ON ca."organizationId" = o."id"
+    WHERE o."id" = ${organizationId}::uuid
+    LIMIT 1
+  `);
+  if (rows.length !== 1) throw new CustomerAccountValidationError("Tenant organization does not exist");
+  const assigned = rows[0].assignedCustomerAccountId;
+  if (assigned !== null && assigned !== currentCustomerAccountId) {
+    throw new CustomerAccountConflictError("Tenant organization is already bound to another customer account");
+  }
+}
+
+async function ensureAccountCodeAvailable(
+  tx: Prisma.TransactionClient,
+  accountCode: string,
+  currentCustomerAccountId: string | null,
+): Promise<void> {
+  const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT "id"
+    FROM "CustomerAccount"
+    WHERE "accountCode" = ${accountCode}
+    LIMIT 1
+  `);
+  if (rows.length === 1 && rows[0].id !== currentCustomerAccountId) {
+    throw new CustomerAccountConflictError("Customer account code is already in use");
+  }
+}
+
 async function writePlatformAudit(
   tx: Prisma.TransactionClient,
   context: PlatformAuthorizationContext,
@@ -340,8 +408,8 @@ export class CustomerAccountNotFoundError extends Error {
 }
 
 export class CustomerAccountConflictError extends Error {
-  constructor() {
-    super("Customer account changed since it was loaded");
+  constructor(message = "Customer account changed since it was loaded") {
+    super(message);
     this.name = "CustomerAccountConflictError";
   }
 }
