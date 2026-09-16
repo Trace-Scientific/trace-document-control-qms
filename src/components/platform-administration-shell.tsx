@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PlatformPermissionKey } from "@/lib/platform/permissions";
 import { PlatformNotificationsPanel, PlatformReportingPanel } from "./platform-notifications-reporting-panel";
+import { PlatformSystemHealthPanel } from "./platform-system-health-panel";
 import styles from "./platform-administration-shell.module.css";
 
 type PlatformContextPayload = {
@@ -54,7 +55,7 @@ const sections: SectionDefinition[] = [
   { id: "notifications", label: "Notifications", description: "Platform-scoped inbox, delivery monitoring, retry, and dead-letter controls.", anyPermission: ["platform.notification.read", "platform.notification.manage"], phase: "foundation" },
   { id: "reporting", label: "Reporting", description: "Commercial and operational control-plane reporting without regulated tenant content.", anyPermission: ["platform.reporting.read"], phase: "foundation" },
   { id: "audit", label: "Platform audit", description: "Trace-side control-plane audit history.", anyPermission: ["platform.audit.read"], phase: "foundation" },
-  { id: "health", label: "System health", description: "Sanitized application and service health.", anyPermission: ["platform.health.read"], phase: "planned" },
+  { id: "health", label: "System health", description: "Sanitized application, database, worker, scheduler, and integration health.", anyPermission: ["platform.health.read"], phase: "available" },
   { id: "integrations", label: "Integrations", description: "Vendor-neutral integration configuration.", anyPermission: ["platform.integration.manage"], phase: "planned" },
   { id: "security", label: "Platform security", description: "Platform roles, permissions, and memberships.", anyPermission: ["platform.security.manage"], phase: "foundation" },
 ];
@@ -83,15 +84,9 @@ export function PlatformAdministrationShell() {
         if (!response.ok) throw new Error(response.status === 401 ? "Platform access is not enabled for this account." : "Platform context could not be loaded.");
         return response.json() as Promise<PlatformContextPayload>;
       })
-      .then((payload) => {
-        if (!cancelled) setContext(payload);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setContextError(error instanceof Error ? error.message : "Platform context could not be loaded.");
-      });
-    return () => {
-      cancelled = true;
-    };
+      .then((payload) => { if (!cancelled) setContext(payload); })
+      .catch((error: unknown) => { if (!cancelled) setContextError(error instanceof Error ? error.message : "Platform context could not be loaded."); });
+    return () => { cancelled = true; };
   }, []);
 
   const visibleSections = useMemo(
@@ -107,15 +102,9 @@ export function PlatformAdministrationShell() {
         if (!response.ok) throw new Error("Customer accounts could not be loaded.");
         return response.json() as Promise<{ data: CustomerAccount[] }>;
       })
-      .then((payload) => {
-        if (!cancelled) setCustomers(payload.data);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setCustomerError(error instanceof Error ? error.message : "Customer accounts could not be loaded.");
-      });
-    return () => {
-      cancelled = true;
-    };
+      .then((payload) => { if (!cancelled) setCustomers(payload.data); })
+      .catch((error: unknown) => { if (!cancelled) setCustomerError(error instanceof Error ? error.message : "Customer accounts could not be loaded."); });
+    return () => { cancelled = true; };
   }, [activeSection, context, customerError, customers]);
 
   if (contextError) {
@@ -130,9 +119,7 @@ export function PlatformAdministrationShell() {
     );
   }
 
-  if (!context) {
-    return <main className={styles.main}><div className={styles.notice}>Loading platform authorization…</div></main>;
-  }
+  if (!context) return <main className={styles.main}><div className={styles.notice}>Loading platform authorization…</div></main>;
 
   const active = visibleSections.find((section) => section.id === activeSection) ?? visibleSections[0];
 
@@ -146,24 +133,18 @@ export function PlatformAdministrationShell() {
         </div>
         <a className={styles.returnLink} href="/">Open tenant QMS</a>
       </header>
-
       <div className={styles.body}>
         <nav className={styles.nav} aria-label="Platform Administration">
           <ul className={styles.navList}>
             {visibleSections.map((section) => (
               <li key={section.id}>
-                <button
-                  type="button"
-                  className={`${styles.navButton} ${active?.id === section.id ? styles.navButtonActive : ""}`}
-                  onClick={() => setActiveSection(section.id)}
-                >
+                <button type="button" className={`${styles.navButton} ${active?.id === section.id ? styles.navButtonActive : ""}`} onClick={() => setActiveSection(section.id)}>
                   {section.label}
                 </button>
               </li>
             ))}
           </ul>
         </nav>
-
         <main className={styles.main}>
           {active ? (
             <>
@@ -184,115 +165,26 @@ export function PlatformAdministrationShell() {
   );
 }
 
-function SectionContent({
-  section,
-  permissions,
-  customers,
-  customerError,
-}: {
-  section: SectionDefinition;
-  permissions: PlatformPermissionKey[];
-  customers: CustomerAccount[] | null;
-  customerError: string | null;
-}) {
+function SectionContent({ section, permissions, customers, customerError }: { section: SectionDefinition; permissions: PlatformPermissionKey[]; customers: CustomerAccount[] | null; customerError: string | null }) {
   if (section.id === "overview") {
     const enabled = sections.filter((item) => canSee(item, permissions) && item.id !== "overview");
-    return (
-      <div className={styles.grid}>
-        {enabled.map((item) => (
-          <article className={styles.card} key={item.id}>
-            <h3>{item.label}</h3>
-            <p>{item.description}</p>
-            <PhaseBadge phase={item.phase} />
-          </article>
-        ))}
-      </div>
-    );
+    return <div className={styles.grid}>{enabled.map((item) => <article className={styles.card} key={item.id}><h3>{item.label}</h3><p>{item.description}</p><PhaseBadge phase={item.phase} /></article>)}</div>;
   }
-
   if (section.id === "customers") {
     if (customerError) return <div className={styles.error}>{customerError}</div>;
     if (!customers) return <div className={styles.notice}>Loading customer accounts…</div>;
     if (customers.length === 0) return <div className={styles.notice}>No customer accounts are configured.</div>;
-    return (
-      <div className={styles.grid}>
-        {customers.map((customer) => (
-          <article className={styles.card} key={customer.id}>
-            <h3>{customer.displayName}</h3>
-            <p>{customer.accountCode} · {customer.status}</p>
-            <p>{customer.organizationId ? "Tenant organization linked" : "Prospect / no tenant linked"}</p>
-          </article>
-        ))}
-      </div>
-    );
+    return <div className={styles.grid}>{customers.map((customer) => <article className={styles.card} key={customer.id}><h3>{customer.displayName}</h3><p>{customer.accountCode} · {customer.status}</p><p>{customer.organizationId ? "Tenant organization linked" : "Prospect / no tenant linked"}</p></article>)}</div>;
   }
-
-  if (section.id === "support") {
-    return (
-      <article className={styles.card}>
-        <h3>Controlled support access</h3>
-        <p>Open the case-bound support-access surface. Support sessions remain short-lived, attributable, and separate from tenant RBAC.</p>
-        <a className={styles.cardLink} href="/support-access">Open support access</a>
-      </article>
-    );
-  }
-
-  if (section.id === "subscriptions") {
-    return (
-      <div className={styles.grid}>
-        <article className={styles.card}><h3>Catalog foundation</h3><p>Products, features, plans, plan versions, and immutable activated feature matrices are available through the governed platform APIs.</p></article>
-        <article className={styles.card}><h3>Subscription foundation</h3><p>Customer subscriptions and effective-dated entitlement overrides are available. Tenant RBAC remains a separate authorization layer.</p></article>
-      </div>
-    );
-  }
-
-  if (section.id === "sales") {
-    return (
-      <div className={styles.grid}>
-        <article className={styles.card}><h3>Sales representatives</h3><p>Trace-side sales representative profiles are linked to active platform identities and governed by separate sales permissions.</p></article>
-        <article className={styles.card}><h3>Customer attribution</h3><p>Effective-dated sales assignments preserve which representative owned a customer relationship at the time of a commission event.</p></article>
-      </div>
-    );
-  }
-
-  if (section.id === "commissions") {
-    return (
-      <div className={styles.grid}>
-        <article className={styles.card}><h3>Versioned commission rules</h3><p>Draft plan versions and rules become immutable historical configuration when activated.</p></article>
-        <article className={styles.card}><h3>Governed lifecycle</h3><p>Accruals progress PENDING → EARNED → APPROVED → PAID, with separate append-only adjustments, reversals, and payment evidence.</p></article>
-      </div>
-    );
-  }
-
-  if (section.id === "help") {
-    return (
-      <div className={styles.grid}>
-        <article className={styles.card}><h3>Help Center</h3><p>Published operational articles are searchable by authenticated QMS users. Draft and archived content remain unavailable from the user-facing read API.</p><a className={styles.cardLink} href="/help">Open Help Center</a></article>
-        <article className={styles.card}><h3>Controlled user manual</h3><p>Manual section revisions are append-only and published releases freeze version, effective date, applicability, release notes, and section composition. Authoring and publishing require platform.help.manage.</p></article>
-      </div>
-    );
-  }
-
-  if (section.id === "notifications") {
-    return (
-      <PlatformNotificationsPanel
-        canRead={permissions.includes("platform.notification.read")}
-        canManage={permissions.includes("platform.notification.manage")}
-      />
-    );
-  }
-
-  if (section.id === "reporting") {
-    return <PlatformReportingPanel />;
-  }
-
-  if (section.id === "audit") {
-    return <article className={styles.card}><h3>Immutable platform audit</h3><p>The append-only platform audit foundation is active. A dedicated audit browser will be added without exposing tenant-regulated content as an unrestricted cross-tenant report.</p></article>;
-  }
-
-  if (section.id === "security") {
-    return <article className={styles.card}><h3>Platform security foundation</h3><p>Platform identities, memberships, roles, permissions, and deny-by-default authorization are active and remain independent from tenant security administration.</p></article>;
-  }
-
+  if (section.id === "support") return <article className={styles.card}><h3>Controlled support access</h3><p>Open the case-bound support-access surface. Support sessions remain short-lived, attributable, and separate from tenant RBAC.</p><a className={styles.cardLink} href="/support-access">Open support access</a></article>;
+  if (section.id === "subscriptions") return <div className={styles.grid}><article className={styles.card}><h3>Catalog foundation</h3><p>Products, features, plans, plan versions, and immutable activated feature matrices are available through the governed platform APIs.</p></article><article className={styles.card}><h3>Subscription foundation</h3><p>Customer subscriptions and effective-dated entitlement overrides are available. Tenant RBAC remains a separate authorization layer.</p></article></div>;
+  if (section.id === "sales") return <div className={styles.grid}><article className={styles.card}><h3>Sales representatives</h3><p>Trace-side sales representative profiles are linked to active platform identities and governed by separate sales permissions.</p></article><article className={styles.card}><h3>Customer attribution</h3><p>Effective-dated sales assignments preserve which representative owned a customer relationship at the time of a commission event.</p></article></div>;
+  if (section.id === "commissions") return <div className={styles.grid}><article className={styles.card}><h3>Versioned commission rules</h3><p>Draft plan versions and rules become immutable historical configuration when activated.</p></article><article className={styles.card}><h3>Governed lifecycle</h3><p>Accruals progress PENDING → EARNED → APPROVED → PAID, with separate append-only adjustments, reversals, and payment evidence.</p></article></div>;
+  if (section.id === "help") return <div className={styles.grid}><article className={styles.card}><h3>Help Center</h3><p>Published operational articles are searchable by authenticated QMS users. Draft and archived content remain unavailable from the user-facing read API.</p><a className={styles.cardLink} href="/help">Open Help Center</a></article><article className={styles.card}><h3>Controlled user manual</h3><p>Manual section revisions are append-only and published releases freeze version, effective date, applicability, release notes, and section composition. Authoring and publishing require platform.help.manage.</p></article></div>;
+  if (section.id === "notifications") return <PlatformNotificationsPanel canRead={permissions.includes("platform.notification.read")} canManage={permissions.includes("platform.notification.manage")} />;
+  if (section.id === "reporting") return <PlatformReportingPanel />;
+  if (section.id === "health") return <PlatformSystemHealthPanel />;
+  if (section.id === "audit") return <article className={styles.card}><h3>Immutable platform audit</h3><p>The append-only platform audit foundation is active. A dedicated audit browser will be added without exposing tenant-regulated content as an unrestricted cross-tenant report.</p></article>;
+  if (section.id === "security") return <article className={styles.card}><h3>Platform security foundation</h3><p>Platform identities, memberships, roles, permissions, and deny-by-default authorization are active and remain independent from tenant security administration.</p></article>;
   return <article className={styles.card}><h3>{section.label}</h3><p>This workspace is reserved in the control-plane navigation and will be implemented in its approved focused PR.</p></article>;
 }
