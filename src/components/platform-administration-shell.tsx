@@ -47,7 +47,7 @@ const sections: SectionDefinition[] = [
   { id: "support", label: "Support access", description: "Case-bound controlled tenant support access.", anyPermission: ["platform.support.request", "platform.support.approve", "platform.support.access"], phase: "available" },
   { id: "sales", label: "Sales", description: "Sales ownership and customer attribution.", anyPermission: ["platform.sales.read", "platform.sales.manage"], phase: "foundation" },
   { id: "commissions", label: "Commissions", description: "Governed commission accruals and payments.", anyPermission: ["platform.commission.read", "platform.commission.manage"], phase: "foundation" },
-  { id: "help", label: "Help content", description: "Help Center and controlled user-manual publishing.", anyPermission: ["platform.help.manage"], phase: "planned" },
+  { id: "help", label: "Help content", description: "Help Center and controlled user-manual publishing.", anyPermission: ["platform.help.manage"], phase: "foundation" },
   { id: "audit", label: "Platform audit", description: "Trace-side control-plane audit history.", anyPermission: ["platform.audit.read"], phase: "foundation" },
   { id: "health", label: "System health", description: "Sanitized application and service health.", anyPermission: ["platform.health.read"], phase: "planned" },
   { id: "integrations", label: "Integrations", description: "Vendor-neutral integration configuration.", anyPermission: ["platform.integration.manage"], phase: "planned" },
@@ -255,6 +255,15 @@ function SectionContent({
       <div className={styles.grid}>
         <article className={styles.card}><h3>Versioned commission rules</h3><p>Draft plan versions and rules become immutable historical configuration when activated.</p></article>
         <article className={styles.card}><h3>Governed lifecycle</h3><p>Accruals progress PENDING → EARNED → APPROVED → PAID, with separate append-only adjustments, reversals, and payment evidence.</p></article>
+      </div>
+    );
+  }
+
+  if (section.id === "help") {
+    return (
+      <div className={styles.grid}>
+        <article className={styles.card}><h3>Help Center</h3><p>Published operational articles are searchable by authenticated QMS users. Draft and archived content remain unavailable from the user-facing read API.</p><a className={styles.cardLink} href="/help">Open Help Center</a></article>
+        <article className={styles.card}><h3>Controlled user manual</h3><p>Manual section revisions are append-only and published releases freeze version, effective date, applicability, release notes, and section composition. Authoring and publishing require platform.help.manage.</p></article>
       </div>
     );
   }
