@@ -18,6 +18,8 @@ function permissionDescription(permission: { key: string; description: string | 
     "document.revise": "Create a successor revision from an existing controlled version.",
     "document.submit": "Submit a draft into controlled review.",
     "document.review": "Participate in controlled document review.",
+    "document.review.complete": "Complete an assigned controlled-document review stage.",
+    "document.review.manage": "Manage controlled-document review assignments and workflow progression.",
     "document.approve": "Approve a controlled document using the approved signature workflow.",
     "document.make_effective": "Make an approved version effective.",
     "document.retire": "Retire a controlled document version.",
