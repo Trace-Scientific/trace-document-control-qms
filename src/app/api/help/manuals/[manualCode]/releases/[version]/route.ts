@@ -11,7 +11,11 @@ export async function GET(
   try {
     await authenticateRequest(request);
     const { manualCode, version } = await params;
-    return NextResponse.json({ data: await service.getPublishedManualRelease(manualCode, version) });
+    const release = await service.getPublishedManualRelease(manualCode, version) as { effectiveAt: Date | string } & Record<string, unknown>;
+    if (new Date(release.effectiveAt).getTime() > Date.now()) {
+      return NextResponse.json({ error: "Published manual release not found" }, { status: 404 });
+    }
+    return NextResponse.json({ data: release });
   } catch (error) {
     if (error instanceof AuthenticationRequiredError) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
