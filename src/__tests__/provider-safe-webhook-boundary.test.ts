@@ -4,6 +4,7 @@ import path from "node:path";
 describe("Provider-safe inbound webhook boundary", () => {
   const route = fs.readFileSync(path.join(process.cwd(), "src/app/api/platform/integrations/inbound/[connectionId]/route.ts"), "utf8");
   const inbound = fs.readFileSync(path.join(process.cwd(), "src/lib/platform/integration-inbound.ts"), "utf8");
+  const framework = fs.readFileSync(path.join(process.cwd(), "src/lib/platform/integration-framework.ts"), "utf8");
 
   it("preserves exact request bytes before decoding", () => {
     expect(route).toContain("await request.arrayBuffer()");
@@ -22,6 +23,14 @@ describe("Provider-safe inbound webhook boundary", () => {
     expect(route).toContain("collectFormParameters");
     expect(inbound).toContain("requestUrl: input.requestUrl");
     expect(inbound).toContain("formParameters: input.formParameters");
+  });
+
+  it("makes provider-safe evidence part of the adapter contract", () => {
+    expect(framework).toContain("export interface PlatformIntegrationWebhookEvidence");
+    expect(framework).toContain("rawBodyBytes: Uint8Array");
+    expect(framework).toContain("requestUrl: string");
+    expect(framework).toContain("formParameters?: Readonly<Record<string, readonly string[]>>");
+    expect(framework).toContain("verifyAndNormalizeWebhook(input: PlatformIntegrationWebhookEvidence");
   });
 
   it("retains a decoded text body for backward-compatible JSON adapters", () => {
