@@ -1,5 +1,5 @@
 import { PlatformIntegrationRegistry, PlatformIntegrationService } from "./integration-framework";
-import { EnvironmentPlatformCredentialResolver } from "./environment-credential-resolver";
+import { GovernedPlatformCredentialResolver } from "./platform-credential-resolver";
 import { StripeBillingAdapter } from "./stripe-adapter";
 import { QuickBooksAccountingAdapter } from "./quickbooks-adapter";
 import { SalesforceCrmAdapter } from "./salesforce-adapter";
@@ -16,7 +16,7 @@ export const platformIntegrationRegistry = new PlatformIntegrationRegistry([
   new TwilioSmsAdapter(),
   new ZendeskSupportAdapter(),
 ]);
-export const platformCredentialResolver = new EnvironmentPlatformCredentialResolver();
+export const platformCredentialResolver = new GovernedPlatformCredentialResolver();
 export const platformIntegrationService = new PlatformIntegrationService(
   platformIntegrationRegistry,
   platformCredentialResolver,
