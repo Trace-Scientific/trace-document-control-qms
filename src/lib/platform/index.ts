@@ -15,6 +15,8 @@ export * from "./integration-operations";
 export * from "./integration-runtime";
 export * from "./integration-inbound";
 export * from "./environment-credential-resolver";
+export * from "./aws-secrets-manager-credential-resolver";
+export * from "./platform-credential-resolver";
 export * from "./stripe-adapter";
 export * from "./quickbooks-adapter";
 export * from "./salesforce-adapter";
