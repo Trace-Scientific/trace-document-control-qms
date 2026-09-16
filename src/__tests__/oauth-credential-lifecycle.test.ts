@@ -34,9 +34,11 @@ describe("OAuth credential lifecycle hardening", () => {
 
   it("rotates OAuth secrets only through the governed AWS credential store", () => {
     expect(lifecycle).toContain("this.credentials.replace");
-    expect(lifecycle).toContain('credentialRef?.startsWith("aws-sm://")');
+    expect(lifecycle).toContain('connection.credentialRef?.startsWith("aws-sm://")');
     expect(awsStore).toContain('"PutSecretValue"');
     expect(iam).toContain("secretsmanager:PutSecretValue");
+    expect(iam).toContain("kms:GenerateDataKey");
+    expect(iam).toContain("kms:ViaService");
     expect(iam).toContain("secret:trace-qms/validation/integrations/*");
     expect(iam).not.toContain("secret:*");
   });
