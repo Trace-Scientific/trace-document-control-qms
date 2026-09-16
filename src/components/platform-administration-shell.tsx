@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { PlatformPermissionKey } from "@/lib/platform/permissions";
+import { PlatformNotificationsPanel, PlatformReportingPanel } from "./platform-notifications-reporting-panel";
 import styles from "./platform-administration-shell.module.css";
 
 type PlatformContextPayload = {
@@ -27,6 +28,8 @@ type SectionId =
   | "sales"
   | "commissions"
   | "help"
+  | "notifications"
+  | "reporting"
   | "audit"
   | "health"
   | "integrations"
@@ -48,6 +51,8 @@ const sections: SectionDefinition[] = [
   { id: "sales", label: "Sales", description: "Sales ownership and customer attribution.", anyPermission: ["platform.sales.read", "platform.sales.manage"], phase: "foundation" },
   { id: "commissions", label: "Commissions", description: "Governed commission accruals and payments.", anyPermission: ["platform.commission.read", "platform.commission.manage"], phase: "foundation" },
   { id: "help", label: "Help content", description: "Help Center and controlled user-manual publishing.", anyPermission: ["platform.help.manage"], phase: "foundation" },
+  { id: "notifications", label: "Notifications", description: "Platform-scoped inbox, delivery monitoring, retry, and dead-letter controls.", anyPermission: ["platform.notification.read", "platform.notification.manage"], phase: "foundation" },
+  { id: "reporting", label: "Reporting", description: "Commercial and operational control-plane reporting without regulated tenant content.", anyPermission: ["platform.reporting.read"], phase: "foundation" },
   { id: "audit", label: "Platform audit", description: "Trace-side control-plane audit history.", anyPermission: ["platform.audit.read"], phase: "foundation" },
   { id: "health", label: "System health", description: "Sanitized application and service health.", anyPermission: ["platform.health.read"], phase: "planned" },
   { id: "integrations", label: "Integrations", description: "Vendor-neutral integration configuration.", anyPermission: ["platform.integration.manage"], phase: "planned" },
@@ -266,6 +271,19 @@ function SectionContent({
         <article className={styles.card}><h3>Controlled user manual</h3><p>Manual section revisions are append-only and published releases freeze version, effective date, applicability, release notes, and section composition. Authoring and publishing require platform.help.manage.</p></article>
       </div>
     );
+  }
+
+  if (section.id === "notifications") {
+    return (
+      <PlatformNotificationsPanel
+        canRead={permissions.includes("platform.notification.read")}
+        canManage={permissions.includes("platform.notification.manage")}
+      />
+    );
+  }
+
+  if (section.id === "reporting") {
+    return <PlatformReportingPanel />;
   }
 
   if (section.id === "audit") {
