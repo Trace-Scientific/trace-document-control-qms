@@ -1,0 +1,43 @@
+export const PLATFORM_PERMISSIONS = [
+  "platform.organization.read",
+  "platform.organization.manage",
+  "platform.organization.suspend",
+  "platform.subscription.read",
+  "platform.subscription.manage",
+  "platform.entitlement.manage",
+  "platform.support.request",
+  "platform.support.approve",
+  "platform.support.access",
+  "platform.sales.read",
+  "platform.sales.manage",
+  "platform.commission.read",
+  "platform.commission.manage",
+  "platform.audit.read",
+  "platform.help.manage",
+  "platform.health.read",
+  "platform.integration.manage",
+  "platform.security.manage",
+] as const;
+
+export type PlatformPermissionKey = (typeof PLATFORM_PERMISSIONS)[number];
+
+export const PLATFORM_PERMISSION_DESCRIPTIONS: Record<PlatformPermissionKey, string> = {
+  "platform.organization.read": "View customer organization administration data.",
+  "platform.organization.manage": "Manage customer organization administration data.",
+  "platform.organization.suspend": "Suspend or restore customer organization commercial access.",
+  "platform.subscription.read": "View subscriptions and plan assignments.",
+  "platform.subscription.manage": "Manage subscriptions and plan assignments.",
+  "platform.entitlement.manage": "Manage customer feature entitlements and approved overrides.",
+  "platform.support.request": "Request controlled support access to a customer tenant.",
+  "platform.support.approve": "Approve or deny controlled support access requests.",
+  "platform.support.access": "Use an approved controlled support-access session.",
+  "platform.sales.read": "View sales assignments and attribution.",
+  "platform.sales.manage": "Manage sales assignments and attribution.",
+  "platform.commission.read": "View commission records and status.",
+  "platform.commission.manage": "Manage governed commission records and adjustments.",
+  "platform.audit.read": "Read the platform audit trail.",
+  "platform.help.manage": "Manage Help Center and controlled manual content.",
+  "platform.health.read": "View sanitized platform operational health.",
+  "platform.integration.manage": "Manage platform integration configuration.",
+  "platform.security.manage": "Manage platform roles, permissions, and memberships.",
+};
