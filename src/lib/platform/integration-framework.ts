@@ -26,7 +26,7 @@ export interface NormalizedInboundEvent {
 
 export interface PlatformIntegrationAdapter {
   readonly key: string;
-  deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null }): Promise<void>;
+  deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }): Promise<void>;
   verifyAndNormalizeWebhook(input: { rawBody: string; headers: Headers; configuration: unknown; credential: string | null }): Promise<NormalizedInboundEvent>;
 }
 
@@ -146,7 +146,7 @@ export class PlatformIntegrationService {
     const bounded = Math.max(1, Math.min(100, Math.trunc(limit)));
     return db.$transaction(async (tx) => {
       await tx.$executeRaw(Prisma.sql`UPDATE "PlatformIntegrationDelivery" SET "status"='RETRY',"claimedAt"=NULL,"claimedBy"=NULL,"availableAt"=CURRENT_TIMESTAMP WHERE "status"='PROCESSING' AND "claimedAt" < CURRENT_TIMESTAMP - INTERVAL '5 minutes'`);
-      return tx.$queryRaw<Array<{ id: string; connectionId: string; adapterKey: string; eventType: string; payload: unknown; configuration: unknown; credentialRef: string | null; attemptCount: number }>>(Prisma.sql`
+      return tx.$queryRaw<Array<{ id: string; connectionId: string; adapterKey: string; eventType: string; payload: unknown; configuration: unknown; credentialRef: string | null; idempotencyKey: string; attemptCount: number }>>(Prisma.sql`
         WITH candidates AS (
           SELECT d."id" FROM "PlatformIntegrationDelivery" d JOIN "PlatformIntegrationConnection" c ON c."id"=d."connectionId"
           WHERE d."status" IN ('PENDING','RETRY') AND d."availableAt"<=CURRENT_TIMESTAMP AND d."attemptCount"<${MAX_ATTEMPTS} AND c."status"='ACTIVE'
@@ -155,17 +155,17 @@ export class PlatformIntegrationService {
         UPDATE "PlatformIntegrationDelivery" d SET "status"='PROCESSING',"claimedAt"=CURRENT_TIMESTAMP,"claimedBy"=${worker}
         FROM candidates x, "PlatformIntegrationConnection" c
         WHERE d."id"=x."id" AND c."id"=d."connectionId"
-        RETURNING d."id",d."connectionId",c."adapterKey",d."eventType",d."payload",c."configuration",c."credentialRef",d."attemptCount"
+        RETURNING d."id",d."connectionId",c."adapterKey",d."eventType",d."payload",c."configuration",c."credentialRef",d."idempotencyKey",d."attemptCount"
       `);
     });
   }
 
-  async deliverClaimed(claim: { id: string; adapterKey: string; eventType: string; payload: unknown; configuration: unknown; credentialRef: string | null }, workerId: string) {
+  async deliverClaimed(claim: { id: string; adapterKey: string; eventType: string; payload: unknown; configuration: unknown; credentialRef: string | null; idempotencyKey: string }, workerId: string) {
     const adapter = this.registry.get(claim.adapterKey);
     if (!adapter) return this.failDelivery(claim.id, workerId, "Adapter is not registered in this release");
     try {
       const credential = await this.credentials.resolve(claim.credentialRef);
-      await adapter.deliver({ eventType: claim.eventType, payload: claim.payload, configuration: claim.configuration, credential });
+      await adapter.deliver({ eventType: claim.eventType, payload: claim.payload, configuration: claim.configuration, credential, idempotencyKey: claim.idempotencyKey });
       await db.$executeRaw(Prisma.sql`UPDATE "PlatformIntegrationDelivery" SET "status"='SUCCEEDED',"attemptCount"="attemptCount"+1,"deliveredAt"=CURRENT_TIMESTAMP,"lastAttemptAt"=CURRENT_TIMESTAMP,"claimedAt"=NULL,"claimedBy"=NULL,"lastError"=NULL WHERE "id"=${claim.id}::uuid AND "status"='PROCESSING' AND "claimedBy"=${workerId}`);
       return "SUCCEEDED" as const;
     } catch (error) {
