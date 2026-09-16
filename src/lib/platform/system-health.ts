@@ -8,50 +8,16 @@ export type HealthState = "HEALTHY" | "DEGRADED" | "UNAVAILABLE" | "NOT_CONFIGUR
 export interface PlatformSystemHealthSnapshot {
   checkedAt: string;
   overall: HealthState;
-  application: {
-    readiness: HealthState;
-    releaseIdentity: string | null;
-    environmentClass: "DEVELOPMENT_PREVIEW" | "PROTECTED_VALIDATION" | "PRODUCTION" | "LOCAL_OR_UNKNOWN";
-  };
-  database: {
-    connectivity: HealthState;
-    latestMigration: string | null;
-    latestMigrationFinishedAt: string | null;
-    failedMigrationCount: number;
-  };
-  backgroundJobs: {
-    notificationDelivery: HealthState;
-    pending: number;
-    retry: number;
-    processing: number;
-    deadLetter: number;
-    oldestAvailableAt: string | null;
-    staleProcessing: number;
-  };
-  scheduledTasks: {
-    status: HealthState;
-    detail: string;
-  };
-  integrations: {
-    status: HealthState;
-    detail: string;
-  };
+  application: { readiness: HealthState; releaseIdentity: string | null; environmentClass: "DEVELOPMENT_PREVIEW" | "PROTECTED_VALIDATION" | "PRODUCTION" | "LOCAL_OR_UNKNOWN" };
+  database: { connectivity: HealthState; latestMigration: string | null; latestMigrationFinishedAt: string | null; failedMigrationCount: number };
+  backgroundJobs: { notificationDelivery: HealthState; pending: number; retry: number; processing: number; deadLetter: number; oldestAvailableAt: string | null; staleProcessing: number };
+  scheduledTasks: { status: HealthState; detail: string };
+  integrations: { status: HealthState; detail: string };
 }
 
-interface MigrationRow {
-  migration_name: string;
-  finished_at: Date | null;
-  rolled_back_at: Date | null;
-}
-
-interface NotificationHealthRow {
-  pending: bigint;
-  retry: bigint;
-  processing: bigint;
-  deadLetter: bigint;
-  staleProcessing: bigint;
-  oldestAvailableAt: Date | null;
-}
+interface MigrationRow { migration_name: string; finished_at: Date | null; rolled_back_at: Date | null }
+interface NotificationHealthRow { pending: bigint; retry: bigint; processing: bigint; deadLetter: bigint; staleProcessing: bigint; oldestAvailableAt: Date | null }
+interface IntegrationHealthRow { activeConnections: bigint; suspendedConnections: bigint; retryDeliveries: bigint; deadLetterDeliveries: bigint; staleProcessing: bigint }
 
 function releaseIdentity(): string | null {
   const candidate = process.env.APP_RELEASE_SHA ?? process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? null;
@@ -81,88 +47,48 @@ export class PlatformSystemHealthService {
   async read(context: PlatformAuthorizationContext): Promise<PlatformSystemHealthSnapshot> {
     requirePlatformAuthorization(context, { permission: "platform.health.read" });
     const checkedAt = new Date().toISOString();
-
     let databaseConnectivity: HealthState = "HEALTHY";
     let latestMigration: MigrationRow | null = null;
     let failedMigrationCount = 0;
-    let notification: NotificationHealthRow = {
-      pending: BigInt(0), retry: BigInt(0), processing: BigInt(0), deadLetter: BigInt(0), staleProcessing: BigInt(0), oldestAvailableAt: null,
-    };
+    let notification: NotificationHealthRow = { pending: BigInt(0), retry: BigInt(0), processing: BigInt(0), deadLetter: BigInt(0), staleProcessing: BigInt(0), oldestAvailableAt: null };
+    let integration: IntegrationHealthRow = { activeConnections: BigInt(0), suspendedConnections: BigInt(0), retryDeliveries: BigInt(0), deadLetterDeliveries: BigInt(0), staleProcessing: BigInt(0) };
 
     try {
       await db.$queryRaw<Array<{ ok: number }>>(Prisma.sql`SELECT 1 AS ok`);
-      const migrations = await db.$queryRaw<MigrationRow[]>(Prisma.sql`
-        SELECT migration_name, finished_at, rolled_back_at
-        FROM "_prisma_migrations"
-        ORDER BY started_at DESC
-        LIMIT 1
-      `);
-      latestMigration = migrations[0] ?? null;
-      const failures = await db.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
-        SELECT COUNT(*)::bigint AS count
-        FROM "_prisma_migrations"
-        WHERE finished_at IS NULL AND rolled_back_at IS NULL
-      `);
-      failedMigrationCount = Number(failures[0]?.count ?? BigInt(0));
-      const rows = await db.$queryRaw<NotificationHealthRow[]>(Prisma.sql`
+      latestMigration = (await db.$queryRaw<MigrationRow[]>(Prisma.sql`SELECT migration_name,finished_at,rolled_back_at FROM "_prisma_migrations" ORDER BY started_at DESC LIMIT 1`))[0] ?? null;
+      failedMigrationCount = Number((await db.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM "_prisma_migrations" WHERE finished_at IS NULL AND rolled_back_at IS NULL`))[0]?.count ?? BigInt(0));
+      notification = (await db.$queryRaw<NotificationHealthRow[]>(Prisma.sql`
+        SELECT COUNT(*) FILTER (WHERE status='PENDING')::bigint AS pending,
+               COUNT(*) FILTER (WHERE status='RETRY')::bigint AS retry,
+               COUNT(*) FILTER (WHERE status='PROCESSING')::bigint AS processing,
+               COUNT(*) FILTER (WHERE status='DEAD_LETTER')::bigint AS "deadLetter",
+               COUNT(*) FILTER (WHERE status='PROCESSING' AND "claimedAt" < CURRENT_TIMESTAMP - INTERVAL '5 minutes')::bigint AS "staleProcessing",
+               MIN("availableAt") FILTER (WHERE status IN ('PENDING','RETRY')) AS "oldestAvailableAt"
+        FROM "PlatformNotification"`))[0] ?? notification;
+      integration = (await db.$queryRaw<IntegrationHealthRow[]>(Prisma.sql`
         SELECT
-          COUNT(*) FILTER (WHERE status='PENDING')::bigint AS pending,
-          COUNT(*) FILTER (WHERE status='RETRY')::bigint AS retry,
-          COUNT(*) FILTER (WHERE status='PROCESSING')::bigint AS processing,
-          COUNT(*) FILTER (WHERE status='DEAD_LETTER')::bigint AS "deadLetter",
-          COUNT(*) FILTER (WHERE status='PROCESSING' AND "claimedAt" < CURRENT_TIMESTAMP - INTERVAL '5 minutes')::bigint AS "staleProcessing",
-          MIN("availableAt") FILTER (WHERE status IN ('PENDING','RETRY')) AS "oldestAvailableAt"
-        FROM "PlatformNotification"
-      `);
-      notification = rows[0] ?? notification;
+          (SELECT COUNT(*) FROM "PlatformIntegrationConnection" WHERE "status"='ACTIVE')::bigint AS "activeConnections",
+          (SELECT COUNT(*) FROM "PlatformIntegrationConnection" WHERE "status"='SUSPENDED')::bigint AS "suspendedConnections",
+          (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" WHERE "status"='RETRY')::bigint AS "retryDeliveries",
+          (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" WHERE "status"='DEAD_LETTER')::bigint AS "deadLetterDeliveries",
+          (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" WHERE "status"='PROCESSING' AND "claimedAt" < CURRENT_TIMESTAMP - INTERVAL '5 minutes')::bigint AS "staleProcessing"`))[0] ?? integration;
     } catch {
       databaseConnectivity = "UNAVAILABLE";
     }
 
-    const notificationState: HealthState = databaseConnectivity === "UNAVAILABLE"
-      ? "UNAVAILABLE"
-      : Number(notification.deadLetter) > 0 || Number(notification.staleProcessing) > 0
-        ? "DEGRADED"
-        : "HEALTHY";
-
-    const migrationState: HealthState = databaseConnectivity === "UNAVAILABLE"
-      ? "UNAVAILABLE"
-      : failedMigrationCount > 0 ? "DEGRADED" : "HEALTHY";
-
+    const notificationState: HealthState = databaseConnectivity === "UNAVAILABLE" ? "UNAVAILABLE" : Number(notification.deadLetter) > 0 || Number(notification.staleProcessing) > 0 ? "DEGRADED" : "HEALTHY";
+    const migrationState: HealthState = databaseConnectivity === "UNAVAILABLE" ? "UNAVAILABLE" : failedMigrationCount > 0 ? "DEGRADED" : "HEALTHY";
     const scheduledStatus: HealthState = process.env.PLATFORM_SCHEDULER_CONFIGURED === "true" ? "HEALTHY" : "NOT_CONFIGURED";
-    const integrationStatus: HealthState = "NOT_CONFIGURED";
+    const integrationStatus: HealthState = databaseConnectivity === "UNAVAILABLE" ? "UNAVAILABLE" : Number(integration.activeConnections) === 0 && Number(integration.suspendedConnections) === 0 ? "NOT_CONFIGURED" : Number(integration.deadLetterDeliveries) > 0 || Number(integration.staleProcessing) > 0 ? "DEGRADED" : "HEALTHY";
 
     return {
       checkedAt,
-      overall: deriveOverall([databaseConnectivity, migrationState, notificationState]),
-      application: {
-        readiness: databaseConnectivity === "UNAVAILABLE" ? "DEGRADED" : "HEALTHY",
-        releaseIdentity: releaseIdentity(),
-        environmentClass: environmentClass(),
-      },
-      database: {
-        connectivity: databaseConnectivity,
-        latestMigration: latestMigration?.migration_name ?? null,
-        latestMigrationFinishedAt: latestMigration?.finished_at?.toISOString() ?? null,
-        failedMigrationCount,
-      },
-      backgroundJobs: {
-        notificationDelivery: notificationState,
-        pending: Number(notification.pending),
-        retry: Number(notification.retry),
-        processing: Number(notification.processing),
-        deadLetter: Number(notification.deadLetter),
-        oldestAvailableAt: notification.oldestAvailableAt?.toISOString() ?? null,
-        staleProcessing: Number(notification.staleProcessing),
-      },
-      scheduledTasks: {
-        status: scheduledStatus,
-        detail: scheduledStatus === "HEALTHY" ? "Platform scheduler is configured." : "No platform scheduler is declared in this release.",
-      },
-      integrations: {
-        status: integrationStatus,
-        detail: "Platform integration framework is not implemented until PR 10.",
-      },
+      overall: deriveOverall([databaseConnectivity, migrationState, notificationState, integrationStatus]),
+      application: { readiness: databaseConnectivity === "UNAVAILABLE" ? "DEGRADED" : "HEALTHY", releaseIdentity: releaseIdentity(), environmentClass: environmentClass() },
+      database: { connectivity: databaseConnectivity, latestMigration: latestMigration?.migration_name ?? null, latestMigrationFinishedAt: latestMigration?.finished_at?.toISOString() ?? null, failedMigrationCount },
+      backgroundJobs: { notificationDelivery: notificationState, pending: Number(notification.pending), retry: Number(notification.retry), processing: Number(notification.processing), deadLetter: Number(notification.deadLetter), oldestAvailableAt: notification.oldestAvailableAt?.toISOString() ?? null, staleProcessing: Number(notification.staleProcessing) },
+      scheduledTasks: { status: scheduledStatus, detail: scheduledStatus === "HEALTHY" ? "Platform scheduler is configured." : "No platform scheduler is declared in this release." },
+      integrations: { status: integrationStatus, detail: integrationStatus === "NOT_CONFIGURED" ? "Integration framework is installed; no provider connection is configured." : `${Number(integration.activeConnections)} active connection(s), ${Number(integration.retryDeliveries)} retry delivery(s), ${Number(integration.deadLetterDeliveries)} dead letter(s).` },
     };
   }
 }

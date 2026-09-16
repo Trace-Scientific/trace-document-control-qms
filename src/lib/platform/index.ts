@@ -10,3 +10,7 @@ export * from "./help-content";
 export * from "./notifications-reporting";
 export * from "./notification-delivery-worker";
 export * from "./system-health";
+export * from "./integration-framework";
+export * from "./integration-operations";
+export * from "./integration-runtime";
+export * from "./integration-inbound";
