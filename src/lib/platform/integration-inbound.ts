@@ -11,13 +11,16 @@ function requireIdempotency(value: string) {
   return normalized;
 }
 
-export async function receivePlatformIntegrationWebhook(input: {
-  connectionId: string;
+export type ProviderSafeWebhookEvidence = {
   rawBody: string;
   rawBodyBytes: Uint8Array;
   requestUrl: string;
   formParameters?: Readonly<Record<string, readonly string[]>>;
   headers: Headers;
+};
+
+export async function receivePlatformIntegrationWebhook(input: ProviderSafeWebhookEvidence & {
+  connectionId: string;
   idempotencyKey: string;
   correlationId?: string | null;
 }) {
@@ -44,7 +47,7 @@ export async function receivePlatformIntegrationWebhook(input: {
     const adapter = platformIntegrationRegistry.get(connection.adapterKey);
     if (!adapter) throw new PlatformIntegrationConfigurationError("Adapter is not registered in this release");
     const credential = await platformCredentialResolver.resolve(connection.credentialRef);
-    const normalized = await adapter.verifyAndNormalizeWebhook({
+    const webhookEvidence = {
       rawBody: input.rawBody,
       rawBodyBytes: input.rawBodyBytes,
       requestUrl: input.requestUrl,
@@ -52,7 +55,8 @@ export async function receivePlatformIntegrationWebhook(input: {
       headers: input.headers,
       configuration: connection.configuration,
       credential,
-    });
+    };
+    const normalized = await adapter.verifyAndNormalizeWebhook(webhookEvidence);
     await db.$transaction(async (tx) => {
       await tx.$executeRaw(Prisma.sql`
         UPDATE "PlatformInboundWebhookReceipt"
