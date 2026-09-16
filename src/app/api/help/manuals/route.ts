@@ -7,7 +7,10 @@ const service = new HelpContentService();
 export async function GET(request: NextRequest) {
   try {
     await authenticateRequest(request);
-    return NextResponse.json({ data: await service.listPublishedManualReleases() });
+    const now = Date.now();
+    const releases = await service.listPublishedManualReleases() as Array<{ effectiveAt: Date | string }>;
+    const effective = releases.filter((release) => new Date(release.effectiveAt).getTime() <= now);
+    return NextResponse.json({ data: effective });
   } catch (error) {
     if (error instanceof AuthenticationRequiredError) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
