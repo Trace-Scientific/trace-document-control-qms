@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import { PlatformIntegrationConfigurationError, PlatformIntegrationNotFoundError } from "./integration-framework";
+import {
+  PlatformIntegrationConfigurationError,
+  PlatformIntegrationNotFoundError,
+  type PlatformIntegrationWebhookEvidence,
+} from "./integration-framework";
 import { platformCredentialResolver, platformIntegrationRegistry } from "./integration-runtime";
 
 function requireIdempotency(value: string) {
@@ -11,7 +15,11 @@ function requireIdempotency(value: string) {
   return normalized;
 }
 
-export async function receivePlatformIntegrationWebhook(input: { connectionId: string; rawBody: string; headers: Headers; idempotencyKey: string; correlationId?: string | null }) {
+export async function receivePlatformIntegrationWebhook(input: PlatformIntegrationWebhookEvidence & {
+  connectionId: string;
+  idempotencyKey: string;
+  correlationId?: string | null;
+}) {
   const idempotencyKey = requireIdempotency(input.idempotencyKey);
   const connections = await db.$queryRaw<Array<{ id: string; adapterKey: string; configuration: unknown; credentialRef: string | null }>>(Prisma.sql`
     SELECT "id","adapterKey","configuration","credentialRef"
@@ -20,7 +28,7 @@ export async function receivePlatformIntegrationWebhook(input: { connectionId: s
   `);
   if (connections.length !== 1) throw new PlatformIntegrationNotFoundError("Active integration connection not found");
   const connection = connections[0];
-  const bodyHash = createHash("sha256").update(input.rawBody).digest("hex");
+  const bodyHash = createHash("sha256").update(input.rawBodyBytes).digest("hex");
 
   const receipts = await db.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     INSERT INTO "PlatformInboundWebhookReceipt" ("connectionId","idempotencyKey","rawBodySha256","correlationId")
@@ -35,7 +43,15 @@ export async function receivePlatformIntegrationWebhook(input: { connectionId: s
     const adapter = platformIntegrationRegistry.get(connection.adapterKey);
     if (!adapter) throw new PlatformIntegrationConfigurationError("Adapter is not registered in this release");
     const credential = await platformCredentialResolver.resolve(connection.credentialRef);
-    const normalized = await adapter.verifyAndNormalizeWebhook({ rawBody: input.rawBody, headers: input.headers, configuration: connection.configuration, credential });
+    const normalized = await adapter.verifyAndNormalizeWebhook({
+      rawBody: input.rawBody,
+      rawBodyBytes: input.rawBodyBytes,
+      requestUrl: input.requestUrl,
+      formParameters: input.formParameters,
+      headers: input.headers,
+      configuration: connection.configuration,
+      credential,
+    });
     await db.$transaction(async (tx) => {
       await tx.$executeRaw(Prisma.sql`
         UPDATE "PlatformInboundWebhookReceipt"

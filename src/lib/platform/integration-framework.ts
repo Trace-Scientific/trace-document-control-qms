@@ -24,10 +24,18 @@ export interface NormalizedInboundEvent {
   payload: Prisma.InputJsonObject;
 }
 
+export interface PlatformIntegrationWebhookEvidence {
+  rawBody: string;
+  rawBodyBytes: Uint8Array;
+  requestUrl: string;
+  formParameters?: Readonly<Record<string, readonly string[]>>;
+  headers: Headers;
+}
+
 export interface PlatformIntegrationAdapter {
   readonly key: string;
   deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }): Promise<void>;
-  verifyAndNormalizeWebhook(input: { rawBody: string; headers: Headers; configuration: unknown; credential: string | null }): Promise<NormalizedInboundEvent>;
+  verifyAndNormalizeWebhook(input: PlatformIntegrationWebhookEvidence & { configuration: unknown; credential: string | null }): Promise<NormalizedInboundEvent>;
 }
 
 export interface PlatformCredentialResolver {
@@ -183,16 +191,24 @@ export class PlatformIntegrationService {
     return dead ? "DEAD_LETTER" as const : "RETRY" as const;
   }
 
-  async receiveWebhook(input: { connectionId: string; rawBody: string; headers: Headers; idempotencyKey: string; correlationId?: string | null }) {
+  async receiveWebhook(input: PlatformIntegrationWebhookEvidence & { connectionId: string; idempotencyKey: string; correlationId?: string | null }) {
     const idempotencyKey = requireText(input.idempotencyKey, "Idempotency key", 240);
     const connections = await db.$queryRaw<Array<{ id: string; adapterKey: string; configuration: unknown; credentialRef: string | null }>>(Prisma.sql`SELECT "id","adapterKey","configuration","credentialRef" FROM "PlatformIntegrationConnection" WHERE "id"=${input.connectionId}::uuid AND "status"='ACTIVE'`);
     if (connections.length !== 1) throw new PlatformIntegrationNotFoundError("Active integration connection not found");
     const connection = connections[0];
     const adapter = this.registry.get(connection.adapterKey);
     if (!adapter) throw new PlatformIntegrationConfigurationError("Adapter is not registered in this release");
-    const rawBodySha256 = createHash("sha256").update(input.rawBody).digest("hex");
+    const rawBodySha256 = createHash("sha256").update(input.rawBodyBytes).digest("hex");
     const credential = await this.credentials.resolve(connection.credentialRef);
-    const normalized = await adapter.verifyAndNormalizeWebhook({ rawBody: input.rawBody, headers: input.headers, configuration: connection.configuration, credential });
+    const normalized = await adapter.verifyAndNormalizeWebhook({
+      rawBody: input.rawBody,
+      rawBodyBytes: input.rawBodyBytes,
+      requestUrl: input.requestUrl,
+      formParameters: input.formParameters,
+      headers: input.headers,
+      configuration: connection.configuration,
+      credential,
+    });
     return db.$transaction(async (tx) => {
       const receipts = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         INSERT INTO "PlatformInboundWebhookReceipt" ("connectionId","idempotencyKey","providerEventId","rawBodySha256","status","correlationId","verifiedAt","normalizedAt")
