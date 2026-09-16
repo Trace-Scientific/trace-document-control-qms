@@ -20,3 +20,4 @@ export * from "./quickbooks-adapter";
 export * from "./salesforce-adapter";
 export * from "./sendgrid-email-adapter";
 export * from "./twilio-sms-adapter";
+export * from "./zendesk-support-adapter";
