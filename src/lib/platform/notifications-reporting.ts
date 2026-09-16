@@ -45,7 +45,7 @@ export interface PlatformOperationalReport {
   sales: { representativesByStatus: Record<string, number>; currentAssignments: number };
   commissions: { accrualsByStatus: Record<string, number>; unpaidApprovedAmount: string };
   notifications: { byStatus: Record<string, number>; deadLetterCount: number; retryCount: number };
-};
+}
 
 export class PlatformNotificationValidationError extends Error {
   constructor(message: string) {
@@ -91,7 +91,7 @@ async function appendEvent(
     actorIdentityId?: string | null;
     actorMembershipId?: string | null;
     reason?: string | null;
-    metadata?: Prisma.InputJsonObject;
+    metadata?: Record<string, unknown>;
   } = {},
 ) {
   await tx.$executeRaw(Prisma.sql`
@@ -112,7 +112,7 @@ async function appendAudit(
   entityType: string,
   entityId: string,
   reason: string,
-  metadata: Prisma.InputJsonObject = {},
+  metadata: Record<string, unknown> = {},
 ) {
   await tx.$executeRaw(Prisma.sql`
     INSERT INTO "PlatformAuditEvent" (
@@ -171,7 +171,7 @@ export class PlatformNotificationReportingService {
       customerAccountId?: string | null;
       channel?: PlatformNotificationChannel;
       dedupeKey?: string | null;
-      payload?: Prisma.InputJsonObject;
+      payload?: Record<string, unknown>;
       reason: string;
     },
   ) {
@@ -181,7 +181,9 @@ export class PlatformNotificationReportingService {
     const body = requireText(input.body, "Body", 10000);
     const reason = requireText(input.reason, "Reason", 1000);
     const channel = input.channel ?? "IN_APP";
-    if (!(["IN_APP", "EMAIL"] as const).includes(channel)) throw new PlatformNotificationValidationError("Unsupported notification channel");
+    if (!(["IN_APP", "EMAIL"] as const).includes(channel)) {
+      throw new PlatformNotificationValidationError("Unsupported notification channel");
+    }
 
     return db.$transaction(async (tx) => {
       const recipients = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
@@ -193,7 +195,9 @@ export class PlatformNotificationReportingService {
           AND pm."status" = 'ACTIVE'
         LIMIT 1
       `);
-      if (recipients.length !== 1) throw new PlatformNotificationValidationError("Recipient must have an active platform identity and membership");
+      if (recipients.length !== 1) {
+        throw new PlatformNotificationValidationError("Recipient must have an active platform identity and membership");
+      }
 
       if (input.customerAccountId) {
         const customers = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
@@ -339,6 +343,7 @@ export class PlatformNotificationReportingService {
       const deadLetter = attempts >= MAX_ATTEMPTS;
       const delay = RETRY_SECONDS[Math.min(attempts - 1, RETRY_SECONDS.length - 1)];
       const availableAt = new Date(Date.now() + delay * 1000);
+      const deadLetteredAt = deadLetter ? new Date() : null;
 
       const rows = await tx.$queryRaw<Array<{ id: string; status: PlatformNotificationStatus; attempts: number }>>(Prisma.sql`
         UPDATE "PlatformNotification"
@@ -347,7 +352,7 @@ export class PlatformNotificationReportingService {
             "availableAt" = ${deadLetter ? new Date() : availableAt},
             "claimedAt" = NULL, "claimedBy" = NULL,
             "lastAttemptAt" = CURRENT_TIMESTAMP,
-            "deadLetteredAt" = ${deadLetter ? new Date() : null},
+            "deadLetteredAt" = ${deadLetteredAt},
             "lastError" = ${errorMessage}, "updatedAt" = CURRENT_TIMESTAMP
         WHERE "id" = ${notificationId}::uuid
         RETURNING "id", "status"::text AS "status", "attempts"
@@ -362,33 +367,46 @@ export class PlatformNotificationReportingService {
   async generateOperationalReport(context: PlatformAuthorizationContext) {
     requirePlatformAuthorization(context, { permission: "platform.reporting.read" });
     return db.$transaction(async (tx) => {
-      const [
-        customerRows,
-        subscriptionRows,
-        overrideRows,
-        supportCaseRows,
-        supportRequestRows,
-        supportSessionRows,
-        activeSupportRows,
-        salesRepRows,
-        salesAssignmentRows,
-        commissionRows,
-        approvedAmountRows,
-        notificationRows,
-      ] = await Promise.all([
-        tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "CustomerAccount" GROUP BY "status" ORDER BY "status"`),
-        tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "Subscription" GROUP BY "status" ORDER BY "status"`),
-        tx.$queryRaw<Array<{ decision: string; count: bigint }>>(Prisma.sql`SELECT "decision"::text AS "decision", COUNT(*)::bigint AS "count" FROM "EntitlementOverride" WHERE "revokedAt" IS NULL AND "effectiveFrom" <= CURRENT_TIMESTAMP AND ("effectiveTo" IS NULL OR "effectiveTo" > CURRENT_TIMESTAMP) GROUP BY "decision"`),
-        tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "SupportCase" GROUP BY "status" ORDER BY "status"`),
-        tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "SupportAccessRequest" GROUP BY "status" ORDER BY "status"`),
-        tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "SupportSession" GROUP BY "status" ORDER BY "status"`),
-        tx.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`SELECT COUNT(*)::bigint AS "count" FROM "SupportSession" WHERE "status" = 'ACTIVE' AND "expiresAt" > CURRENT_TIMESTAMP`),
-        tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "SalesRepresentative" GROUP BY "status" ORDER BY "status"`),
-        tx.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`SELECT COUNT(*)::bigint AS "count" FROM "SalesAssignment" WHERE "startsAt" <= CURRENT_TIMESTAMP AND ("endsAt" IS NULL OR "endsAt" > CURRENT_TIMESTAMP)`),
-        tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "CommissionAccrual" GROUP BY "status" ORDER BY "status"`),
-        tx.$queryRaw<Array<{ amount: Prisma.Decimal | null }>>(Prisma.sql`SELECT COALESCE(SUM("commissionAmount"), 0) AS "amount" FROM "CommissionAccrual" WHERE "status" = 'APPROVED'`),
-        tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "PlatformNotification" GROUP BY "status" ORDER BY "status"`),
-      ]);
+      const customerRows = await tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`
+        SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "CustomerAccount" GROUP BY "status" ORDER BY "status"
+      `);
+      const subscriptionRows = await tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`
+        SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "Subscription" GROUP BY "status" ORDER BY "status"
+      `);
+      const overrideRows = await tx.$queryRaw<Array<{ decision: string; count: bigint }>>(Prisma.sql`
+        SELECT "decision"::text AS "decision", COUNT(*)::bigint AS "count"
+        FROM "EntitlementOverride"
+        WHERE "revokedAt" IS NULL AND "effectiveFrom" <= CURRENT_TIMESTAMP AND ("effectiveTo" IS NULL OR "effectiveTo" > CURRENT_TIMESTAMP)
+        GROUP BY "decision"
+      `);
+      const supportCaseRows = await tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`
+        SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "SupportCase" GROUP BY "status" ORDER BY "status"
+      `);
+      const supportRequestRows = await tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`
+        SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "SupportAccessRequest" GROUP BY "status" ORDER BY "status"
+      `);
+      const supportSessionRows = await tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`
+        SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "SupportSession" GROUP BY "status" ORDER BY "status"
+      `);
+      const activeSupportRows = await tx.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+        SELECT COUNT(*)::bigint AS "count" FROM "SupportSession" WHERE "status" = 'ACTIVE' AND "expiresAt" > CURRENT_TIMESTAMP
+      `);
+      const salesRepRows = await tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`
+        SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "SalesRepresentative" GROUP BY "status" ORDER BY "status"
+      `);
+      const salesAssignmentRows = await tx.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+        SELECT COUNT(*)::bigint AS "count" FROM "SalesAssignment"
+        WHERE "startsAt" <= CURRENT_TIMESTAMP AND ("endsAt" IS NULL OR "endsAt" > CURRENT_TIMESTAMP)
+      `);
+      const commissionRows = await tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`
+        SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "CommissionAccrual" GROUP BY "status" ORDER BY "status"
+      `);
+      const approvedAmountRows = await tx.$queryRaw<Array<{ amount: Prisma.Decimal | null }>>(Prisma.sql`
+        SELECT SUM("commissionAmount") AS "amount" FROM "CommissionAccrual" WHERE "status" = 'APPROVED'
+      `);
+      const notificationRows = await tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`
+        SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "PlatformNotification" GROUP BY "status" ORDER BY "status"
+      `);
 
       const customerMap = statusMap(customerRows);
       const subscriptionMap = statusMap(subscriptionRows);
@@ -399,6 +417,7 @@ export class PlatformNotificationReportingService {
       const commissionMap = statusMap(commissionRows);
       const notificationMap = statusMap(notificationRows);
       const overrideMap = Object.fromEntries(overrideRows.map((row) => [row.decision, Number(row.count)]));
+      const approvedAmount = approvedAmountRows[0]?.amount;
 
       const result: PlatformOperationalReport = {
         generatedAt: new Date().toISOString(),
@@ -413,15 +432,15 @@ export class PlatformNotificationReportingService {
           casesByStatus: supportCaseMap,
           requestsByStatus: supportRequestMap,
           sessionsByStatus: supportSessionMap,
-          activeUnexpiredSessions: Number(activeSupportRows[0]?.count ?? 0n),
+          activeUnexpiredSessions: Number(activeSupportRows[0]?.count ?? 0),
         },
         sales: {
           representativesByStatus: salesRepMap,
-          currentAssignments: Number(salesAssignmentRows[0]?.count ?? 0n),
+          currentAssignments: Number(salesAssignmentRows[0]?.count ?? 0),
         },
         commissions: {
           accrualsByStatus: commissionMap,
-          unpaidApprovedAmount: (approvedAmountRows[0]?.amount ?? new Prisma.Decimal(0)).toFixed(2),
+          unpaidApprovedAmount: approvedAmount ? approvedAmount.toFixed(2) : "0.00",
         },
         notifications: {
           byStatus: notificationMap,
@@ -440,7 +459,12 @@ export class PlatformNotificationReportingService {
         RETURNING "id", "generatedAt"
       `);
 
-      return { reportRunId: runs[0].id, reportKey: "platform.operations.commercial.summary", generatedAt: runs[0].generatedAt, result };
+      return {
+        reportRunId: runs[0].id,
+        reportKey: "platform.operations.commercial.summary",
+        generatedAt: runs[0].generatedAt,
+        result,
+      };
     });
   }
 
