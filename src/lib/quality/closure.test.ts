@@ -10,7 +10,7 @@ const closure:QualityClosureRecord={closureId:"c",eventId,eventNumber:"QE-2026-0
 const store=():QualityClosureStore=>({loadEvidence:vi.fn(async()=>evidence),loadClosure:vi.fn(async()=>closure),recentFailedReauthentications:vi.fn(async()=>0),recordFailedReauthentication:vi.fn(async()=>undefined),commitClosure:vi.fn(async()=>({closureId:"00000000-0000-0000-0000-000000000004",signatureId:"00000000-0000-0000-0000-000000000005"}))});
 
 describe("QualityClosureService",()=>{
-  it("requires quality event read permission for closure evidence",async()=>{await expect(new QualityClosureService(store()).read(context([]),organizationId,eventId)).rejects.toThrow("Access denied");});
+  it("requires quality event read permission for closure evidence",()=>{expect(()=>new QualityClosureService(store()).read(context([]),organizationId,eventId)).toThrow("Access denied");});
   it("returns immutable closure evidence to authorized readers",async()=>{await expect(new QualityClosureService(store()).read(context(["quality_event.read"]),organizationId,eventId)).resolves.toEqual(closure);});
   it("requires quality event management permission",async()=>{await expect(new QualityClosureService(store()).close(context([]),{organizationId,eventId,closureReason:"Verified complete",password,confirmed:true})).rejects.toThrow("Access denied");});
   it("requires explicit signature confirmation",async()=>{await expect(new QualityClosureService(store()).close(context(["quality_event.manage"]),{organizationId,eventId,closureReason:"Verified complete",password,confirmed:false})).rejects.toThrow(QualityClosureValidationError);});
