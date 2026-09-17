@@ -40,7 +40,7 @@ export interface PlatformDeliveryEvidence {
 
 export interface PlatformIntegrationAdapter {
   readonly key: string;
-  deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }): Promise<void | PlatformDeliveryEvidence>;
+  deliver(input: { connectionId: string; eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }): Promise<void | PlatformDeliveryEvidence>;
   verifyAndNormalizeWebhook(input: PlatformIntegrationWebhookEvidence & { configuration: unknown; credential: string | null }): Promise<NormalizedInboundEvent>;
 }
 
@@ -193,12 +193,12 @@ export class PlatformIntegrationService {
     });
   }
 
-  async deliverClaimed(claim: { id: string; adapterKey: string; eventType: string; payload: unknown; configuration: unknown; credentialRef: string | null; idempotencyKey: string }, workerId: string) {
+  async deliverClaimed(claim: { id: string; connectionId: string; adapterKey: string; eventType: string; payload: unknown; configuration: unknown; credentialRef: string | null; idempotencyKey: string }, workerId: string) {
     const adapter = this.registry.get(claim.adapterKey);
     if (!adapter) return this.failDelivery(claim.id, workerId, "Adapter is not registered in this release", false);
     try {
       const credential = await this.credentials.resolve(claim.credentialRef);
-      const evidence = await adapter.deliver({ eventType: claim.eventType, payload: claim.payload, configuration: claim.configuration, credential, idempotencyKey: claim.idempotencyKey }) ?? {};
+      const evidence = await adapter.deliver({ connectionId: claim.connectionId, eventType: claim.eventType, payload: claim.payload, configuration: claim.configuration, credential, idempotencyKey: claim.idempotencyKey }) ?? {};
       await db.$executeRaw(Prisma.sql`
         UPDATE "PlatformIntegrationDelivery"
         SET "status"='SUCCEEDED',"attemptCount"="attemptCount"+1,"deliveredAt"=CURRENT_TIMESTAMP,"lastAttemptAt"=CURRENT_TIMESTAMP,
