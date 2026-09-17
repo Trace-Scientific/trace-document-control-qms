@@ -11,6 +11,7 @@ import { SalesforceCrmAdapter } from "./salesforce-adapter";
 import { SendGridEmailAdapter } from "./sendgrid-email-adapter";
 import { TwilioSmsAdapter } from "./twilio-sms-adapter";
 import { TwilioDeliveryMonitoringService } from "./twilio-delivery-monitoring";
+import { TwilioMonitoringSchedulerService } from "./twilio-monitoring-scheduler";
 import { ZendeskSupportAdapter } from "./zendesk-support-adapter";
 
 // Provider adapters are registered only through explicit reviewed composition changes.
@@ -36,6 +37,9 @@ export const platformIntegrationService = new PlatformIntegrationService(
 );
 export const platformTwilioDeliveryMonitoringService = new TwilioDeliveryMonitoringService(
   platformCredentialResolver,
+);
+export const platformTwilioMonitoringSchedulerService = new TwilioMonitoringSchedulerService(
+  platformTwilioDeliveryMonitoringService,
 );
 export const platformOAuthLifecycleService = new PlatformOAuthLifecycleService(
   platformOAuthProviderRegistry,
