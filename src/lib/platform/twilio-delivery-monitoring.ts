@@ -82,7 +82,7 @@ export class TwilioDeliveryMonitoringService {
         AND d."eventType"='twilio.sms.send'
         AND d."status" IN ('SUCCEEDED','RECONCILIATION_REQUIRED')
         AND d."providerObjectId" ~ '^SM[0-9A-Fa-f]{32}$'
-        AND d."providerOutcome" IS DISTINCT FROM ALL (ARRAY['TWILIO_DELIVERED','TWILIO_UNDELIVERED','TWILIO_FAILED','TWILIO_CANCELED','TWILIO_READ']::text[])
+        AND COALESCE(d."providerOutcome",'') NOT IN ('TWILIO_DELIVERED','TWILIO_UNDELIVERED','TWILIO_FAILED','TWILIO_CANCELED','TWILIO_READ')
         AND d."createdAt" < CURRENT_TIMESTAMP - INTERVAL '2 minutes'
         AND (d."providerStatusCheckedAt" IS NULL OR d."providerStatusCheckedAt" < CURRENT_TIMESTAMP - INTERVAL '15 minutes')
       ORDER BY d."providerStatusCheckedAt" NULLS FIRST,d."createdAt"
