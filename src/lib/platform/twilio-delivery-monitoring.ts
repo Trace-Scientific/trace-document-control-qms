@@ -5,13 +5,6 @@ import {
   type PlatformCredentialResolver,
 } from "./integration-framework";
 
-const TERMINAL_PROVIDER_OUTCOMES = new Set([
-  "TWILIO_DELIVERED",
-  "TWILIO_UNDELIVERED",
-  "TWILIO_FAILED",
-  "TWILIO_CANCELED",
-  "TWILIO_READ",
-]);
 const ALLOWED_MESSAGE_STATUSES = new Set([
   "accepted",
   "scheduled",
@@ -89,6 +82,7 @@ export class TwilioDeliveryMonitoringService {
         AND d."eventType"='twilio.sms.send'
         AND d."status" IN ('SUCCEEDED','RECONCILIATION_REQUIRED')
         AND d."providerObjectId" ~ '^SM[0-9A-Fa-f]{32}$'
+        AND d."providerOutcome" IS DISTINCT FROM ALL (ARRAY['TWILIO_DELIVERED','TWILIO_UNDELIVERED','TWILIO_FAILED','TWILIO_CANCELED','TWILIO_READ']::text[])
         AND d."createdAt" < CURRENT_TIMESTAMP - INTERVAL '2 minutes'
         AND (d."providerStatusCheckedAt" IS NULL OR d."providerStatusCheckedAt" < CURRENT_TIMESTAMP - INTERVAL '15 minutes')
       ORDER BY d."providerStatusCheckedAt" NULLS FIRST,d."createdAt"
@@ -96,10 +90,7 @@ export class TwilioDeliveryMonitoringService {
     `);
 
     const results: Array<{ id: string; outcome: string }> = [];
-    for (const candidate of candidates) {
-      if (candidate.providerOutcome && TERMINAL_PROVIDER_OUTCOMES.has(candidate.providerOutcome)) continue;
-      results.push(await this.pollOne(candidate));
-    }
+    for (const candidate of candidates) results.push(await this.pollOne(candidate));
     return results;
   }
 
@@ -160,20 +151,22 @@ export class TwilioDeliveryMonitoringService {
       if (current.length !== 1 || current[0].connectionStatus !== "ACTIVE" || current[0].providerObjectId !== candidate.providerObjectId) return;
 
       const resolveAmbiguity = current[0].status === "RECONCILIATION_REQUIRED";
-      await tx.$executeRaw(Prisma.sql`
-        UPDATE "PlatformIntegrationDelivery"
-        SET "status"=${resolveAmbiguity ? "SUCCEEDED" : current[0].status}::"PlatformIntegrationDeliveryStatus",
-            "providerOutcome"=${providerOutcome},
-            "providerStatusCheckedAt"=CURRENT_TIMESTAMP,
-            "providerStatusCheckCount"="providerStatusCheckCount"+1,
-            "providerStatusError"=NULL,
-            "reconciliationReason"=${resolveAmbiguity ? "TWILIO_PROVIDER_POLL_CONFIRMED_MESSAGE_EXISTS" : null},
-            "deliveredAt"=${resolveAmbiguity ? new Date() : null},
-            "lastError"=${resolveAmbiguity ? null : Prisma.sql`"lastError"`}
-        WHERE "id"=${candidate.id}::uuid
-      `);
-
       if (resolveAmbiguity) {
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE "PlatformIntegrationDelivery"
+          SET "status"='SUCCEEDED',
+              "providerOutcome"=${providerOutcome},
+              "providerStatusCheckedAt"=CURRENT_TIMESTAMP,
+              "providerStatusCheckCount"="providerStatusCheckCount"+1,
+              "providerStatusError"=NULL,
+              "reconciliationReason"='TWILIO_PROVIDER_POLL_CONFIRMED_MESSAGE_EXISTS',
+              "deliveredAt"=COALESCE("deliveredAt",CURRENT_TIMESTAMP),
+              "lastError"=NULL,
+              "claimedAt"=NULL,
+              "claimedBy"=NULL,
+              "deadLetteredAt"=NULL
+          WHERE "id"=${candidate.id}::uuid AND "status"='RECONCILIATION_REQUIRED'
+        `);
         await writeSystemAudit(
           tx,
           "platform.integration.delivery.reconciled_by_provider_poll",
@@ -187,19 +180,29 @@ export class TwilioDeliveryMonitoringService {
             resolution: "CONFIRMED_SUCCEEDED",
           },
         );
-      } else if (current[0].providerOutcome !== providerOutcome) {
-        await writeSystemAudit(
-          tx,
-          "platform.integration.delivery.provider_status_polled",
-          candidate.id,
-          "Twilio provider status changed during polling.",
-          {
-            provider: "twilio",
-            messageSid: candidate.providerObjectId,
-            previousProviderOutcome: current[0].providerOutcome,
-            providerOutcome,
-          },
-        );
+      } else {
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE "PlatformIntegrationDelivery"
+          SET "providerOutcome"=${providerOutcome},
+              "providerStatusCheckedAt"=CURRENT_TIMESTAMP,
+              "providerStatusCheckCount"="providerStatusCheckCount"+1,
+              "providerStatusError"=NULL
+          WHERE "id"=${candidate.id}::uuid AND "status"='SUCCEEDED'
+        `);
+        if (current[0].providerOutcome !== providerOutcome) {
+          await writeSystemAudit(
+            tx,
+            "platform.integration.delivery.provider_status_polled",
+            candidate.id,
+            "Twilio provider status changed during polling.",
+            {
+              provider: "twilio",
+              messageSid: candidate.providerObjectId,
+              previousProviderOutcome: current[0].providerOutcome,
+              providerOutcome,
+            },
+          );
+        }
       }
     });
 
