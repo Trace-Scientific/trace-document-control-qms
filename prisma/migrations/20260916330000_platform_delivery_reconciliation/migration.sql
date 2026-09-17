@@ -22,7 +22,11 @@ ALTER TABLE "PlatformIntegrationDelivery"
   ADD CONSTRAINT "PlatformIntegrationDelivery_reconciliation_reason_check"
     CHECK ("reconciliationReason" IS NULL OR char_length("reconciliationReason") <= 1000),
   ADD CONSTRAINT "PlatformIntegrationDelivery_reconciled_actor_check"
-    CHECK (("reconciledAt" IS NULL) = ("reconciledByIdentityId" IS NULL AND "reconciledByMembershipId" IS NULL));
+    CHECK (
+      ("reconciledAt" IS NULL AND "reconciledByIdentityId" IS NULL AND "reconciledByMembershipId" IS NULL)
+      OR
+      ("reconciledAt" IS NOT NULL AND "reconciledByIdentityId" IS NOT NULL AND "reconciledByMembershipId" IS NOT NULL)
+    );
 
 -- This is intentionally not a partial index using the newly-added enum value in the
 -- same migration. The status-leading index still supports the reconciliation queue.
