@@ -12,8 +12,23 @@ function reason(value: string) {
 export class PlatformIntegrationOperationsService {
   async listDeliveries(context: PlatformAuthorizationContext) {
     requirePlatformAuthorization(context, { permission: "platform.integration.manage" });
-    return db.$queryRaw<Array<{ id: string; connectionId: string; eventType: string; status: string; attemptCount: number; availableAt: Date; lastError: string | null; createdAt: Date }>>(Prisma.sql`
-      SELECT "id","connectionId","eventType","status"::text AS "status","attemptCount","availableAt","lastError","createdAt"
+    return db.$queryRaw<Array<{
+      id: string;
+      connectionId: string;
+      eventType: string;
+      status: string;
+      attemptCount: number;
+      availableAt: Date;
+      lastError: string | null;
+      providerRequestId: string | null;
+      providerObjectId: string | null;
+      providerOutcome: string | null;
+      reconciliationReason: string | null;
+      reconciledAt: Date | null;
+      createdAt: Date;
+    }>>(Prisma.sql`
+      SELECT "id","connectionId","eventType","status"::text AS "status","attemptCount","availableAt","lastError",
+             "providerRequestId","providerObjectId","providerOutcome","reconciliationReason","reconciledAt","createdAt"
       FROM "PlatformIntegrationDelivery" ORDER BY "createdAt" DESC LIMIT 250
     `);
   }
@@ -33,7 +48,8 @@ export class PlatformIntegrationOperationsService {
       const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         UPDATE "PlatformIntegrationDelivery" d
         SET "status"='PENDING',"attemptCount"=0,"availableAt"=CURRENT_TIMESTAMP,"claimedAt"=NULL,"claimedBy"=NULL,
-            "lastAttemptAt"=NULL,"deliveredAt"=NULL,"deadLetteredAt"=NULL,"lastError"=NULL
+            "lastAttemptAt"=NULL,"deliveredAt"=NULL,"deadLetteredAt"=NULL,"lastError"=NULL,
+            "providerOutcome"='MANUALLY_REQUEUED'
         FROM "PlatformIntegrationConnection" c
         WHERE d."id"=${deliveryId}::uuid AND d."status"='DEAD_LETTER' AND c."id"=d."connectionId" AND c."status"='ACTIVE'
         RETURNING d."id"
