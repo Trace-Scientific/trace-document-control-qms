@@ -23,12 +23,16 @@ export class PlatformIntegrationOperationsService {
       providerRequestId: string | null;
       providerObjectId: string | null;
       providerOutcome: string | null;
+      providerStatusCheckedAt: Date | null;
+      providerStatusCheckCount: number;
+      providerStatusError: string | null;
       reconciliationReason: string | null;
       reconciledAt: Date | null;
       createdAt: Date;
     }>>(Prisma.sql`
       SELECT "id","connectionId","eventType","status"::text AS "status","attemptCount","availableAt","lastError",
-             "providerRequestId","providerObjectId","providerOutcome","reconciliationReason","reconciledAt","createdAt"
+             "providerRequestId","providerObjectId","providerOutcome","providerStatusCheckedAt","providerStatusCheckCount","providerStatusError",
+             "reconciliationReason","reconciledAt","createdAt"
       FROM "PlatformIntegrationDelivery" ORDER BY "createdAt" DESC LIMIT 250
     `);
   }
