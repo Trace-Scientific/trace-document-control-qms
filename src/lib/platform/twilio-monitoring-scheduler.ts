@@ -5,7 +5,7 @@ import { TwilioDeliveryMonitoringService } from "./twilio-delivery-monitoring";
 
 const OPERATION_KEY = "twilio.delivery-status.poll";
 const LEASE_MINUTES = 10;
-const ALERT_PERMISSION = "platform.integration.manage";
+const ALERT_PERMISSIONS = ["platform.integration.manage", "platform.notification.read"] as const;
 
 function boundedError(value: unknown) {
   const message = value instanceof Error ? value.message : "Twilio scheduled polling failed";
@@ -32,13 +32,14 @@ async function enqueueOperatorAlerts(input: {
       FROM "PlatformMembership" pm
       JOIN "PlatformIdentity" pi ON pi."id"=pm."identityId"
       WHERE pm."status"='ACTIVE' AND pi."status"='ACTIVE'
-        AND EXISTS (
-          SELECT 1
+        AND (
+          SELECT COUNT(DISTINCT pp."key")
           FROM "PlatformMembershipRole" pmr
           JOIN "PlatformRolePermission" prp ON prp."roleId"=pmr."roleId"
           JOIN "PlatformPermission" pp ON pp."id"=prp."permissionId"
-          WHERE pmr."membershipId"=pm."id" AND pp."key"=${ALERT_PERMISSION}
-        )
+          WHERE pmr."membershipId"=pm."id"
+            AND pp."key" IN (${ALERT_PERMISSIONS[0]},${ALERT_PERMISSIONS[1]})
+        ) = 2
       ON CONFLICT ("dedupeKey") WHERE "dedupeKey" IS NOT NULL DO NOTHING
       RETURNING "id"
     )
