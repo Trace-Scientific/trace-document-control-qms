@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import {
   PlatformIntegrationConfigurationError,
+  PlatformIntegrationDeliveryRejectedError,
   type NormalizedInboundEvent,
   type PlatformIntegrationAdapter,
 } from "./integration-framework";
@@ -9,20 +10,9 @@ import {
 const STRIPE_API_BASE = "https://api.stripe.com/v1";
 const SIGNATURE_TOLERANCE_SECONDS = 300;
 
-type StripeCredentialBundle = {
-  apiKey?: string;
-  webhookSecret?: string;
-};
-
-type StripeConfiguration = {
-  apiVersion?: string;
-};
-
-type StripeEvent = {
-  id?: string;
-  type?: string;
-  data?: { object?: unknown };
-};
+type StripeCredentialBundle = { apiKey?: string; webhookSecret?: string };
+type StripeConfiguration = { apiVersion?: string };
+type StripeEvent = { id?: string; type?: string; data?: { object?: unknown } };
 
 function parseCredentialBundle(raw: string | null): StripeCredentialBundle {
   if (!raw) return {};
@@ -44,16 +34,11 @@ function parseConfiguration(raw: unknown): StripeConfiguration {
 }
 
 function requireApiKey(bundle: StripeCredentialBundle) {
-  if (!bundle.apiKey || !/^sk_(test|live)_/.test(bundle.apiKey)) {
-    throw new PlatformIntegrationConfigurationError("Stripe API key is not configured");
-  }
+  if (!bundle.apiKey || !/^sk_(test|live)_/.test(bundle.apiKey)) throw new PlatformIntegrationConfigurationError("Stripe API key is not configured");
   return bundle.apiKey;
 }
-
 function requireWebhookSecret(bundle: StripeCredentialBundle) {
-  if (!bundle.webhookSecret || !bundle.webhookSecret.startsWith("whsec_")) {
-    throw new PlatformIntegrationConfigurationError("Stripe webhook secret is not configured");
-  }
+  if (!bundle.webhookSecret || !bundle.webhookSecret.startsWith("whsec_")) throw new PlatformIntegrationConfigurationError("Stripe webhook secret is not configured");
   return bundle.webhookSecret;
 }
 
@@ -64,10 +49,7 @@ function flattenForm(value: unknown, prefix = "", target = new URLSearchParams()
     return target;
   }
   if (typeof value === "object") {
-    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-      const next = prefix ? `${prefix}[${key}]` : key;
-      flattenForm(nested, next, target);
-    }
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) flattenForm(nested, prefix ? `${prefix}[${key}]` : key, target);
     return target;
   }
   if (!prefix) throw new PlatformIntegrationConfigurationError("Stripe request payload must be an object");
@@ -88,8 +70,7 @@ function verifyStripeSignature(rawBody: string, signatureHeader: string | null, 
   const { timestamp, v1 } = parseStripeSignature(signatureHeader);
   const numericTimestamp = Number(timestamp);
   if (!Number.isFinite(numericTimestamp)) throw new PlatformIntegrationConfigurationError("Stripe signature timestamp is invalid");
-  const age = Math.abs(Math.floor(Date.now() / 1000) - numericTimestamp);
-  if (age > SIGNATURE_TOLERANCE_SECONDS) throw new PlatformIntegrationConfigurationError("Stripe signature timestamp is outside tolerance");
+  if (Math.abs(Math.floor(Date.now() / 1000) - numericTimestamp) > SIGNATURE_TOLERANCE_SECONDS) throw new PlatformIntegrationConfigurationError("Stripe signature timestamp is outside tolerance");
   const expected = createHmac("sha256", secret).update(`${timestamp}.${rawBody}`, "utf8").digest("hex");
   const expectedBuffer = Buffer.from(expected, "hex");
   const valid = v1.some((candidate) => {
@@ -108,11 +89,10 @@ function normalizePayload(value: unknown): Prisma.InputJsonObject {
 export class StripeBillingAdapter implements PlatformIntegrationAdapter {
   readonly key = "stripe.billing";
 
-  async deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }): Promise<void> {
+  async deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }) {
     const credentials = parseCredentialBundle(input.credential);
     const apiKey = requireApiKey(credentials);
     const configuration = parseConfiguration(input.configuration);
-
     const routes: Record<string, { method: "POST"; path: string }> = {
       "stripe.customer.create": { method: "POST", path: "/customers" },
       "stripe.subscription.create": { method: "POST", path: "/subscriptions" },
@@ -120,17 +100,23 @@ export class StripeBillingAdapter implements PlatformIntegrationAdapter {
     const route = routes[input.eventType];
     if (!route) throw new PlatformIntegrationConfigurationError("Stripe outbound event type is not supported");
 
-    const response = await fetch(`${STRIPE_API_BASE}${route.path}`, {
-      method: route.method,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Idempotency-Key": input.idempotencyKey,
-        ...(configuration.apiVersion ? { "Stripe-Version": configuration.apiVersion } : {}),
-      },
-      body: flattenForm(input.payload).toString(),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${STRIPE_API_BASE}${route.path}`, {
+        method: route.method,
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Idempotency-Key": input.idempotencyKey,
+          ...(configuration.apiVersion ? { "Stripe-Version": configuration.apiVersion } : {}),
+        },
+        body: flattenForm(input.payload).toString(),
+      });
+    } catch {
+      throw new PlatformIntegrationDeliveryRejectedError("Stripe transport failed; safe retry uses the same provider idempotency key", true);
+    }
 
+    const requestId = response.headers.get("request-id")?.slice(0, 500) ?? null;
     if (!response.ok) {
       const body = await response.text();
       let message = `Stripe request failed with status ${response.status}`;
@@ -140,22 +126,24 @@ export class StripeBillingAdapter implements PlatformIntegrationAdapter {
       } catch {
         // Preserve bounded generic error text only.
       }
-      throw new Error(message.slice(0, 500));
+      const retryable = response.status === 429 || response.status >= 500;
+      throw new PlatformIntegrationDeliveryRejectedError(message.slice(0, 500), retryable, {
+        providerRequestId: requestId,
+        providerOutcome: retryable ? "STRIPE_IDEMPOTENT_RETRYABLE_FAILURE" : "STRIPE_REJECTED",
+      });
     }
+
+    const body = await response.json() as Record<string, unknown>;
+    const providerObjectId = typeof body.id === "string" ? body.id.slice(0, 500) : null;
+    return { providerRequestId: requestId, providerObjectId, providerOutcome: "STRIPE_CONFIRMED_SUCCESS" };
   }
 
   async verifyAndNormalizeWebhook(input: { rawBody: string; headers: Headers; configuration: unknown; credential: string | null }): Promise<NormalizedInboundEvent> {
     const credentials = parseCredentialBundle(input.credential);
     verifyStripeSignature(input.rawBody, input.headers.get("stripe-signature"), requireWebhookSecret(credentials));
-
     let event: StripeEvent;
-    try {
-      event = JSON.parse(input.rawBody) as StripeEvent;
-    } catch {
-      throw new PlatformIntegrationConfigurationError("Stripe webhook body is not valid JSON");
-    }
+    try { event = JSON.parse(input.rawBody) as StripeEvent; } catch { throw new PlatformIntegrationConfigurationError("Stripe webhook body is not valid JSON"); }
     if (!event.id || !event.type) throw new PlatformIntegrationConfigurationError("Stripe webhook event identity is missing");
-
     const allowed = new Set([
       "customer.subscription.created",
       "customer.subscription.updated",
@@ -165,15 +153,10 @@ export class StripeBillingAdapter implements PlatformIntegrationAdapter {
       "checkout.session.completed",
     ]);
     if (!allowed.has(event.type)) throw new PlatformIntegrationConfigurationError("Stripe webhook event type is not supported");
-
     return {
       eventType: `stripe.${event.type}`,
       providerEventId: event.id,
-      payload: {
-        stripeEventId: event.id,
-        stripeEventType: event.type,
-        object: normalizePayload(event.data?.object),
-      },
+      payload: { stripeEventId: event.id, stripeEventType: event.type, object: normalizePayload(event.data?.object) },
     };
   }
 }

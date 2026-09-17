@@ -1,6 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import { PlatformIntegrationConfigurationError, type NormalizedInboundEvent, type PlatformIntegrationAdapter } from "./integration-framework";
+import {
+  PlatformIntegrationConfigurationError,
+  PlatformIntegrationDeliveryRejectedError,
+  type NormalizedInboundEvent,
+  type PlatformIntegrationAdapter,
+} from "./integration-framework";
 
 const ADAPTER_KEY = "zendesk.support";
 const ALLOWED_OUTBOUND = new Set(["zendesk.ticket.create"]);
@@ -77,7 +82,7 @@ function normalizeWebhook(rawBody: string): NormalizedInboundEvent {
 export class ZendeskSupportAdapter implements PlatformIntegrationAdapter {
   readonly key = ADAPTER_KEY;
 
-  async deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }): Promise<void> {
+  async deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }) {
     if (!ALLOWED_OUTBOUND.has(input.eventType)) throw new PlatformIntegrationConfigurationError("Zendesk outbound event type is not allowed");
     const credential = parseCredential(input.credential);
     const payload = validatePayload(input.payload);
@@ -92,7 +97,18 @@ export class ZendeskSupportAdapter implements PlatformIntegrationAdapter {
       },
       body: JSON.stringify(payload),
     });
-    if (!response.ok) throw new Error(`Zendesk request failed with HTTP ${response.status}`);
+    const requestId = response.headers.get("x-request-id")?.slice(0, 500) ?? null;
+    if (!response.ok) {
+      if (response.status === 429) throw new PlatformIntegrationDeliveryRejectedError("Zendesk request was rate limited", true, { providerRequestId: requestId });
+      if (response.status >= 400 && response.status < 500 && response.status !== 408) {
+        throw new PlatformIntegrationDeliveryRejectedError(`Zendesk request was rejected with HTTP ${response.status}`, false, { providerRequestId: requestId });
+      }
+      throw new Error(`Zendesk provider outcome is ambiguous after HTTP ${response.status}`);
+    }
+    const body = await response.json() as Record<string, unknown>;
+    const ticket = body.ticket && typeof body.ticket === "object" && !Array.isArray(body.ticket) ? body.ticket as Record<string, unknown> : {};
+    const providerObjectId = ticket.id == null ? null : String(ticket.id).slice(0, 500);
+    return { providerRequestId: requestId, providerObjectId, providerOutcome: "ZENDESK_CONFIRMED_CREATED" };
   }
 
   async verifyAndNormalizeWebhook(input: { rawBody: string; headers: Headers; configuration: unknown; credential: string | null }): Promise<NormalizedInboundEvent> {

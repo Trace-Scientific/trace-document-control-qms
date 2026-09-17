@@ -1,4 +1,9 @@
-import { PlatformIntegrationConfigurationError, type NormalizedInboundEvent, type PlatformIntegrationAdapter } from "./integration-framework";
+import {
+  PlatformIntegrationConfigurationError,
+  PlatformIntegrationDeliveryRejectedError,
+  type NormalizedInboundEvent,
+  type PlatformIntegrationAdapter,
+} from "./integration-framework";
 
 const ADAPTER_KEY = "sendgrid.email";
 const ALLOWED_EVENT = "sendgrid.email.send";
@@ -70,7 +75,7 @@ function endpoint(configuration: SendGridConfiguration) {
 export class SendGridEmailAdapter implements PlatformIntegrationAdapter {
   readonly key = ADAPTER_KEY;
 
-  async deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }): Promise<void> {
+  async deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }) {
     if (input.eventType !== ALLOWED_EVENT) throw new PlatformIntegrationConfigurationError("SendGrid outbound event type is not allowed");
     const credential = parseCredential(input.credential);
     const configuration = parseConfiguration(input.configuration);
@@ -91,7 +96,17 @@ export class SendGridEmailAdapter implements PlatformIntegrationAdapter {
         content,
       }),
     });
-    if (!response.ok) throw new Error(`SendGrid request failed with HTTP ${response.status}`);
+    if (!response.ok) {
+      if (response.status === 429) throw new PlatformIntegrationDeliveryRejectedError("SendGrid request was rate limited", true);
+      if (response.status >= 400 && response.status < 500 && response.status !== 408) {
+        throw new PlatformIntegrationDeliveryRejectedError(`SendGrid request was rejected with HTTP ${response.status}`, false);
+      }
+      throw new Error(`SendGrid provider outcome is ambiguous after HTTP ${response.status}`);
+    }
+    return {
+      providerRequestId: response.headers.get("x-message-id")?.slice(0, 500) ?? null,
+      providerOutcome: "SENDGRID_ACCEPTED",
+    };
   }
 
   async verifyAndNormalizeWebhook(_input: { rawBody: string; headers: Headers; configuration: unknown; credential: string | null }): Promise<NormalizedInboundEvent> {
