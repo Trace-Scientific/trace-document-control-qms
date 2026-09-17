@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { describe, expect, it } from "vitest";
 
 describe("provider delivery reconciliation hardening", () => {
   const migration = fs.readFileSync(path.join(process.cwd(), "prisma/migrations/20260916330000_platform_delivery_reconciliation/migration.sql"), "utf8");
@@ -20,11 +21,13 @@ describe("provider delivery reconciliation hardening", () => {
     expect(migration).toContain('"providerObjectId" TEXT');
     expect(migration).toContain('"providerOutcome" TEXT');
     expect(migration).toContain('"reconciledByMembershipId" UUID');
+    expect(migration).toContain('"reconciledAt" IS NOT NULL AND "reconciledByIdentityId" IS NOT NULL');
   });
 
   it("never automatically replays an abandoned processing lease", () => {
     expect(framework).toContain('"status"=\'RECONCILIATION_REQUIRED\'');
     expect(framework).toContain("STALE_PROCESSING_CLAIM");
+    expect(framework).toContain('"attemptCount"=LEAST("attemptCount"+1');
     expect(framework).not.toContain('SET "status"=\'RETRY\',"claimedAt"=NULL,"claimedBy"=NULL,"availableAt"=CURRENT_TIMESTAMP WHERE "status"=\'PROCESSING\'');
   });
 
@@ -34,6 +37,7 @@ describe("provider delivery reconciliation hardening", () => {
     expect(framework).toContain("CONFIRMED_NOT_DELIVERED");
     expect(framework).toContain("ABANDON");
     expect(framework).toContain("platform.integration.delivery.reconciled");
+    expect(framework).toContain("Delivery has exhausted its retry capacity");
     expect(reconcileRoute).toContain("authenticatePlatformRequest");
     expect(reconcileRoute).toContain("platformIntegrationService.reconcileDelivery");
   });
