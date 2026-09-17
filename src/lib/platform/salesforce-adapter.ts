@@ -92,7 +92,7 @@ export class SalesforceCrmAdapter implements PlatformIntegrationAdapter {
       },
       body: JSON.stringify(payload),
     });
-    const requestId = response.headers.get("sforce-limit-info")?.slice(0, 500) ?? null;
+    const requestId = response.headers.get("x-request-id")?.slice(0, 500) ?? null;
     if (!response.ok) {
       if (response.status === 429) throw new PlatformIntegrationDeliveryRejectedError("Salesforce request was rate limited", true, { providerRequestId: requestId });
       if (response.status >= 400 && response.status < 500 && response.status !== 408) {
