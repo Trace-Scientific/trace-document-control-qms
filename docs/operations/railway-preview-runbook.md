@@ -68,6 +68,20 @@ or shorter than 32 characters, or if the protected endpoint returns a non-2xx
 response. Railway cron jobs must terminate after the task completes; a run that
 remains active can cause subsequent scheduled executions to be skipped.
 
+## Twilio delivery-status monitor
+
+PR 23 adds the application-side scheduler contract for bounded Twilio delivery-status
+polling. PR 24 adds the one-shot Railway runner and preview activation procedure.
+Use the dedicated [Twilio preview scheduler activation runbook](twilio-preview-scheduler-runbook.md)
+for the reviewed service name, command, 15-minute cadence, one-time execution check,
+and the rule that `PLATFORM_SCHEDULER_CONFIGURED=true` is set only after a successful
+preview scheduler run.
+
+Do not add Twilio provider credentials to the Railway cron service. The runner calls
+the machine-authenticated application endpoint only; provider credential resolution
+stays inside the governed application boundary. Twilio polling remains observation
+and reconciliation evidence only and never authorizes an automatic resend.
+
 The preview image applies committed Prisma migrations before starting Next.js.
 Migration failure prevents the application from starting and from passing its
 readiness check. Never run
