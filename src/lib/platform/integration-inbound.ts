@@ -4,6 +4,7 @@ import { db } from "../db";
 import {
   PlatformIntegrationConfigurationError,
   PlatformIntegrationNotFoundError,
+  type NormalizedInboundEvent,
   type PlatformIntegrationWebhookEvidence,
 } from "./integration-framework";
 import { platformCredentialResolver, platformIntegrationRegistry } from "./integration-runtime";
@@ -13,6 +14,97 @@ function requireIdempotency(value: string) {
   if (!normalized) throw new PlatformIntegrationConfigurationError("Idempotency key is required");
   if (normalized.length > 240) throw new PlatformIntegrationConfigurationError("Idempotency key is too long");
   return normalized;
+}
+
+function callbackText(value: unknown, label: string, max: number) {
+  if (typeof value !== "string" || !value.trim()) throw new PlatformIntegrationConfigurationError(`${label} is required`);
+  const normalized = value.trim();
+  if (normalized.length > max) throw new PlatformIntegrationConfigurationError(`${label} is too long`);
+  return normalized;
+}
+
+async function applyVerifiedTwilioStatusCallback(
+  tx: Prisma.TransactionClient,
+  input: { connectionId: string; receiptId: string; normalized: NormalizedInboundEvent },
+) {
+  if (input.normalized.eventType !== "twilio.sms.status") return;
+  const payload = input.normalized.payload as Record<string, unknown>;
+  const deliveryKey = callbackText(payload.deliveryKey, "Twilio delivery key", 240);
+  const messageSid = callbackText(payload.messageSid, "Twilio message SID", 64);
+  const messageStatus = callbackText(payload.messageStatus, "Twilio message status", 32).toLowerCase();
+  if (!/^SM[a-fA-F0-9]{32}$/.test(messageSid)) throw new PlatformIntegrationConfigurationError("Twilio message SID is invalid");
+
+  const rows = await tx.$queryRaw<Array<{
+    id: string;
+    status: string;
+    providerObjectId: string | null;
+  }>>(Prisma.sql`
+    SELECT "id","status"::text AS "status","providerObjectId"
+    FROM "PlatformIntegrationDelivery"
+    WHERE "connectionId"=${input.connectionId}::uuid AND "idempotencyKey"=${deliveryKey}
+    FOR UPDATE
+  `);
+  if (rows.length !== 1) throw new PlatformIntegrationConfigurationError("Twilio callback does not match a governed outbound delivery");
+  const delivery = rows[0];
+  if (delivery.providerObjectId && delivery.providerObjectId !== messageSid) {
+    throw new PlatformIntegrationConfigurationError("Twilio callback message SID does not match the outbound delivery");
+  }
+
+  const providerOutcome = `TWILIO_${messageStatus.toUpperCase()}`.slice(0, 160);
+  const resolveAmbiguity = delivery.status === "RECONCILIATION_REQUIRED";
+
+  if (resolveAmbiguity) {
+    await tx.$executeRaw(Prisma.sql`
+      UPDATE "PlatformIntegrationDelivery"
+      SET "status"='SUCCEEDED',"providerObjectId"=${messageSid},"providerOutcome"=${providerOutcome},
+          "reconciliationReason"='TWILIO_SIGNED_CALLBACK_CONFIRMED_PROVIDER_ACCEPTANCE',
+          "deliveredAt"=COALESCE("deliveredAt",CURRENT_TIMESTAMP),"lastError"=NULL,
+          "claimedAt"=NULL,"claimedBy"=NULL,"deadLetteredAt"=NULL
+      WHERE "id"=${delivery.id}::uuid AND "status"='RECONCILIATION_REQUIRED'
+    `);
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO "PlatformAuditEvent" ("id","action","entityType","entityId","reason","metadata")
+      VALUES (
+        gen_random_uuid(),
+        'platform.integration.delivery.reconciled_by_provider_callback',
+        'PlatformIntegrationDelivery',
+        ${delivery.id}::uuid,
+        'Verified Twilio status callback confirmed provider acceptance.',
+        ${JSON.stringify({
+          provider: "twilio",
+          receiptId: input.receiptId,
+          messageSid,
+          messageStatus,
+          previousStatus: delivery.status,
+          resolution: "CONFIRMED_SUCCEEDED",
+        })}::jsonb
+      )
+    `);
+    return;
+  }
+
+  await tx.$executeRaw(Prisma.sql`
+    UPDATE "PlatformIntegrationDelivery"
+    SET "providerObjectId"=COALESCE("providerObjectId",${messageSid}),"providerOutcome"=${providerOutcome}
+    WHERE "id"=${delivery.id}::uuid
+  `);
+  await tx.$executeRaw(Prisma.sql`
+    INSERT INTO "PlatformAuditEvent" ("id","action","entityType","entityId","reason","metadata")
+    VALUES (
+      gen_random_uuid(),
+      'platform.integration.delivery.provider_status_observed',
+      'PlatformIntegrationDelivery',
+      ${delivery.id}::uuid,
+      'Verified Twilio status callback updated provider delivery evidence.',
+      ${JSON.stringify({
+        provider: "twilio",
+        receiptId: input.receiptId,
+        messageSid,
+        messageStatus,
+        deliveryStatus: delivery.status,
+      })}::jsonb
+    )
+  `);
 }
 
 export async function receivePlatformIntegrationWebhook(input: PlatformIntegrationWebhookEvidence & {
@@ -62,12 +154,13 @@ export async function receivePlatformIntegrationWebhook(input: PlatformIntegrati
         INSERT INTO "PlatformIntegrationNormalizedEvent" ("receiptId","connectionId","eventType","payload","correlationId")
         VALUES (${receiptId}::uuid,${connection.id}::uuid,${normalized.eventType},${JSON.stringify(normalized.payload)}::jsonb,${input.correlationId ?? null}::uuid)
       `);
+      await applyVerifiedTwilioStatusCallback(tx, { connectionId: connection.id, receiptId, normalized });
     });
     return { duplicate: false, receiptId };
   } catch {
     await db.$executeRaw(Prisma.sql`
       UPDATE "PlatformInboundWebhookReceipt"
-      SET "status"='REJECTED',"rejectionReason"='Webhook verification or normalization failed'
+      SET "status"='REJECTED',"rejectionReason"='Webhook verification, normalization, or provider correlation failed'
       WHERE "id"=${receiptId}::uuid AND "status"='RECEIVED'
     `);
     throw new PlatformIntegrationConfigurationError("Inbound webhook rejected");
