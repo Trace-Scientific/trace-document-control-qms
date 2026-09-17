@@ -175,7 +175,7 @@ export class PlatformIntegrationService {
     return db.$transaction(async (tx) => {
       await tx.$executeRaw(Prisma.sql`
         UPDATE "PlatformIntegrationDelivery"
-        SET "status"='RECONCILIATION_REQUIRED',"claimedAt"=NULL,"claimedBy"=NULL,
+        SET "status"='RECONCILIATION_REQUIRED',"attemptCount"=LEAST("attemptCount"+1,${MAX_ATTEMPTS}),"claimedAt"=NULL,"claimedBy"=NULL,
             "reconciliationReason"='STALE_PROCESSING_CLAIM',"providerOutcome"='UNKNOWN_AFTER_WORKER_TIMEOUT',"lastAttemptAt"=COALESCE("lastAttemptAt","claimedAt")
         WHERE "status"='PROCESSING' AND "claimedAt" < CURRENT_TIMESTAMP - INTERVAL '5 minutes'
       `);
@@ -262,13 +262,17 @@ export class PlatformIntegrationService {
     requirePlatformAuthorization(context, { permission: "platform.integration.manage" });
     const reason = requireText(input.reason, "Reason");
     return db.$transaction(async (tx) => {
-      const current = await tx.$queryRaw<Array<{ id: string; connectionId: string }>>(Prisma.sql`
-        SELECT "id","connectionId" FROM "PlatformIntegrationDelivery"
+      const current = await tx.$queryRaw<Array<{ id: string; connectionId: string; attemptCount: number; lastError: string | null }>>(Prisma.sql`
+        SELECT "id","connectionId","attemptCount","lastError" FROM "PlatformIntegrationDelivery"
         WHERE "id"=${input.deliveryId}::uuid AND "status"='RECONCILIATION_REQUIRED' FOR UPDATE
       `);
       if (current.length !== 1) throw new PlatformIntegrationConflictError("Delivery is not awaiting reconciliation");
+      if (input.resolution === "CONFIRMED_NOT_DELIVERED" && current[0].attemptCount >= MAX_ATTEMPTS) {
+        throw new PlatformIntegrationConflictError("Delivery has exhausted its retry capacity; resolve it as succeeded or abandoned");
+      }
       const nextStatus: PlatformIntegrationDeliveryStatus = input.resolution === "CONFIRMED_SUCCEEDED" ? "SUCCEEDED" : input.resolution === "CONFIRMED_NOT_DELIVERED" ? "RETRY" : "DEAD_LETTER";
       const providerOutcome = input.resolution === "CONFIRMED_SUCCEEDED" ? "RECONCILED_SUCCEEDED" : input.resolution === "CONFIRMED_NOT_DELIVERED" ? "RECONCILED_NOT_DELIVERED" : "RECONCILED_ABANDONED";
+      const lastError = nextStatus === "DEAD_LETTER" ? current[0].lastError : null;
       await tx.$executeRaw(Prisma.sql`
         UPDATE "PlatformIntegrationDelivery"
         SET "status"=${nextStatus}::"PlatformIntegrationDeliveryStatus",
@@ -278,7 +282,7 @@ export class PlatformIntegrationService {
             "reconciledByIdentityId"=${context.platformIdentityId}::uuid,"reconciledByMembershipId"=${context.platformMembershipId}::uuid,
             "deliveredAt"=${nextStatus === "SUCCEEDED" ? new Date() : null},
             "deadLetteredAt"=${nextStatus === "DEAD_LETTER" ? new Date() : null},
-            "availableAt"=${nextStatus === "RETRY" ? new Date() : new Date()},"lastError"=${nextStatus === "RETRY" ? null : Prisma.raw('"lastError"')}
+            "availableAt"=CURRENT_TIMESTAMP,"lastError"=${lastError}
         WHERE "id"=${input.deliveryId}::uuid
       `);
       await audit(tx, context, "platform.integration.delivery.reconciled", "PlatformIntegrationDelivery", input.deliveryId, reason, { resolution: input.resolution, connectionId: current[0].connectionId });
