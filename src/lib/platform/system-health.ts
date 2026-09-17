@@ -27,6 +27,7 @@ interface IntegrationHealthRow {
   recentTwilioDeliveryFailures: bigint;
   twilioStatusPollErrors: bigint;
 }
+interface SchedulerHealthRow { lastSucceededAt: Date | null; lastFailedAt: Date | null; consecutiveFailures: number; leaseUntil: Date | null }
 
 function releaseIdentity(): string | null {
   const candidate = process.env.APP_RELEASE_SHA ?? process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? null;
@@ -60,16 +61,8 @@ export class PlatformSystemHealthService {
     let latestMigration: MigrationRow | null = null;
     let failedMigrationCount = 0;
     let notification: NotificationHealthRow = { pending: BigInt(0), retry: BigInt(0), processing: BigInt(0), deadLetter: BigInt(0), staleProcessing: BigInt(0), oldestAvailableAt: null };
-    let integration: IntegrationHealthRow = {
-      activeConnections: BigInt(0),
-      suspendedConnections: BigInt(0),
-      retryDeliveries: BigInt(0),
-      deadLetterDeliveries: BigInt(0),
-      reconciliationRequired: BigInt(0),
-      staleProcessing: BigInt(0),
-      recentTwilioDeliveryFailures: BigInt(0),
-      twilioStatusPollErrors: BigInt(0),
-    };
+    let integration: IntegrationHealthRow = { activeConnections: BigInt(0), suspendedConnections: BigInt(0), retryDeliveries: BigInt(0), deadLetterDeliveries: BigInt(0), reconciliationRequired: BigInt(0), staleProcessing: BigInt(0), recentTwilioDeliveryFailures: BigInt(0), twilioStatusPollErrors: BigInt(0) };
+    let scheduler: SchedulerHealthRow | null = null;
 
     try {
       await db.$queryRaw<Array<{ ok: number }>>(Prisma.sql`SELECT 1 AS ok`);
@@ -91,42 +84,44 @@ export class PlatformSystemHealthService {
           (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" WHERE "status"='DEAD_LETTER')::bigint AS "deadLetterDeliveries",
           (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" WHERE "status"='RECONCILIATION_REQUIRED')::bigint AS "reconciliationRequired",
           (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" WHERE "status"='PROCESSING' AND "claimedAt" < CURRENT_TIMESTAMP - INTERVAL '5 minutes')::bigint AS "staleProcessing",
-          (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" d
-             JOIN "PlatformIntegrationConnection" c ON c."id"=d."connectionId"
-             WHERE c."adapterKey"='twilio.sms'
-               AND d."providerOutcome" IN ('TWILIO_FAILED','TWILIO_UNDELIVERED','TWILIO_CANCELED')
+          (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" d JOIN "PlatformIntegrationConnection" c ON c."id"=d."connectionId"
+             WHERE c."adapterKey"='twilio.sms' AND d."providerOutcome" IN ('TWILIO_FAILED','TWILIO_UNDELIVERED','TWILIO_CANCELED')
                AND COALESCE(d."deliveredAt",d."createdAt") > CURRENT_TIMESTAMP - INTERVAL '24 hours')::bigint AS "recentTwilioDeliveryFailures",
-          (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" d
-             JOIN "PlatformIntegrationConnection" c ON c."id"=d."connectionId"
-             WHERE c."adapterKey"='twilio.sms'
-               AND d."providerStatusError" IS NOT NULL
+          (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" d JOIN "PlatformIntegrationConnection" c ON c."id"=d."connectionId"
+             WHERE c."adapterKey"='twilio.sms' AND d."providerStatusError" IS NOT NULL
                AND d."providerStatusCheckedAt" > CURRENT_TIMESTAMP - INTERVAL '1 hour')::bigint AS "twilioStatusPollErrors"`))[0] ?? integration;
+      scheduler = (await db.$queryRaw<SchedulerHealthRow[]>(Prisma.sql`
+        SELECT "lastSucceededAt","lastFailedAt","consecutiveFailures","leaseUntil"
+        FROM "PlatformScheduledOperationState" WHERE "operationKey"='twilio.delivery-status.poll'
+      `))[0] ?? null;
     } catch {
       databaseConnectivity = "UNAVAILABLE";
     }
 
     const notificationState: HealthState = databaseConnectivity === "UNAVAILABLE" ? "UNAVAILABLE" : Number(notification.deadLetter) > 0 || Number(notification.staleProcessing) > 0 ? "DEGRADED" : "HEALTHY";
     const migrationState: HealthState = databaseConnectivity === "UNAVAILABLE" ? "UNAVAILABLE" : failedMigrationCount > 0 ? "DEGRADED" : "HEALTHY";
-    const scheduledStatus: HealthState = process.env.PLATFORM_SCHEDULER_CONFIGURED === "true" ? "HEALTHY" : "NOT_CONFIGURED";
-    const integrationStatus: HealthState = databaseConnectivity === "UNAVAILABLE"
-      ? "UNAVAILABLE"
-      : Number(integration.activeConnections) === 0 && Number(integration.suspendedConnections) === 0
-        ? "NOT_CONFIGURED"
-        : Number(integration.deadLetterDeliveries) > 0
-          || Number(integration.reconciliationRequired) > 0
-          || Number(integration.staleProcessing) > 0
-          || Number(integration.recentTwilioDeliveryFailures) > 0
-          || Number(integration.twilioStatusPollErrors) > 0
-            ? "DEGRADED"
-            : "HEALTHY";
+    const schedulerConfigured = process.env.PLATFORM_SCHEDULER_CONFIGURED === "true";
+    const schedulerOverdue = schedulerConfigured && (!scheduler?.lastSucceededAt || Date.now() - scheduler.lastSucceededAt.getTime() > 30 * 60 * 1000);
+    const schedulerFailed = schedulerConfigured && (scheduler?.consecutiveFailures ?? 0) > 0;
+    const scheduledStatus: HealthState = databaseConnectivity === "UNAVAILABLE" ? "UNAVAILABLE" : !schedulerConfigured ? "NOT_CONFIGURED" : schedulerOverdue || schedulerFailed ? "DEGRADED" : "HEALTHY";
+    const integrationStatus: HealthState = databaseConnectivity === "UNAVAILABLE" ? "UNAVAILABLE" : Number(integration.activeConnections) === 0 && Number(integration.suspendedConnections) === 0 ? "NOT_CONFIGURED" : Number(integration.deadLetterDeliveries) > 0 || Number(integration.reconciliationRequired) > 0 || Number(integration.staleProcessing) > 0 || Number(integration.recentTwilioDeliveryFailures) > 0 || Number(integration.twilioStatusPollErrors) > 0 ? "DEGRADED" : "HEALTHY";
 
     return {
       checkedAt,
-      overall: deriveOverall([databaseConnectivity, migrationState, notificationState, integrationStatus]),
+      overall: deriveOverall([databaseConnectivity, migrationState, notificationState, scheduledStatus, integrationStatus]),
       application: { readiness: databaseConnectivity === "UNAVAILABLE" ? "DEGRADED" : "HEALTHY", releaseIdentity: releaseIdentity(), environmentClass: environmentClass() },
       database: { connectivity: databaseConnectivity, latestMigration: latestMigration?.migration_name ?? null, latestMigrationFinishedAt: latestMigration?.finished_at?.toISOString() ?? null, failedMigrationCount },
       backgroundJobs: { notificationDelivery: notificationState, pending: Number(notification.pending), retry: Number(notification.retry), processing: Number(notification.processing), deadLetter: Number(notification.deadLetter), oldestAvailableAt: notification.oldestAvailableAt?.toISOString() ?? null, staleProcessing: Number(notification.staleProcessing) },
-      scheduledTasks: { status: scheduledStatus, detail: scheduledStatus === "HEALTHY" ? "Platform scheduler is configured." : "No platform scheduler is declared in this release." },
+      scheduledTasks: {
+        status: scheduledStatus,
+        detail: !schedulerConfigured
+          ? "No platform scheduler is declared in this release."
+          : schedulerOverdue
+            ? "Twilio delivery-status scheduler has not recorded a successful run within 30 minutes."
+            : schedulerFailed
+              ? `Twilio delivery-status scheduler has ${scheduler?.consecutiveFailures ?? 0} consecutive failure(s).`
+              : "Twilio delivery-status scheduler heartbeat is current.",
+      },
       integrations: {
         status: integrationStatus,
         detail: integrationStatus === "NOT_CONFIGURED"
