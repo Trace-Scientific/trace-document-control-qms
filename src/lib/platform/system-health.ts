@@ -17,7 +17,16 @@ export interface PlatformSystemHealthSnapshot {
 
 interface MigrationRow { migration_name: string; finished_at: Date | null; rolled_back_at: Date | null }
 interface NotificationHealthRow { pending: bigint; retry: bigint; processing: bigint; deadLetter: bigint; staleProcessing: bigint; oldestAvailableAt: Date | null }
-interface IntegrationHealthRow { activeConnections: bigint; suspendedConnections: bigint; retryDeliveries: bigint; deadLetterDeliveries: bigint; reconciliationRequired: bigint; staleProcessing: bigint }
+interface IntegrationHealthRow {
+  activeConnections: bigint;
+  suspendedConnections: bigint;
+  retryDeliveries: bigint;
+  deadLetterDeliveries: bigint;
+  reconciliationRequired: bigint;
+  staleProcessing: bigint;
+  recentTwilioDeliveryFailures: bigint;
+  twilioStatusPollErrors: bigint;
+}
 
 function releaseIdentity(): string | null {
   const candidate = process.env.APP_RELEASE_SHA ?? process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? null;
@@ -51,7 +60,16 @@ export class PlatformSystemHealthService {
     let latestMigration: MigrationRow | null = null;
     let failedMigrationCount = 0;
     let notification: NotificationHealthRow = { pending: BigInt(0), retry: BigInt(0), processing: BigInt(0), deadLetter: BigInt(0), staleProcessing: BigInt(0), oldestAvailableAt: null };
-    let integration: IntegrationHealthRow = { activeConnections: BigInt(0), suspendedConnections: BigInt(0), retryDeliveries: BigInt(0), deadLetterDeliveries: BigInt(0), reconciliationRequired: BigInt(0), staleProcessing: BigInt(0) };
+    let integration: IntegrationHealthRow = {
+      activeConnections: BigInt(0),
+      suspendedConnections: BigInt(0),
+      retryDeliveries: BigInt(0),
+      deadLetterDeliveries: BigInt(0),
+      reconciliationRequired: BigInt(0),
+      staleProcessing: BigInt(0),
+      recentTwilioDeliveryFailures: BigInt(0),
+      twilioStatusPollErrors: BigInt(0),
+    };
 
     try {
       await db.$queryRaw<Array<{ ok: number }>>(Prisma.sql`SELECT 1 AS ok`);
@@ -72,7 +90,17 @@ export class PlatformSystemHealthService {
           (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" WHERE "status"='RETRY')::bigint AS "retryDeliveries",
           (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" WHERE "status"='DEAD_LETTER')::bigint AS "deadLetterDeliveries",
           (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" WHERE "status"='RECONCILIATION_REQUIRED')::bigint AS "reconciliationRequired",
-          (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" WHERE "status"='PROCESSING' AND "claimedAt" < CURRENT_TIMESTAMP - INTERVAL '5 minutes')::bigint AS "staleProcessing"`))[0] ?? integration;
+          (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" WHERE "status"='PROCESSING' AND "claimedAt" < CURRENT_TIMESTAMP - INTERVAL '5 minutes')::bigint AS "staleProcessing",
+          (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" d
+             JOIN "PlatformIntegrationConnection" c ON c."id"=d."connectionId"
+             WHERE c."adapterKey"='twilio.sms'
+               AND d."providerOutcome" IN ('TWILIO_FAILED','TWILIO_UNDELIVERED','TWILIO_CANCELED')
+               AND COALESCE(d."deliveredAt",d."createdAt") > CURRENT_TIMESTAMP - INTERVAL '24 hours')::bigint AS "recentTwilioDeliveryFailures",
+          (SELECT COUNT(*) FROM "PlatformIntegrationDelivery" d
+             JOIN "PlatformIntegrationConnection" c ON c."id"=d."connectionId"
+             WHERE c."adapterKey"='twilio.sms'
+               AND d."providerStatusError" IS NOT NULL
+               AND d."providerStatusCheckedAt" > CURRENT_TIMESTAMP - INTERVAL '1 hour')::bigint AS "twilioStatusPollErrors"`))[0] ?? integration;
     } catch {
       databaseConnectivity = "UNAVAILABLE";
     }
@@ -80,7 +108,17 @@ export class PlatformSystemHealthService {
     const notificationState: HealthState = databaseConnectivity === "UNAVAILABLE" ? "UNAVAILABLE" : Number(notification.deadLetter) > 0 || Number(notification.staleProcessing) > 0 ? "DEGRADED" : "HEALTHY";
     const migrationState: HealthState = databaseConnectivity === "UNAVAILABLE" ? "UNAVAILABLE" : failedMigrationCount > 0 ? "DEGRADED" : "HEALTHY";
     const scheduledStatus: HealthState = process.env.PLATFORM_SCHEDULER_CONFIGURED === "true" ? "HEALTHY" : "NOT_CONFIGURED";
-    const integrationStatus: HealthState = databaseConnectivity === "UNAVAILABLE" ? "UNAVAILABLE" : Number(integration.activeConnections) === 0 && Number(integration.suspendedConnections) === 0 ? "NOT_CONFIGURED" : Number(integration.deadLetterDeliveries) > 0 || Number(integration.reconciliationRequired) > 0 || Number(integration.staleProcessing) > 0 ? "DEGRADED" : "HEALTHY";
+    const integrationStatus: HealthState = databaseConnectivity === "UNAVAILABLE"
+      ? "UNAVAILABLE"
+      : Number(integration.activeConnections) === 0 && Number(integration.suspendedConnections) === 0
+        ? "NOT_CONFIGURED"
+        : Number(integration.deadLetterDeliveries) > 0
+          || Number(integration.reconciliationRequired) > 0
+          || Number(integration.staleProcessing) > 0
+          || Number(integration.recentTwilioDeliveryFailures) > 0
+          || Number(integration.twilioStatusPollErrors) > 0
+            ? "DEGRADED"
+            : "HEALTHY";
 
     return {
       checkedAt,
@@ -93,7 +131,7 @@ export class PlatformSystemHealthService {
         status: integrationStatus,
         detail: integrationStatus === "NOT_CONFIGURED"
           ? "Integration framework is installed; no provider connection is configured."
-          : `${Number(integration.activeConnections)} active connection(s), ${Number(integration.retryDeliveries)} retry delivery(s), ${Number(integration.reconciliationRequired)} reconciliation-required delivery(s), ${Number(integration.deadLetterDeliveries)} dead letter(s).`,
+          : `${Number(integration.activeConnections)} active connection(s), ${Number(integration.retryDeliveries)} retry delivery(s), ${Number(integration.reconciliationRequired)} reconciliation-required delivery(s), ${Number(integration.deadLetterDeliveries)} dead letter(s), ${Number(integration.recentTwilioDeliveryFailures)} Twilio downstream failure(s) in the last 24 hours, ${Number(integration.twilioStatusPollErrors)} Twilio status-poll error(s) in the last hour.`,
       },
     };
   }

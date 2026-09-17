@@ -10,6 +10,7 @@ import { QuickBooksAccountingAdapter } from "./quickbooks-adapter";
 import { SalesforceCrmAdapter } from "./salesforce-adapter";
 import { SendGridEmailAdapter } from "./sendgrid-email-adapter";
 import { TwilioSmsAdapter } from "./twilio-sms-adapter";
+import { TwilioDeliveryMonitoringService } from "./twilio-delivery-monitoring";
 import { ZendeskSupportAdapter } from "./zendesk-support-adapter";
 
 // Provider adapters are registered only through explicit reviewed composition changes.
@@ -31,6 +32,9 @@ export const platformOAuthProviderRegistry = new PlatformOAuthProviderRegistry([
 export const platformCredentialResolver = new GovernedPlatformCredentialResolver();
 export const platformIntegrationService = new PlatformIntegrationService(
   platformIntegrationRegistry,
+  platformCredentialResolver,
+);
+export const platformTwilioDeliveryMonitoringService = new TwilioDeliveryMonitoringService(
   platformCredentialResolver,
 );
 export const platformOAuthLifecycleService = new PlatformOAuthLifecycleService(
