@@ -53,6 +53,19 @@ async function audit(
   `);
 }
 
+type PublishedHelpArticleRow = {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string;
+  categoryCode: string;
+  categoryName: string;
+  revisionNumber: number;
+  body: string;
+  changeSummary: string;
+  publishedAt: Date;
+};
+
 export class HelpContentService {
   async searchPublishedArticles(query = "") {
     const term = query.trim();
@@ -70,7 +83,7 @@ export class HelpContentService {
   }
 
   async getPublishedArticle(slug: string) {
-    const rows = await db.$queryRaw(Prisma.sql`
+    const rows = await db.$queryRaw<PublishedHelpArticleRow[]>(Prisma.sql`
       SELECT ha."id", ha."slug", ha."title", ha."summary", hc."code" AS "categoryCode", hc."name" AS "categoryName",
              har."revisionNumber", har."body", har."changeSummary", ha."publishedAt"
       FROM "HelpArticle" ha
