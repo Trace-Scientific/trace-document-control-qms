@@ -24,6 +24,7 @@ ALTER TABLE "PlatformIntegrationDelivery"
   ADD CONSTRAINT "PlatformIntegrationDelivery_reconciled_actor_check"
     CHECK (("reconciledAt" IS NULL) = ("reconciledByIdentityId" IS NULL AND "reconciledByMembershipId" IS NULL));
 
+-- This is intentionally not a partial index using the newly-added enum value in the
+-- same migration. The status-leading index still supports the reconciliation queue.
 CREATE INDEX "PlatformIntegrationDelivery_reconciliation_idx"
-  ON "PlatformIntegrationDelivery"("status","lastAttemptAt","createdAt")
-  WHERE "status"='RECONCILIATION_REQUIRED';
+  ON "PlatformIntegrationDelivery"("status","lastAttemptAt","createdAt");
