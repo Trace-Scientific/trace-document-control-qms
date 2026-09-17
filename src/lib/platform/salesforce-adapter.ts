@@ -1,5 +1,10 @@
 import { Prisma } from "@prisma/client";
-import { PlatformIntegrationConfigurationError, type NormalizedInboundEvent, type PlatformIntegrationAdapter } from "./integration-framework";
+import {
+  PlatformIntegrationConfigurationError,
+  PlatformIntegrationDeliveryRejectedError,
+  type NormalizedInboundEvent,
+  type PlatformIntegrationAdapter,
+} from "./integration-framework";
 
 const ADAPTER_KEY = "salesforce.crm";
 const ALLOWED_OUTBOUND = new Set([
@@ -9,15 +14,8 @@ const ALLOWED_OUTBOUND = new Set([
 ]);
 
 type JsonRecord = Record<string, unknown>;
-
-type SalesforceCredential = {
-  accessToken: string;
-  instanceUrl: string;
-};
-
-type SalesforceConfiguration = {
-  apiVersion: string;
-};
+type SalesforceCredential = { accessToken: string; instanceUrl: string };
+type SalesforceConfiguration = { apiVersion: string };
 
 function asRecord(value: unknown, label: string): JsonRecord {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new PlatformIntegrationConfigurationError(`${label} must be an object`);
@@ -46,10 +44,7 @@ function parseCredential(value: string | null): SalesforceCredential {
   if (!(hostname.endsWith(".my.salesforce.com") || hostname.endsWith(".salesforce.com"))) {
     throw new PlatformIntegrationConfigurationError("Salesforce instance URL host is not allowed");
   }
-  return {
-    accessToken: text(record.accessToken, "Salesforce access token"),
-    instanceUrl: url.origin,
-  };
+  return { accessToken: text(record.accessToken, "Salesforce access token"), instanceUrl: url.origin };
 }
 
 function parseConfiguration(value: unknown): SalesforceConfiguration {
@@ -82,7 +77,7 @@ function endpoint(credential: SalesforceCredential, configuration: SalesforceCon
 export class SalesforceCrmAdapter implements PlatformIntegrationAdapter {
   readonly key = ADAPTER_KEY;
 
-  async deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }): Promise<void> {
+  async deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }) {
     const credential = parseCredential(input.credential);
     const configuration = parseConfiguration(input.configuration);
     const payload = validatePayload(input.eventType, input.payload);
@@ -92,14 +87,22 @@ export class SalesforceCrmAdapter implements PlatformIntegrationAdapter {
         Authorization: `Bearer ${credential.accessToken}`,
         Accept: "application/json",
         "Content-Type": "application/json",
-        "Sforce-Call-Options": `client=TraceScientific;defaultNamespace=`,
+        "Sforce-Call-Options": "client=TraceScientific;defaultNamespace=",
         "X-Trace-Delivery-Key": input.idempotencyKey.slice(0, 200),
       },
       body: JSON.stringify(payload),
     });
+    const requestId = response.headers.get("sforce-limit-info")?.slice(0, 500) ?? null;
     if (!response.ok) {
-      throw new Error(`Salesforce request failed with HTTP ${response.status}`);
+      if (response.status === 429) throw new PlatformIntegrationDeliveryRejectedError("Salesforce request was rate limited", true, { providerRequestId: requestId });
+      if (response.status >= 400 && response.status < 500 && response.status !== 408) {
+        throw new PlatformIntegrationDeliveryRejectedError(`Salesforce request was rejected with HTTP ${response.status}`, false, { providerRequestId: requestId });
+      }
+      throw new Error(`Salesforce provider outcome is ambiguous after HTTP ${response.status}`);
     }
+    const body = await response.json() as Record<string, unknown>;
+    const providerObjectId = typeof body.id === "string" ? body.id.slice(0, 500) : null;
+    return { providerRequestId: requestId, providerObjectId, providerOutcome: "SALESFORCE_CONFIRMED_CREATED" };
   }
 
   async verifyAndNormalizeWebhook(_input: { rawBody: string; headers: Headers; configuration: unknown; credential: string | null }): Promise<NormalizedInboundEvent> {
