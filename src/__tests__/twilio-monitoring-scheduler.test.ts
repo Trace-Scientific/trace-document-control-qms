@@ -27,9 +27,10 @@ describe("Twilio scheduler execution and alert routing", () => {
     expect(scheduler).toContain("this.monitoring.pollDue");
   });
 
-  it("routes deduplicated in-app alerts only to active platform integration operators", () => {
+  it("routes deduplicated in-app alerts only to active readable integration operators", () => {
     expect(scheduler).toContain("platform.integration.manage");
-    expect(scheduler).toContain("PlatformNotification");
+    expect(scheduler).toContain("platform.notification.read");
+    expect(scheduler).toContain("PlatformNotificationEvent");
     expect(scheduler).toContain("ON CONFLICT (\"dedupeKey\")");
     expect(scheduler).toContain("pm.\"status\"='ACTIVE'");
     expect(scheduler).toContain("pi.\"status\"='ACTIVE'");
