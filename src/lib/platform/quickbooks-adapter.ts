@@ -1,6 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import { PlatformIntegrationConfigurationError, type NormalizedInboundEvent, type PlatformIntegrationAdapter } from "./integration-framework";
+import {
+  PlatformIntegrationConfigurationError,
+  PlatformIntegrationDeliveryRejectedError,
+  type NormalizedInboundEvent,
+  type PlatformIntegrationAdapter,
+} from "./integration-framework";
 
 const ADAPTER_KEY = "quickbooks.accounting";
 const DEFAULT_MINOR_VERSION = 75;
@@ -14,16 +19,8 @@ const ALLOWED_OPERATIONS = new Set(["Create", "Update", "Delete", "Void", "Merge
 
 type JsonRecord = Record<string, unknown>;
 
-type QuickBooksCredential = {
-  accessToken: string;
-  realmId: string;
-  webhookVerifierToken: string;
-};
-
-type QuickBooksConfiguration = {
-  environment: "sandbox" | "production";
-  minorVersion: number;
-};
+type QuickBooksCredential = { accessToken: string; realmId: string; webhookVerifierToken: string };
+type QuickBooksConfiguration = { environment: "sandbox" | "production"; minorVersion: number };
 
 function asRecord(value: unknown, label: string): JsonRecord {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new PlatformIntegrationConfigurationError(`${label} must be an object`);
@@ -66,9 +63,9 @@ function endpoint(configuration: QuickBooksConfiguration, realmId: string, entit
 }
 
 function outboundEntity(eventType: string) {
-  if (eventType === "quickbooks.customer.create") return "customer";
-  if (eventType === "quickbooks.invoice.create") return "invoice";
-  if (eventType === "quickbooks.payment.create") return "payment";
+  if (eventType === "quickbooks.customer.create") return { path: "customer", objectKey: "Customer" };
+  if (eventType === "quickbooks.invoice.create") return { path: "invoice", objectKey: "Invoice" };
+  if (eventType === "quickbooks.payment.create") return { path: "payment", objectKey: "Payment" };
   throw new PlatformIntegrationConfigurationError("QuickBooks outbound event type is not allowed");
 }
 
@@ -107,13 +104,7 @@ function normalizeWebhook(rawBody: string, expectedRealmId: string): NormalizedI
       const name = text(entity.name, "QuickBooks entity name", 80);
       const operation = text(entity.operation, "QuickBooks operation", 40);
       if (!ALLOWED_ENTITIES.has(name) || !ALLOWED_OPERATIONS.has(operation)) continue;
-      normalized.push({
-        realmId,
-        name,
-        id: text(entity.id, "QuickBooks entity ID", 100),
-        operation,
-        lastUpdated: typeof entity.lastUpdated === "string" ? entity.lastUpdated.slice(0, 80) : null,
-      });
+      normalized.push({ realmId, name, id: text(entity.id, "QuickBooks entity ID", 100), operation, lastUpdated: typeof entity.lastUpdated === "string" ? entity.lastUpdated.slice(0, 80) : null });
     }
   }
   if (normalized.length === 0) throw new PlatformIntegrationConfigurationError("QuickBooks webhook contains no supported accounting changes");
@@ -123,11 +114,12 @@ function normalizeWebhook(rawBody: string, expectedRealmId: string): NormalizedI
 export class QuickBooksAccountingAdapter implements PlatformIntegrationAdapter {
   readonly key = ADAPTER_KEY;
 
-  async deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }): Promise<void> {
+  async deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }) {
     const credential = parseCredential(input.credential);
     const configuration = parseConfiguration(input.configuration);
     const payload = validateOutboundPayload(input.eventType, input.payload);
-    const response = await fetch(endpoint(configuration, credential.realmId, outboundEntity(input.eventType)), {
+    const entity = outboundEntity(input.eventType);
+    const response = await fetch(endpoint(configuration, credential.realmId, entity.path), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${credential.accessToken}`,
@@ -137,10 +129,19 @@ export class QuickBooksAccountingAdapter implements PlatformIntegrationAdapter {
       },
       body: JSON.stringify(payload),
     });
+    const requestId = response.headers.get("intuit_tid")?.slice(0, 500) ?? null;
     if (!response.ok) {
-      const requestId = response.headers.get("intuit_tid");
-      throw new Error(`QuickBooks request failed with HTTP ${response.status}${requestId ? ` (${requestId.slice(0, 100)})` : ""}`);
+      if (response.status === 429) throw new PlatformIntegrationDeliveryRejectedError("QuickBooks request was rate limited", true, { providerRequestId: requestId });
+      if (response.status >= 400 && response.status < 500 && response.status !== 408) {
+        throw new PlatformIntegrationDeliveryRejectedError(`QuickBooks request was rejected with HTTP ${response.status}`, false, { providerRequestId: requestId });
+      }
+      throw new Error(`QuickBooks provider outcome is ambiguous after HTTP ${response.status}${requestId ? ` (${requestId})` : ""}`);
     }
+    const responseBody = await response.json() as Record<string, unknown>;
+    const created = responseBody[entity.objectKey];
+    const createdRecord = created && typeof created === "object" && !Array.isArray(created) ? created as Record<string, unknown> : {};
+    const providerObjectId = typeof createdRecord.Id === "string" ? createdRecord.Id.slice(0, 500) : null;
+    return { providerRequestId: requestId, providerObjectId, providerOutcome: "QUICKBOOKS_CONFIRMED_CREATED" };
   }
 
   async verifyAndNormalizeWebhook(input: { rawBody: string; headers: Headers; configuration: unknown; credential: string | null }): Promise<NormalizedInboundEvent> {
