@@ -20,25 +20,32 @@ async function enqueueOperatorAlerts(input: {
   payload: Prisma.InputJsonObject;
 }) {
   await db.$executeRaw(Prisma.sql`
-    INSERT INTO "PlatformNotification" (
-      "id","notificationType","subject","body","payload","recipientIdentityId","channel","status","dedupeKey","sentAt"
-    )
-    SELECT
-      gen_random_uuid(),${input.type},${input.subject},${input.body},${JSON.stringify(input.payload)}::jsonb,
-      pm."identityId",'IN_APP','SENT',
-      ${`${OPERATION_KEY}:${input.dedupeSuffix}:`} || pm."identityId"::text,
-      CURRENT_TIMESTAMP
-    FROM "PlatformMembership" pm
-    JOIN "PlatformIdentity" pi ON pi."id"=pm."identityId"
-    WHERE pm."status"='ACTIVE' AND pi."status"='ACTIVE'
-      AND EXISTS (
-        SELECT 1
-        FROM "PlatformMembershipRole" pmr
-        JOIN "PlatformRolePermission" prp ON prp."roleId"=pmr."roleId"
-        JOIN "PlatformPermission" pp ON pp."id"=prp."permissionId"
-        WHERE pmr."membershipId"=pm."id" AND pp."key"=${ALERT_PERMISSION}
+    WITH inserted AS (
+      INSERT INTO "PlatformNotification" (
+        "id","notificationType","subject","body","payload","recipientIdentityId","channel","status","dedupeKey","sentAt"
       )
-    ON CONFLICT ("dedupeKey") WHERE "dedupeKey" IS NOT NULL DO NOTHING
+      SELECT
+        gen_random_uuid(),${input.type},${input.subject},${input.body},${JSON.stringify(input.payload)}::jsonb,
+        pm."identityId",'IN_APP','SENT',
+        ${`${OPERATION_KEY}:${input.dedupeSuffix}:`} || pm."identityId"::text,
+        CURRENT_TIMESTAMP
+      FROM "PlatformMembership" pm
+      JOIN "PlatformIdentity" pi ON pi."id"=pm."identityId"
+      WHERE pm."status"='ACTIVE' AND pi."status"='ACTIVE'
+        AND EXISTS (
+          SELECT 1
+          FROM "PlatformMembershipRole" pmr
+          JOIN "PlatformRolePermission" prp ON prp."roleId"=pmr."roleId"
+          JOIN "PlatformPermission" pp ON pp."id"=prp."permissionId"
+          WHERE pmr."membershipId"=pm."id" AND pp."key"=${ALERT_PERMISSION}
+        )
+      ON CONFLICT ("dedupeKey") WHERE "dedupeKey" IS NOT NULL DO NOTHING
+      RETURNING "id"
+    )
+    INSERT INTO "PlatformNotificationEvent" ("id","notificationId","action","reason","metadata")
+    SELECT gen_random_uuid(),"id",'SYSTEM_ALERT_CREATED','Scheduled integration monitoring generated this alert.',
+           ${JSON.stringify({ operationKey: OPERATION_KEY })}::jsonb
+    FROM inserted
   `);
 }
 
