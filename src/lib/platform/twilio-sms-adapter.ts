@@ -1,4 +1,9 @@
-import { PlatformIntegrationConfigurationError, type NormalizedInboundEvent, type PlatformIntegrationAdapter } from "./integration-framework";
+import {
+  PlatformIntegrationConfigurationError,
+  PlatformIntegrationDeliveryRejectedError,
+  type NormalizedInboundEvent,
+  type PlatformIntegrationAdapter,
+} from "./integration-framework";
 
 const ADAPTER_KEY = "twilio.sms";
 const ALLOWED_EVENT = "twilio.sms.send";
@@ -58,7 +63,7 @@ function validatePayload(value: unknown) {
 export class TwilioSmsAdapter implements PlatformIntegrationAdapter {
   readonly key = ADAPTER_KEY;
 
-  async deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }): Promise<void> {
+  async deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }) {
     if (input.eventType !== ALLOWED_EVENT) throw new PlatformIntegrationConfigurationError("Twilio outbound event type is not allowed");
     const credential = parseCredential(input.credential);
     const configuration = parseConfiguration(input.configuration);
@@ -75,7 +80,17 @@ export class TwilioSmsAdapter implements PlatformIntegrationAdapter {
       },
       body: form.toString(),
     });
-    if (!response.ok) throw new Error(`Twilio request failed with HTTP ${response.status}`);
+    if (!response.ok) {
+      if (response.status === 429) throw new PlatformIntegrationDeliveryRejectedError("Twilio request was rate limited", true);
+      if (response.status >= 400 && response.status < 500 && response.status !== 408) {
+        throw new PlatformIntegrationDeliveryRejectedError(`Twilio request was rejected with HTTP ${response.status}`, false);
+      }
+      throw new Error(`Twilio provider outcome is ambiguous after HTTP ${response.status}`);
+    }
+    const body = await response.json() as Record<string, unknown>;
+    const sid = typeof body.sid === "string" ? body.sid.slice(0, 500) : null;
+    const status = typeof body.status === "string" ? body.status.slice(0, 160) : "accepted";
+    return { providerObjectId: sid, providerOutcome: `TWILIO_${status.toUpperCase()}` };
   }
 
   async verifyAndNormalizeWebhook(_input: { rawBody: string; headers: Headers; configuration: unknown; credential: string | null }): Promise<NormalizedInboundEvent> {
