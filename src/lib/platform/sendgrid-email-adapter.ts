@@ -1,12 +1,16 @@
+import { createPublicKey, verify as verifyCryptographicSignature } from "node:crypto";
 import {
   PlatformIntegrationConfigurationError,
   PlatformIntegrationDeliveryRejectedError,
   type NormalizedInboundEvent,
   type PlatformIntegrationAdapter,
+  type PlatformIntegrationWebhookEvidence,
 } from "./integration-framework";
 
 const ADAPTER_KEY = "sendgrid.email";
 const ALLOWED_EVENT = "sendgrid.email.send";
+const DELIVERY_EVENTS = new Set(["processed", "delivered", "deferred", "bounce", "dropped"]);
+const DELIVERY_KEY_FIELD = "trace_delivery_key";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -18,6 +22,7 @@ type SendGridConfiguration = {
   region: "global" | "eu";
   fromEmail: string;
   fromName: string | null;
+  webhookPublicKey: string | null;
 };
 
 function asRecord(value: unknown, label: string): JsonRecord {
@@ -52,7 +57,8 @@ function parseConfiguration(value: unknown): SendGridConfiguration {
   if (!region) throw new PlatformIntegrationConfigurationError("SendGrid region must be global or eu");
   const fromEmail = email(record.fromEmail, "SendGrid from email");
   const fromName = record.fromName == null ? null : text(record.fromName, "SendGrid from name", 160);
-  return { region, fromEmail, fromName };
+  const webhookPublicKey = record.webhookPublicKey == null ? null : text(record.webhookPublicKey, "SendGrid webhook public key", 8192);
+  return { region, fromEmail, fromName, webhookPublicKey };
 }
 
 function validatePayload(value: unknown) {
@@ -62,7 +68,7 @@ function validatePayload(value: unknown) {
   const textBody = record.text == null ? null : text(record.text, "Email text", 100_000);
   const htmlBody = record.html == null ? null : text(record.html, "Email HTML", 200_000);
   if (!textBody && !htmlBody) throw new PlatformIntegrationConfigurationError("Email text or HTML content is required");
-  if (record.attachments != null || record.personalizations != null || record.template_id != null || record.dynamic_template_data != null) {
+  if (record.attachments != null || record.personalizations != null || record.template_id != null || record.dynamic_template_data != null || record.custom_args != null) {
     throw new PlatformIntegrationConfigurationError("Advanced SendGrid payload features are not allowed in this release");
   }
   return { to, subject, textBody, htmlBody };
@@ -70,6 +76,68 @@ function validatePayload(value: unknown) {
 
 function endpoint(configuration: SendGridConfiguration) {
   return `${configuration.region === "eu" ? "https://api.eu.sendgrid.com" : "https://api.sendgrid.com"}/v3/mail/send`;
+}
+
+function decodeBase64(value: string, label: string) {
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value) || value.length % 4 !== 0) {
+    throw new PlatformIntegrationConfigurationError(`${label} is not valid base64`);
+  }
+  return Buffer.from(value, "base64");
+}
+
+function verifySignedWebhook(input: PlatformIntegrationWebhookEvidence, configuration: SendGridConfiguration) {
+  if (!configuration.webhookPublicKey) throw new PlatformIntegrationConfigurationError("SendGrid signed Event Webhook is not enabled for this connection");
+  const signature = input.headers.get("x-twilio-email-event-webhook-signature")?.trim();
+  const timestamp = input.headers.get("x-twilio-email-event-webhook-timestamp")?.trim();
+  if (!signature) throw new PlatformIntegrationConfigurationError("SendGrid webhook signature is missing");
+  if (!timestamp || !/^\d{1,20}$/.test(timestamp)) throw new PlatformIntegrationConfigurationError("SendGrid webhook timestamp is invalid");
+
+  let publicKey;
+  try {
+    publicKey = createPublicKey({
+      key: decodeBase64(configuration.webhookPublicKey, "SendGrid webhook public key"),
+      format: "der",
+      type: "spki",
+    });
+  } catch (error) {
+    if (error instanceof PlatformIntegrationConfigurationError) throw error;
+    throw new PlatformIntegrationConfigurationError("SendGrid webhook public key is invalid");
+  }
+  if (publicKey.asymmetricKeyType !== "ec") throw new PlatformIntegrationConfigurationError("SendGrid webhook public key must be ECDSA");
+
+  let verified = false;
+  try {
+    const signedPayload = Buffer.concat([Buffer.from(timestamp, "utf8"), Buffer.from(input.rawBodyBytes)]);
+    verified = verifyCryptographicSignature("sha256", signedPayload, publicKey, decodeBase64(signature, "SendGrid webhook signature"));
+  } catch (error) {
+    if (error instanceof PlatformIntegrationConfigurationError) throw error;
+    verified = false;
+  }
+  if (!verified) throw new PlatformIntegrationConfigurationError("SendGrid webhook signature is invalid");
+}
+
+function normalizeDeliveryEvents(rawBody: string): NormalizedInboundEvent {
+  let parsed: unknown;
+  try { parsed = JSON.parse(rawBody); } catch { throw new PlatformIntegrationConfigurationError("SendGrid webhook body is not valid JSON"); }
+  if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 1000) {
+    throw new PlatformIntegrationConfigurationError("SendGrid webhook must contain a bounded event array");
+  }
+
+  const events = parsed.map((value, index) => {
+    const event = asRecord(value, `SendGrid event ${index + 1}`);
+    const deliveryKey = text(event[DELIVERY_KEY_FIELD], "SendGrid Trace delivery key", 240);
+    const eventType = text(event.event, "SendGrid event type", 40).toLowerCase();
+    if (!DELIVERY_EVENTS.has(eventType)) throw new PlatformIntegrationConfigurationError("SendGrid webhook event type is not supported");
+    const eventId = text(event.sg_event_id, "SendGrid event ID", 200);
+    const messageId = text(event.sg_message_id, "SendGrid message ID", 500);
+    return { deliveryKey, eventType, eventId, messageId };
+  });
+
+  return {
+    eventType: "sendgrid.email.delivery_status",
+    providerEventId: events.length === 1 ? events[0].eventId : null,
+    payload: { events },
+  };
 }
 
 export class SendGridEmailAdapter implements PlatformIntegrationAdapter {
@@ -90,7 +158,10 @@ export class SendGridEmailAdapter implements PlatformIntegrationAdapter {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        personalizations: [{ to: [{ email: payload.to }] }],
+        personalizations: [{
+          to: [{ email: payload.to }],
+          custom_args: { [DELIVERY_KEY_FIELD]: input.idempotencyKey },
+        }],
         from: configuration.fromName ? { email: configuration.fromEmail, name: configuration.fromName } : { email: configuration.fromEmail },
         subject: payload.subject,
         content,
@@ -109,7 +180,10 @@ export class SendGridEmailAdapter implements PlatformIntegrationAdapter {
     };
   }
 
-  async verifyAndNormalizeWebhook(_input: { rawBody: string; headers: Headers; configuration: unknown; credential: string | null }): Promise<NormalizedInboundEvent> {
-    throw new PlatformIntegrationConfigurationError("SendGrid inbound events are disabled until raw-byte signature verification is available");
+  async verifyAndNormalizeWebhook(input: PlatformIntegrationWebhookEvidence & { configuration: unknown; credential: string | null }): Promise<NormalizedInboundEvent> {
+    const configuration = parseConfiguration(input.configuration);
+    parseCredential(input.credential);
+    verifySignedWebhook(input, configuration);
+    return normalizeDeliveryEvents(input.rawBody);
   }
 }
