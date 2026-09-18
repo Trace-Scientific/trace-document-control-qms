@@ -41,7 +41,7 @@ function parseCredential(value: string | null): ZendeskCredential {
     webhookSigningSecret: text(record.webhookSigningSecret, "Zendesk webhook signing secret", 4096),
   };
 }
-function validatePayload(payload: unknown): Prisma.InputJsonObject {
+function validatePayload(payload: unknown, idempotencyKey: string): Prisma.InputJsonObject {
   const record = asRecord(payload, "Zendesk ticket payload");
   const allowed = new Set(["subject", "comment", "priority", "tags"]);
   for (const key of Object.keys(record)) if (!allowed.has(key)) throw new PlatformIntegrationConfigurationError(`Zendesk ticket field ${key} is not allowed`);
@@ -56,6 +56,7 @@ function validatePayload(payload: unknown): Prisma.InputJsonObject {
       comment: { body: comment, public: false },
       ...(priority ? { priority } : {}),
       ...(tags ? { tags } : {}),
+      external_id: `${DELIVERY_EXTERNAL_ID_PREFIX}${idempotencyKey.slice(0, 200)}`,
     },
   } as Prisma.InputJsonObject;
 }
@@ -96,9 +97,7 @@ export class ZendeskSupportAdapter implements PlatformIntegrationAdapter {
   async deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }) {
     if (!ALLOWED_OUTBOUND.has(input.eventType)) throw new PlatformIntegrationConfigurationError("Zendesk outbound event type is not allowed");
     const credential = parseCredential(input.credential);
-    const payload = validatePayload(input.payload);
-    const ticket = payload.ticket as Prisma.InputJsonObject;
-    ticket.external_id = `${DELIVERY_EXTERNAL_ID_PREFIX}${input.idempotencyKey.slice(0, 200)}`;
+    const payload = validatePayload(input.payload, input.idempotencyKey);
     const auth = Buffer.from(`${credential.email}/token:${credential.apiToken}`, "utf8").toString("base64");
     const response = await fetch(`https://${credential.subdomain}.zendesk.com/api/v2/tickets.json`, {
       method: "POST",
