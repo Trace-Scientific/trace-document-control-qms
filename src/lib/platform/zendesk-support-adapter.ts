@@ -9,6 +9,8 @@ import {
 
 const ADAPTER_KEY = "zendesk.support";
 const ALLOWED_OUTBOUND = new Set(["zendesk.ticket.create"]);
+const DELIVERY_EXTERNAL_ID_PREFIX = "trace-delivery:";
+const ALLOWED_TICKET_EVENTS = new Set(["zen:event-type:ticket.created", "zen:event-type:ticket.status_changed"]);
 
 type JsonRecord = Record<string, unknown>;
 type ZendeskCredential = { subdomain: string; email: string; apiToken: string; webhookSigningSecret: string };
@@ -39,23 +41,22 @@ function parseCredential(value: string | null): ZendeskCredential {
     webhookSigningSecret: text(record.webhookSigningSecret, "Zendesk webhook signing secret", 4096),
   };
 }
-function validatePayload(payload: unknown): Prisma.InputJsonObject {
+function validatePayload(payload: unknown, idempotencyKey: string): Prisma.InputJsonObject {
   const record = asRecord(payload, "Zendesk ticket payload");
-  const allowed = new Set(["subject", "comment", "priority", "tags", "externalId"]);
+  const allowed = new Set(["subject", "comment", "priority", "tags"]);
   for (const key of Object.keys(record)) if (!allowed.has(key)) throw new PlatformIntegrationConfigurationError(`Zendesk ticket field ${key} is not allowed`);
   const subject = text(record.subject, "Zendesk ticket subject", 250);
   const comment = text(record.comment, "Zendesk ticket comment", 10000);
   const priority = record.priority == null ? undefined : text(record.priority, "Zendesk ticket priority", 20);
   if (priority && !["low", "normal", "high", "urgent"].includes(priority)) throw new PlatformIntegrationConfigurationError("Zendesk ticket priority is invalid");
   const tags = Array.isArray(record.tags) ? record.tags.map((item) => text(item, "Zendesk ticket tag", 100)).slice(0, 20) : undefined;
-  const externalId = record.externalId == null ? undefined : text(record.externalId, "Zendesk external ID", 200);
   return {
     ticket: {
       subject,
       comment: { body: comment, public: false },
       ...(priority ? { priority } : {}),
       ...(tags ? { tags } : {}),
-      ...(externalId ? { external_id: externalId } : {}),
+      external_id: `${DELIVERY_EXTERNAL_ID_PREFIX}${idempotencyKey.slice(0, 200)}`,
     },
   } as Prisma.InputJsonObject;
 }
@@ -74,9 +75,20 @@ function normalizeWebhook(rawBody: string): NormalizedInboundEvent {
   let parsed: unknown;
   try { parsed = JSON.parse(rawBody); } catch { throw new PlatformIntegrationConfigurationError("Zendesk webhook body is invalid JSON"); }
   const record = asRecord(parsed, "Zendesk webhook body");
-  const eventType = typeof record.type === "string" ? record.type.slice(0, 160) : "support.event";
-  const providerEventId = typeof record.id === "string" ? record.id.slice(0, 240) : null;
-  return { eventType: `zendesk.${eventType.replace(/[^a-zA-Z0-9_.-]/g, "_")}`, providerEventId, payload: record as Prisma.InputJsonObject };
+  const eventType = text(record.type, "Zendesk event type", 160);
+  if (!ALLOWED_TICKET_EVENTS.has(eventType)) throw new PlatformIntegrationConfigurationError("Zendesk webhook event type is not supported");
+  const providerEventId = text(record.id, "Zendesk event ID", 240);
+  const detail = asRecord(record.detail, "Zendesk ticket detail");
+  const ticketId = text(detail.id, "Zendesk ticket ID", 100);
+  const externalId = text(detail.external_id, "Zendesk ticket external ID", 240);
+  if (!externalId.startsWith(DELIVERY_EXTERNAL_ID_PREFIX)) throw new PlatformIntegrationConfigurationError("Zendesk ticket external ID is not Trace-managed");
+  const deliveryKey = text(externalId.slice(DELIVERY_EXTERNAL_ID_PREFIX.length), "Zendesk Trace delivery key", 200);
+  const status = text(detail.status, "Zendesk ticket status", 40).toUpperCase();
+  return {
+    eventType: "zendesk.ticket.delivery_status",
+    providerEventId,
+    payload: { deliveryKey, ticketId, ticketStatus: status, zendeskEventType: eventType },
+  };
 }
 
 export class ZendeskSupportAdapter implements PlatformIntegrationAdapter {
@@ -85,7 +97,7 @@ export class ZendeskSupportAdapter implements PlatformIntegrationAdapter {
   async deliver(input: { eventType: string; payload: unknown; configuration: unknown; credential: string | null; idempotencyKey: string }) {
     if (!ALLOWED_OUTBOUND.has(input.eventType)) throw new PlatformIntegrationConfigurationError("Zendesk outbound event type is not allowed");
     const credential = parseCredential(input.credential);
-    const payload = validatePayload(input.payload);
+    const payload = validatePayload(input.payload, input.idempotencyKey);
     const auth = Buffer.from(`${credential.email}/token:${credential.apiToken}`, "utf8").toString("base64");
     const response = await fetch(`https://${credential.subdomain}.zendesk.com/api/v2/tickets.json`, {
       method: "POST",

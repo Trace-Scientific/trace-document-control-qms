@@ -203,6 +203,92 @@ async function applyVerifiedSendGridStatusCallback(
   }
 }
 
+async function applyVerifiedZendeskTicketCallback(
+  tx: Prisma.TransactionClient,
+  input: { connectionId: string; receiptId: string; normalized: NormalizedInboundEvent },
+) {
+  if (input.normalized.eventType !== "zendesk.ticket.delivery_status") return;
+  const payload = input.normalized.payload as Record<string, unknown>;
+  const deliveryKey = callbackText(payload.deliveryKey, "Zendesk delivery key", 200);
+  const ticketId = callbackText(payload.ticketId, "Zendesk ticket ID", 100);
+  const ticketStatus = callbackText(payload.ticketStatus, "Zendesk ticket status", 40).toUpperCase();
+  const zendeskEventType = callbackText(payload.zendeskEventType, "Zendesk event type", 160);
+
+  const rows = await tx.$queryRaw<Array<{
+    id: string;
+    status: string;
+    providerObjectId: string | null;
+  }>>(Prisma.sql`
+    SELECT "id","status"::text AS "status","providerObjectId"
+    FROM "PlatformIntegrationDelivery"
+    WHERE "connectionId"=${input.connectionId}::uuid AND "idempotencyKey"=${deliveryKey}
+    FOR UPDATE
+  `);
+  if (rows.length !== 1) throw new PlatformIntegrationConfigurationError("Zendesk callback does not match a governed outbound delivery");
+  const delivery = rows[0];
+  if (delivery.providerObjectId && delivery.providerObjectId !== ticketId) {
+    throw new PlatformIntegrationConfigurationError("Zendesk callback ticket ID does not match the outbound delivery");
+  }
+
+  const providerOutcome = `ZENDESK_${ticketStatus}`.slice(0, 160);
+  const resolveAmbiguity = delivery.status === "RECONCILIATION_REQUIRED";
+
+  if (resolveAmbiguity) {
+    await tx.$executeRaw(Prisma.sql`
+      UPDATE "PlatformIntegrationDelivery"
+      SET "status"='SUCCEEDED',"providerObjectId"=${ticketId},"providerOutcome"=${providerOutcome},
+          "reconciliationReason"='ZENDESK_SIGNED_TICKET_EVENT_CONFIRMED_PROVIDER_ACCEPTANCE',
+          "deliveredAt"=COALESCE("deliveredAt",CURRENT_TIMESTAMP),"lastError"=NULL,
+          "claimedAt"=NULL,"claimedBy"=NULL,"deadLetteredAt"=NULL
+      WHERE "id"=${delivery.id}::uuid AND "status"='RECONCILIATION_REQUIRED'
+    `);
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO "PlatformAuditEvent" ("id","action","entityType","entityId","reason","metadata")
+      VALUES (
+        gen_random_uuid(),
+        'platform.integration.delivery.reconciled_by_provider_callback',
+        'PlatformIntegrationDelivery',
+        ${delivery.id}::uuid,
+        'Verified Zendesk ticket event confirmed provider acceptance.',
+        ${JSON.stringify({
+          provider: "zendesk",
+          receiptId: input.receiptId,
+          ticketId,
+          ticketStatus,
+          zendeskEventType,
+          previousStatus: delivery.status,
+          resolution: "CONFIRMED_SUCCEEDED",
+        })}::jsonb
+      )
+    `);
+    return;
+  }
+
+  await tx.$executeRaw(Prisma.sql`
+    UPDATE "PlatformIntegrationDelivery"
+    SET "providerObjectId"=COALESCE("providerObjectId",${ticketId}),"providerOutcome"=${providerOutcome}
+    WHERE "id"=${delivery.id}::uuid
+  `);
+  await tx.$executeRaw(Prisma.sql`
+    INSERT INTO "PlatformAuditEvent" ("id","action","entityType","entityId","reason","metadata")
+    VALUES (
+      gen_random_uuid(),
+      'platform.integration.delivery.provider_status_observed',
+      'PlatformIntegrationDelivery',
+      ${delivery.id}::uuid,
+      'Verified Zendesk ticket event updated provider status evidence.',
+      ${JSON.stringify({
+        provider: "zendesk",
+        receiptId: input.receiptId,
+        ticketId,
+        ticketStatus,
+        zendeskEventType,
+        deliveryStatus: delivery.status,
+      })}::jsonb
+    )
+  `);
+}
+
 export async function receivePlatformIntegrationWebhook(input: PlatformIntegrationWebhookEvidence & {
   connectionId: string;
   idempotencyKey: string;
@@ -250,7 +336,7 @@ export async function receivePlatformIntegrationWebhook(input: PlatformIntegrati
         INSERT INTO "PlatformIntegrationNormalizedEvent" ("receiptId","connectionId","eventType","payload","correlationId")
         VALUES (${receiptId}::uuid,${connection.id}::uuid,${normalized.eventType},${JSON.stringify(normalized.payload)}::jsonb,${input.correlationId ?? null}::uuid)
       `);
-      await applyVerifiedTwilioStatusCallback(tx, { connectionId: connection.id, receiptId, normalized });\n      await applyVerifiedSendGridStatusCallback(tx, { connectionId: connection.id, receiptId, normalized });
+      await applyVerifiedTwilioStatusCallback(tx, { connectionId: connection.id, receiptId, normalized });\n      await applyVerifiedSendGridStatusCallback(tx, { connectionId: connection.id, receiptId, normalized });\n      await applyVerifiedZendeskTicketCallback(tx, { connectionId: connection.id, receiptId, normalized });
     });
     return { duplicate: false, receiptId };
   } catch {
