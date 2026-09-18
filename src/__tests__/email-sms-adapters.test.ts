@@ -26,9 +26,12 @@ describe("Email and SMS provider adapter governance", () => {
     expect(twilio).toContain("Advanced Twilio messaging features are not allowed");
   });
 
-  it("does not fake provider webhook verification on an insufficient generic boundary", () => {
-    expect(sendgrid).toContain("disabled until raw-byte signature verification is available");
-    expect(twilio).toContain("disabled until canonical URL/form signature verification is available");
+  it("enables only reviewed provider webhook verification boundaries", () => {
+    expect(sendgrid).toContain("x-twilio-email-event-webhook-signature");
+    expect(sendgrid).toContain("rawBodyBytes");
+    expect(sendgrid).toContain("trace_delivery_key");
+    expect(twilio).not.toContain("disabled until canonical URL/form signature verification is available");
+    expect(twilio).toContain("x-twilio-signature");
   });
 
   it("does not grant providers tenant or platform authority", () => {
