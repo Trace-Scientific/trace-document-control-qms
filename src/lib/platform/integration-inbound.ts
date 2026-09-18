@@ -107,6 +107,102 @@ async function applyVerifiedTwilioStatusCallback(
   `);
 }
 
+async function applyVerifiedSendGridStatusCallback(
+  tx: Prisma.TransactionClient,
+  input: { connectionId: string; receiptId: string; normalized: NormalizedInboundEvent },
+) {
+  if (input.normalized.eventType !== "sendgrid.email.delivery_status") return;
+  const payload = input.normalized.payload as Record<string, unknown>;
+  if (!Array.isArray(payload.events) || payload.events.length === 0) {
+    throw new PlatformIntegrationConfigurationError("SendGrid delivery event batch is empty");
+  }
+
+  for (const rawEvent of payload.events) {
+    if (!rawEvent || typeof rawEvent !== "object" || Array.isArray(rawEvent)) {
+      throw new PlatformIntegrationConfigurationError("SendGrid delivery event is invalid");
+    }
+    const event = rawEvent as Record<string, unknown>;
+    const deliveryKey = callbackText(event.deliveryKey, "SendGrid delivery key", 240);
+    const messageId = callbackText(event.messageId, "SendGrid message ID", 500);
+    const eventId = callbackText(event.eventId, "SendGrid event ID", 200);
+    const eventType = callbackText(event.eventType, "SendGrid event type", 40).toLowerCase();
+
+    const rows = await tx.$queryRaw<Array<{
+      id: string;
+      status: string;
+      providerObjectId: string | null;
+    }>>(Prisma.sql`
+      SELECT "id","status"::text AS "status","providerObjectId"
+      FROM "PlatformIntegrationDelivery"
+      WHERE "connectionId"=${input.connectionId}::uuid AND "idempotencyKey"=${deliveryKey}
+      FOR UPDATE
+    `);
+    if (rows.length !== 1) throw new PlatformIntegrationConfigurationError("SendGrid callback does not match a governed outbound delivery");
+    const delivery = rows[0];
+    if (delivery.providerObjectId && delivery.providerObjectId !== messageId) {
+      throw new PlatformIntegrationConfigurationError("SendGrid callback message ID does not match the outbound delivery");
+    }
+
+    const providerOutcome = `SENDGRID_${eventType.toUpperCase()}`.slice(0, 160);
+    const resolveAmbiguity = delivery.status === "RECONCILIATION_REQUIRED";
+
+    if (resolveAmbiguity) {
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE "PlatformIntegrationDelivery"
+        SET "status"='SUCCEEDED',"providerObjectId"=${messageId},"providerOutcome"=${providerOutcome},
+            "reconciliationReason"='SENDGRID_SIGNED_EVENT_CONFIRMED_PROVIDER_ACCEPTANCE',
+            "deliveredAt"=COALESCE("deliveredAt",CURRENT_TIMESTAMP),"lastError"=NULL,
+            "claimedAt"=NULL,"claimedBy"=NULL,"deadLetteredAt"=NULL
+        WHERE "id"=${delivery.id}::uuid AND "status"='RECONCILIATION_REQUIRED'
+      `);
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO "PlatformAuditEvent" ("id","action","entityType","entityId","reason","metadata")
+        VALUES (
+          gen_random_uuid(),
+          'platform.integration.delivery.reconciled_by_provider_callback',
+          'PlatformIntegrationDelivery',
+          ${delivery.id}::uuid,
+          'Verified SendGrid Event Webhook confirmed provider acceptance.',
+          ${JSON.stringify({
+            provider: "sendgrid",
+            receiptId: input.receiptId,
+            eventId,
+            messageId,
+            eventType,
+            previousStatus: delivery.status,
+            resolution: "CONFIRMED_SUCCEEDED",
+          })}::jsonb
+        )
+      `);
+      continue;
+    }
+
+    await tx.$executeRaw(Prisma.sql`
+      UPDATE "PlatformIntegrationDelivery"
+      SET "providerObjectId"=COALESCE("providerObjectId",${messageId}),"providerOutcome"=${providerOutcome}
+      WHERE "id"=${delivery.id}::uuid
+    `);
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO "PlatformAuditEvent" ("id","action","entityType","entityId","reason","metadata")
+      VALUES (
+        gen_random_uuid(),
+        'platform.integration.delivery.provider_status_observed',
+        'PlatformIntegrationDelivery',
+        ${delivery.id}::uuid,
+        'Verified SendGrid Event Webhook updated provider delivery evidence.',
+        ${JSON.stringify({
+          provider: "sendgrid",
+          receiptId: input.receiptId,
+          eventId,
+          messageId,
+          eventType,
+          deliveryStatus: delivery.status,
+        })}::jsonb
+      )
+    `);
+  }
+}
+
 export async function receivePlatformIntegrationWebhook(input: PlatformIntegrationWebhookEvidence & {
   connectionId: string;
   idempotencyKey: string;
@@ -154,7 +250,7 @@ export async function receivePlatformIntegrationWebhook(input: PlatformIntegrati
         INSERT INTO "PlatformIntegrationNormalizedEvent" ("receiptId","connectionId","eventType","payload","correlationId")
         VALUES (${receiptId}::uuid,${connection.id}::uuid,${normalized.eventType},${JSON.stringify(normalized.payload)}::jsonb,${input.correlationId ?? null}::uuid)
       `);
-      await applyVerifiedTwilioStatusCallback(tx, { connectionId: connection.id, receiptId, normalized });
+      await applyVerifiedTwilioStatusCallback(tx, { connectionId: connection.id, receiptId, normalized });\n      await applyVerifiedSendGridStatusCallback(tx, { connectionId: connection.id, receiptId, normalized });
     });
     return { duplicate: false, receiptId };
   } catch {
