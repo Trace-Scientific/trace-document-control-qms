@@ -667,3 +667,24 @@ model Session {
   @@index([idleExpiresAt])
   @@index([absoluteExpiresAt])
 }
+
+
+model PlatformSalesforceCdcSubscription {
+  id               String   @id @default(uuid()) @db.Uuid
+  connectionId     String   @db.Uuid
+  topic            String
+  status           String   @default("DISABLED")
+  replayIdBase64   String?
+  lastEventAt      DateTime? @db.Timestamptz(3)
+  lastKeepaliveAt  DateTime? @db.Timestamptz(3)
+  lastCheckpointAt DateTime? @db.Timestamptz(3)
+  lastFailureCode  String?
+  claimedAt        DateTime? @db.Timestamptz(3)
+  claimedBy        String?
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([connectionId, topic])
+  @@index([status, updatedAt])
+  @@index([connectionId, status])
+}
