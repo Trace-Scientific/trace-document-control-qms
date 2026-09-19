@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   SalesforcePubSubDiscoveryService,
@@ -11,6 +13,8 @@ const credential = JSON.stringify({
   instanceUrl: "https://example.my.salesforce.com",
   tenantId: "00D000000000001AAA",
 });
+
+const runtime = readFileSync(join(process.cwd(), "src/lib/platform/integration-runtime.ts"), "utf8");
 
 describe("Salesforce Pub/Sub discovery boundary", () => {
   it("builds only the reviewed Salesforce RPC authentication metadata", () => {
@@ -130,9 +134,11 @@ describe("Salesforce Pub/Sub discovery boundary", () => {
     }).discover({ credential, topic: "/data/ChangeEvents" })).rejects.toThrow("not a record schema");
   });
 
-  it("does not expose a Subscribe stream or CRM event persistence in this slice", async () => {
+  it("does not expose or compose a Subscribe stream in this slice", async () => {
     const module = await import("@/lib/platform/salesforce-pubsub-discovery");
     expect("SalesforcePubSubSubscriber" in module).toBe(false);
     expect("subscribe" in SalesforcePubSubDiscoveryService.prototype).toBe(false);
+    expect(runtime).not.toContain("SalesforcePubSubDiscoveryService");
+    expect(runtime).not.toContain("salesforce-pubsub-discovery");
   });
 });
