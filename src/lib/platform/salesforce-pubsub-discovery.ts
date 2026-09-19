@@ -3,12 +3,11 @@ import { PlatformIntegrationConfigurationError } from "./integration-framework";
 import { validateSalesforceCdcTopic } from "./salesforce-cdc-subscriber-state";
 
 const GLOBAL_ENDPOINT = "api.pubsub.salesforce.com:443";
-const GERMANY_ENDPOINT = "api.deu.pubsub.salesforce.com:443";
 const TENANT_ID_PATTERN = /^00D[A-Za-z0-9]{12,15}$/;
 
 type JsonRecord = Record<string, unknown>;
 
-export type SalesforcePubSubEndpointClass = "global" | "germany";
+export type SalesforcePubSubEndpointClass = "global";
 
 export type SalesforcePubSubRpcMetadata = {
   accesstoken: string;
@@ -125,7 +124,6 @@ export function parseSalesforcePubSubCredential(credential: string | null): Sale
 
 export function salesforcePubSubEndpoint(endpointClass: SalesforcePubSubEndpointClass) {
   if (endpointClass === "global") return GLOBAL_ENDPOINT;
-  if (endpointClass === "germany") return GERMANY_ENDPOINT;
   throw new PlatformIntegrationConfigurationError("Salesforce Pub/Sub endpoint class is invalid");
 }
 
