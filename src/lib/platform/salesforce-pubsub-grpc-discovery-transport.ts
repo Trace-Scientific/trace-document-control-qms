@@ -212,10 +212,11 @@ async function unaryRpc(input: {
     let trailers: HeaderMap = {};
     let responseHeaders: HeaderMap = {};
 
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const finishError = (error: Error) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       session.close();
       reject(error);
     };
@@ -235,7 +236,7 @@ async function unaryRpc(input: {
       tenantid: input.metadata.tenantid,
     });
 
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       request.close(http2Constants.NGHTTP2_CANCEL);
       finishError(new Error("Salesforce Pub/Sub RPC timed out"));
     }, REQUEST_TIMEOUT_MS);
@@ -269,7 +270,7 @@ async function unaryRpc(input: {
         return;
       }
       settled = true;
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       session.close();
       try {
         resolve(decodeGrpcUnaryResponse(Buffer.concat(chunks)));
@@ -317,3 +318,12 @@ export class NodeHttp2SalesforcePubSubDiscoveryTransport implements SalesforcePu
 }
 
 export const salesforcePubSubDiscoveryRpcPaths = Object.freeze({ ...RPC_PATHS });
+
+
+export const salesforcePubSubGrpcCodec = Object.freeze({
+  encodeStringField,
+  encodeGrpcFrame,
+  decodeGrpcUnaryResponse,
+  decodeTopicInfo,
+  decodeSchemaInfo,
+});
