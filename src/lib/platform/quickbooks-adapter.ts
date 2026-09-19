@@ -5,6 +5,7 @@ import {
   PlatformIntegrationDeliveryRejectedError,
   type NormalizedInboundEvent,
   type PlatformIntegrationAdapter,
+  type PlatformIntegrationWebhookEvidence,
 } from "./integration-framework";
 
 const ADAPTER_KEY = "quickbooks.accounting";
@@ -78,9 +79,9 @@ function validateOutboundPayload(eventType: string, payload: unknown): Prisma.In
   return record as Prisma.InputJsonObject;
 }
 
-function verifySignature(rawBody: string, signature: string | null, verifierToken: string) {
+function verifySignature(rawBodyBytes: Uint8Array, signature: string | null, verifierToken: string) {
   if (!signature) throw new PlatformIntegrationConfigurationError("QuickBooks webhook signature is missing");
-  const expected = createHmac("sha256", verifierToken).update(rawBody, "utf8").digest("base64");
+  const expected = createHmac("sha256", verifierToken).update(rawBodyBytes).digest("base64");
   const supplied = signature.trim();
   const a = Buffer.from(expected, "utf8");
   const b = Buffer.from(supplied, "utf8");
@@ -144,10 +145,10 @@ export class QuickBooksAccountingAdapter implements PlatformIntegrationAdapter {
     return { providerRequestId: requestId, providerObjectId, providerOutcome: "QUICKBOOKS_CONFIRMED_CREATED" };
   }
 
-  async verifyAndNormalizeWebhook(input: { rawBody: string; headers: Headers; configuration: unknown; credential: string | null }): Promise<NormalizedInboundEvent> {
+  async verifyAndNormalizeWebhook(input: PlatformIntegrationWebhookEvidence & { configuration: unknown; credential: string | null }): Promise<NormalizedInboundEvent> {
     const credential = parseCredential(input.credential);
     parseConfiguration(input.configuration);
-    verifySignature(input.rawBody, input.headers.get("intuit-signature"), credential.webhookVerifierToken);
+    verifySignature(input.rawBodyBytes, input.headers.get("intuit-signature"), credential.webhookVerifierToken);
     return normalizeWebhook(input.rawBody, credential.realmId);
   }
 }
