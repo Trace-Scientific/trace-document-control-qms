@@ -24,7 +24,7 @@ function credential() {
   });
 }
 
-function harness(claimValue = claim()) {
+function harness(claimValue = claim(), credentialValue: string | null = credential()) {
   const checkpoint = vi.fn(async () => undefined);
   const release = vi.fn(async () => undefined);
   const markDegraded = vi.fn(async () => undefined);
@@ -35,7 +35,7 @@ function harness(claimValue = claim()) {
     markDegraded,
   };
   const credentials = {
-    resolve: vi.fn(async () => credential()),
+    resolve: vi.fn(async () => credentialValue),
   };
   let callbacks: SalesforceSubscribeStreamCallbacks | null = null;
   const sendInitial = vi.fn();
@@ -147,8 +147,7 @@ describe("Salesforce CDC subscriber controller", () => {
   });
 
   it("degrades safely when governed credentials cannot be resolved", async () => {
-    const h = harness();
-    h.credentials.resolve.mockResolvedValueOnce(null);
+    const h = harness(claim(), null);
 
     const active = await h.controller.startNext("worker-005");
 
