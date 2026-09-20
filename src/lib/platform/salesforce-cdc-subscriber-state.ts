@@ -104,6 +104,7 @@ export class SalesforceCdcSubscriberStateService {
         WHERE s."status"='READY'
           AND c."status"='ACTIVE'
           AND c."adapterKey"=${ADAPTER_KEY}
+          AND c."credentialRef" IS NOT NULL
           AND (s."claimedAt" IS NULL OR s."claimedAt" < CURRENT_TIMESTAMP - INTERVAL '5 minutes')
         ORDER BY s."updatedAt",s."createdAt"
         FOR UPDATE SKIP LOCKED
