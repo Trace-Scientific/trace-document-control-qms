@@ -65,8 +65,8 @@ function failureCode(error: unknown) {
 
 export class SalesforceCdcSubscriberController {
   constructor(
-    private readonly state: SalesforceSubscriberStateBoundary = new SalesforceCdcSubscriberStateService(),
     private readonly credentials: PlatformCredentialResolver,
+    private readonly state: SalesforceSubscriberStateBoundary = new SalesforceCdcSubscriberStateService(),
     private readonly transport: SalesforceSubscribeTransportBoundary = new NodeHttp2SalesforcePubSubSubscribeTransport(),
   ) {}
 
