@@ -706,3 +706,29 @@ model PlatformSalesforceCdcEventReceipt {
   @@index([subscriptionId, receivedAt])
   @@index([connectionId, receivedAt])
 }
+
+
+model PlatformSalesforceCdcNormalizedEvent {
+  id               String   @id @default(uuid()) @db.Uuid
+  receiptId         String   @unique @db.Uuid
+  schemaId          String
+  schemaSha256      String
+  payloadSha256     String
+  entityName        String
+  recordIds         Json
+  changeType        String
+  changeOrigin      String?
+  transactionKey    String
+  sequenceNumber    BigInt
+  commitTimestamp   BigInt
+  commitUser        String
+  commitNumber      BigInt
+  changedFields     Json
+  nulledFields      Json
+  diffFields        Json
+  normalizedSha256  String
+  normalizedAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([entityName, commitTimestamp])
+  @@index([changeType, commitTimestamp])
+}
