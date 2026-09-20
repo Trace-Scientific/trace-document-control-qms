@@ -49,10 +49,17 @@ function harness(claimValue = claim(), credentialValue: string | null = credenti
       return { sendInitial, requestMore, close };
     }),
   };
+  const persist = vi.fn(async () => ({
+    id: "receipt-001",
+    duplicate: false,
+    payloadSha256: "a".repeat(64),
+  }));
+  const receipts = { persist };
   const controller = new SalesforceCdcSubscriberController(
     credentials,
     state,
     transport,
+    receipts,
   );
   return {
     controller,
@@ -62,6 +69,7 @@ function harness(claimValue = claim(), credentialValue: string | null = credenti
     sendInitial,
     requestMore,
     close,
+    receipts,
     callbacks: () => callbacks!,
   };
 }
@@ -124,19 +132,58 @@ describe("Salesforce CDC subscriber controller", () => {
     expect(h.state.markDegraded).not.toHaveBeenCalled();
   });
 
-  it("does not advance an event replay checkpoint before durable event persistence exists", async () => {
+  it("persists every event receipt before advancing the EVENT replay checkpoint", async () => {
     const h = harness();
     await h.controller.startNext("worker-004");
 
+    const eventReplayId = Buffer.from([9, 9]).toString("base64");
+    const latestReplayIdBase64 = Buffer.from([9, 10]).toString("base64");
+    const event = {
+      eventId: "event-001",
+      schemaId: "schema-001",
+      payloadBytes: Uint8Array.from([1, 2, 3]),
+      replayIdBase64: eventReplayId,
+    };
+
+    await h.callbacks().onResponse({
+      events: [event],
+      latestReplayIdBase64,
+      rpcId: "rpc-event",
+      pendingNumRequested: 9,
+      keepalive: false,
+    });
+
+    expect(h.receipts.persist).toHaveBeenCalledWith({
+      subscriptionId: claim().id,
+      connectionId: claim().connectionId,
+      topic: claim().topic,
+      event,
+    });
+    expect(h.state.checkpoint).toHaveBeenCalledWith({
+      subscriptionId: claim().id,
+      workerId: "worker-004",
+      replayIdBase64: latestReplayIdBase64,
+      kind: "EVENT",
+    });
+    expect(h.receipts.persist.mock.invocationCallOrder[0])
+      .toBeLessThan(h.state.checkpoint.mock.invocationCallOrder[0]);
+    expect(h.state.markDegraded).not.toHaveBeenCalled();
+  });
+
+  it("never advances EVENT replay when durable receipt persistence fails", async () => {
+    const h = harness();
+    h.receipts.persist.mockRejectedValueOnce(new Error("synthetic persistence failure"));
+    await h.controller.startNext("worker-004b");
+
     await h.callbacks().onResponse({
       events: [{
-        eventId: "event-001",
+        eventId: "event-002",
         schemaId: "schema-001",
-        payloadBytes: Uint8Array.from([1, 2, 3]),
-        replayIdBase64: Buffer.from([9, 9]).toString("base64"),
+        payloadBytes: Uint8Array.from([4, 5, 6]),
+        replayIdBase64: Buffer.from([10, 1]).toString("base64"),
       }],
-      latestReplayIdBase64: Buffer.from([9, 10]).toString("base64"),
-      rpcId: "rpc-event",
+      latestReplayIdBase64: Buffer.from([10, 2]).toString("base64"),
+      rpcId: "rpc-event-2",
       pendingNumRequested: 9,
       keepalive: false,
     });
@@ -145,8 +192,8 @@ describe("Salesforce CDC subscriber controller", () => {
     expect(h.close).toHaveBeenCalledTimes(1);
     expect(h.state.markDegraded).toHaveBeenCalledWith(
       claim().id,
-      "worker-004",
-      "EVENT_PERSISTENCE_NOT_ENABLED",
+      "worker-004b",
+      "EVENT_RECEIPT_PERSIST_FAILED",
     );
   });
 
