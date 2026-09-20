@@ -688,3 +688,21 @@ model PlatformSalesforceCdcSubscription {
   @@index([status, updatedAt])
   @@index([connectionId, status])
 }
+
+
+model PlatformSalesforceCdcEventReceipt {
+  id               String   @id @default(uuid()) @db.Uuid
+  subscriptionId   String   @db.Uuid
+  connectionId     String   @db.Uuid
+  topic            String
+  eventId          String
+  schemaId         String
+  replayIdBase64   String
+  payloadBytes     Bytes
+  payloadSha256    String
+  receivedAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([subscriptionId, eventId, replayIdBase64])
+  @@index([subscriptionId, receivedAt])
+  @@index([connectionId, receivedAt])
+}
