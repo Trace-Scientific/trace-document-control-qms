@@ -16,9 +16,18 @@ import type {
 } from "./salesforce-pubsub-subscribe-transport";
 import { NodeHttp2SalesforcePubSubSubscribeTransport } from "./salesforce-pubsub-subscribe-transport";
 import { SalesforceCdcEventReceiptService } from "./salesforce-cdc-event-receipt";
+import { SalesforcePubSubSchemaResolver } from "./salesforce-pubsub-schema-resolver";
+import { SalesforceCdcReceiptInterpretationService } from "./salesforce-cdc-receipt-interpretation";
+import { SalesforceCdcSemanticNormalizer } from "./salesforce-cdc-semantic-normalizer";
+import { SalesforceCdcNormalizedEventPersistenceService } from "./salesforce-cdc-normalized-event-persistence";
+import type { SalesforcePubSubSchemaInfo } from "./salesforce-pubsub-discovery";
 
 const INITIAL_REQUEST_COUNT = 10;
 const EVENT_RECEIPT_PERSIST_FAILED_CODE = "EVENT_RECEIPT_PERSIST_FAILED";
+const EVENT_SCHEMA_RESOLUTION_FAILED_CODE = "EVENT_SCHEMA_RESOLUTION_FAILED";
+const EVENT_INTERPRETATION_FAILED_CODE = "EVENT_INTERPRETATION_FAILED";
+const EVENT_NORMALIZATION_FAILED_CODE = "EVENT_NORMALIZATION_FAILED";
+const NORMALIZED_EVENT_PERSIST_FAILED_CODE = "NORMALIZED_EVENT_PERSIST_FAILED";
 const CREDENTIAL_UNAVAILABLE_CODE = "CREDENTIAL_UNAVAILABLE";
 const SUBSCRIBE_START_FAILED_CODE = "SUBSCRIBE_START_FAILED";
 const SUBSCRIBE_STREAM_FAILED_CODE = "SUBSCRIBE_STREAM_FAILED";
@@ -52,6 +61,38 @@ type SalesforceEventReceiptBoundary = {
   }): Promise<{ id: string; duplicate: boolean; payloadSha256: string }>;
 };
 
+type SalesforceSchemaResolverBoundary = {
+  resolve(input: {
+    metadata: ReturnType<typeof parseSalesforcePubSubCredential>;
+    schemaId: string;
+  }): Promise<SalesforcePubSubSchemaInfo>;
+};
+
+type SalesforceReceiptInterpretationBoundary = {
+  interpret(input: {
+    receipt: {
+      id: string;
+      schemaId: string;
+      payloadBytes: Uint8Array;
+      payloadSha256: string;
+    };
+    schema: SalesforcePubSubSchemaInfo;
+  }): import("./salesforce-cdc-receipt-interpretation").SalesforceCdcReceiptInterpretation;
+};
+
+type SalesforceSemanticNormalizerBoundary = {
+  normalize(input: {
+    interpretation: import("./salesforce-cdc-receipt-interpretation").SalesforceCdcReceiptInterpretation;
+    schema: SalesforcePubSubSchemaInfo;
+  }): import("./salesforce-cdc-semantic-normalizer").SalesforceNormalizedCdcEvent;
+};
+
+type SalesforceNormalizedPersistenceBoundary = {
+  persist(
+    event: import("./salesforce-cdc-semantic-normalizer").SalesforceNormalizedCdcEvent,
+  ): Promise<{ id: string; duplicate: boolean; normalizedSha256: string }>;
+};
+
 type SalesforceSubscribeTransportBoundary = {
   open(input: {
     endpoint: string;
@@ -79,6 +120,13 @@ export class SalesforceCdcSubscriberController {
     private readonly state: SalesforceSubscriberStateBoundary = new SalesforceCdcSubscriberStateService(),
     private readonly transport: SalesforceSubscribeTransportBoundary = new NodeHttp2SalesforcePubSubSubscribeTransport(),
     private readonly receipts: SalesforceEventReceiptBoundary = new SalesforceCdcEventReceiptService(),
+    private readonly schemas: SalesforceSchemaResolverBoundary = new SalesforcePubSubSchemaResolver(),
+    private readonly interpretations: SalesforceReceiptInterpretationBoundary =
+      new SalesforceCdcReceiptInterpretationService(),
+    private readonly normalizer: SalesforceSemanticNormalizerBoundary =
+      new SalesforceCdcSemanticNormalizer(),
+    private readonly normalizedEvents: SalesforceNormalizedPersistenceBoundary =
+      new SalesforceCdcNormalizedEventPersistenceService(),
   ) {}
 
   async startNext(workerId: string): Promise<SalesforceCdcActiveSubscription | null> {
@@ -137,18 +185,69 @@ export class SalesforceCdcSubscriberController {
           return;
         }
 
-        try {
-          for (const event of response.events) {
-            await this.receipts.persist({
+        const schemaCache = new Map<string, SalesforcePubSubSchemaInfo>();
+
+        for (const event of response.events) {
+          let receipt: { id: string; duplicate: boolean; payloadSha256: string };
+          try {
+            receipt = await this.receipts.persist({
               subscriptionId: claim.id,
               connectionId: claim.connectionId,
               topic: claim.topic,
               event,
             });
+          } catch {
+            await markDegraded(EVENT_RECEIPT_PERSIST_FAILED_CODE);
+            return;
           }
-        } catch {
-          await markDegraded(EVENT_RECEIPT_PERSIST_FAILED_CODE);
-          return;
+
+          let schema = schemaCache.get(event.schemaId);
+          if (!schema) {
+            try {
+              schema = await this.schemas.resolve({
+                metadata,
+                schemaId: event.schemaId,
+              });
+              schemaCache.set(event.schemaId, schema);
+            } catch {
+              await markDegraded(EVENT_SCHEMA_RESOLUTION_FAILED_CODE);
+              return;
+            }
+          }
+
+          let interpretation: import("./salesforce-cdc-receipt-interpretation").SalesforceCdcReceiptInterpretation;
+          try {
+            interpretation = this.interpretations.interpret({
+              receipt: {
+                id: receipt.id,
+                schemaId: event.schemaId,
+                payloadBytes: event.payloadBytes,
+                payloadSha256: receipt.payloadSha256,
+              },
+              schema,
+            });
+          } catch {
+            await markDegraded(EVENT_INTERPRETATION_FAILED_CODE);
+            return;
+          }
+
+          let normalized: import("./salesforce-cdc-semantic-normalizer").SalesforceNormalizedCdcEvent;
+          try {
+            normalized = this.normalizer.normalize({
+              interpretation,
+              schema,
+            });
+          } catch {
+            await markDegraded(EVENT_NORMALIZATION_FAILED_CODE);
+            return;
+          }
+
+          try {
+            await this.normalizedEvents.persist(normalized);
+          } catch {
+            await markDegraded(NORMALIZED_EVENT_PERSIST_FAILED_CODE);
+            return;
+          }
         }
 
         await this.state.checkpoint({
@@ -209,4 +308,8 @@ export class SalesforceCdcSubscriberController {
 export const salesforceCdcSubscriberControllerConstants = Object.freeze({
   initialRequestCount: INITIAL_REQUEST_COUNT,
   eventReceiptPersistFailedCode: EVENT_RECEIPT_PERSIST_FAILED_CODE,
+  eventSchemaResolutionFailedCode: EVENT_SCHEMA_RESOLUTION_FAILED_CODE,
+  eventInterpretationFailedCode: EVENT_INTERPRETATION_FAILED_CODE,
+  eventNormalizationFailedCode: EVENT_NORMALIZATION_FAILED_CODE,
+  normalizedEventPersistFailedCode: NORMALIZED_EVENT_PERSIST_FAILED_CODE,
 });
