@@ -262,11 +262,14 @@ describe("Salesforce CDC subscriber controller", () => {
     const normalizeOrder = h.normalizer.normalize.mock.invocationCallOrder[0];
     const normalizedPersistOrder = h.normalizedEvents.persist.mock.invocationCallOrder[0];
     const checkpointOrder = h.state.checkpoint.mock.invocationCallOrder[0];
+    const refillOrder = h.requestMore.mock.invocationCallOrder[0];
     expect(receiptOrder).toBeLessThan(schemaOrder);
     expect(schemaOrder).toBeLessThan(interpretationOrder);
     expect(interpretationOrder).toBeLessThan(normalizeOrder);
     expect(normalizeOrder).toBeLessThan(normalizedPersistOrder);
     expect(normalizedPersistOrder).toBeLessThan(checkpointOrder);
+    expect(checkpointOrder).toBeLessThan(refillOrder);
+    expect(h.requestMore).toHaveBeenCalledWith(1);
     expect(h.state.markDegraded).not.toHaveBeenCalled();
   });
 
@@ -429,7 +432,7 @@ describe("Salesforce CDC subscriber controller", () => {
     );
   });
 
-  it("does not issue autonomous flow-control requests", async () => {
+  it("refills only after a durable checkpoint and never exceeds the 10-event window", async () => {
     const h = harness();
     await h.controller.startNext("worker-009");
 
@@ -437,11 +440,59 @@ describe("Salesforce CDC subscriber controller", () => {
       events: [],
       latestReplayIdBase64: Buffer.from([7, 7]).toString("base64"),
       rpcId: "rpc-keepalive",
-      pendingNumRequested: 1,
+      pendingNumRequested: 4,
+      keepalive: true,
+    });
+
+    expect(h.requestMore).toHaveBeenCalledWith(6);
+    expect(h.state.checkpoint.mock.invocationCallOrder[0])
+      .toBeLessThan(h.requestMore.mock.invocationCallOrder[0]);
+
+    h.requestMore.mockClear();
+    await h.callbacks().onResponse({
+      events: [],
+      latestReplayIdBase64: Buffer.from([7, 8]).toString("base64"),
+      rpcId: "rpc-keepalive-full",
+      pendingNumRequested: 10,
+      keepalive: true,
+    });
+    expect(h.requestMore).not.toHaveBeenCalled();
+  });
+
+  it("degrades on flow-control counts outside the bounded worker window", async () => {
+    const h = harness();
+    const active = await h.controller.startNext("worker-009b");
+
+    await h.callbacks().onResponse({
+      events: [],
+      latestReplayIdBase64: Buffer.from([7, 9]).toString("base64"),
+      rpcId: "rpc-keepalive-invalid",
+      pendingNumRequested: 11,
       keepalive: true,
     });
 
     expect(h.requestMore).not.toHaveBeenCalled();
+    expect(h.state.markDegraded).toHaveBeenCalledWith(
+      claim().id,
+      "worker-009b",
+      "FLOW_CONTROL_FAILED",
+    );
+    await expect(active!.done).resolves.toEqual({
+      outcome: "DEGRADED",
+      code: "FLOW_CONTROL_FAILED",
+    });
+  });
+
+  it("exposes deterministic completion for explicit close and normal stream end", async () => {
+    const h = harness();
+    const active = await h.controller.startNext("worker-010");
+    await active!.close();
+    await expect(active!.done).resolves.toEqual({ outcome: "CLOSED" });
+
+    const h2 = harness();
+    const active2 = await h2.controller.startNext("worker-011");
+    await h2.callbacks().onEnd();
+    await expect(active2!.done).resolves.toEqual({ outcome: "ENDED" });
   });
 
   it("is not composed into normal application runtime", () => {
