@@ -38,7 +38,7 @@ describe("Salesforce CDC deployment-ready worker composition", () => {
     expect(salesforceCdcWorkerEnabled("TRUE")).toBe(false);
     expect(salesforceCdcWorkerEnabled("true")).toBe(true);
 
-    expect(() => salesforceCdcWorkerConfiguration({} as NodeJS.ProcessEnv)).toThrow(
+    expect(() => salesforceCdcWorkerConfiguration({ NODE_ENV: "test" })).toThrow(
       "Salesforce CDC worker is not enabled",
     );
   });
@@ -46,18 +46,21 @@ describe("Salesforce CDC deployment-ready worker composition", () => {
   it("uses the reviewed one-shot default and rejects max-run values outside 1–300 seconds", () => {
     expect(salesforceCdcWorkerConfiguration({
       SALESFORCE_CDC_WORKER_ENABLED: "true",
-    } as NodeJS.ProcessEnv)).toEqual({ maxRunMs: 240_000 });
+      NODE_ENV: "test",
+    })).toEqual({ maxRunMs: 240_000 });
 
     expect(salesforceCdcWorkerConfiguration({
       SALESFORCE_CDC_WORKER_ENABLED: "true",
       SALESFORCE_CDC_WORKER_MAX_RUN_MS: "120000",
-    } as NodeJS.ProcessEnv)).toEqual({ maxRunMs: 120_000 });
+      NODE_ENV: "test",
+    })).toEqual({ maxRunMs: 120_000 });
 
     for (const value of ["999", "300001", "1.5", "abc", "-1"]) {
       expect(() => salesforceCdcWorkerConfiguration({
         SALESFORCE_CDC_WORKER_ENABLED: "true",
         SALESFORCE_CDC_WORKER_MAX_RUN_MS: value,
-      } as NodeJS.ProcessEnv)).toThrow();
+        NODE_ENV: "test",
+      })).toThrow();
     }
   });
 
