@@ -262,11 +262,14 @@ describe("Salesforce CDC subscriber controller", () => {
     const normalizeOrder = h.normalizer.normalize.mock.invocationCallOrder[0];
     const normalizedPersistOrder = h.normalizedEvents.persist.mock.invocationCallOrder[0];
     const checkpointOrder = h.state.checkpoint.mock.invocationCallOrder[0];
+    const refillOrder = h.requestMore.mock.invocationCallOrder[0];
     expect(receiptOrder).toBeLessThan(schemaOrder);
     expect(schemaOrder).toBeLessThan(interpretationOrder);
     expect(interpretationOrder).toBeLessThan(normalizeOrder);
     expect(normalizeOrder).toBeLessThan(normalizedPersistOrder);
     expect(normalizedPersistOrder).toBeLessThan(checkpointOrder);
+    expect(checkpointOrder).toBeLessThan(refillOrder);
+    expect(h.requestMore).toHaveBeenCalledWith(1);
     expect(h.state.markDegraded).not.toHaveBeenCalled();
   });
 
