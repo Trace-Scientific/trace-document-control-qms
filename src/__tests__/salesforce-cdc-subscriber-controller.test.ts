@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { SalesforceCdcSubscriberController } from "@/lib/platform/salesforce-cdc-subscriber-controller";
 import type { SalesforceSubscribeStreamCallbacks } from "@/lib/platform/salesforce-pubsub-subscribe-transport";
@@ -63,6 +65,8 @@ function harness(claimValue = claim(), credentialValue: string | null = credenti
     callbacks: () => callbacks!,
   };
 }
+
+const runtime = readFileSync(join(process.cwd(), "src/lib/platform/integration-runtime.ts"), "utf8");
 
 describe("Salesforce CDC subscriber controller", () => {
   it("claims one READY subscription and starts at LATEST when no replay checkpoint exists", async () => {
@@ -199,5 +203,10 @@ describe("Salesforce CDC subscriber controller", () => {
     });
 
     expect(h.requestMore).not.toHaveBeenCalled();
+  });
+
+  it("is not composed into normal application runtime", () => {
+    expect(runtime).not.toContain("SalesforceCdcSubscriberController");
+    expect(runtime).not.toContain("salesforce-cdc-subscriber-controller");
   });
 });
