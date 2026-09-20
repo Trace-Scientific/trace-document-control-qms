@@ -15,9 +15,10 @@ import type {
   SalesforceSubscribeStreamHandle,
 } from "./salesforce-pubsub-subscribe-transport";
 import { NodeHttp2SalesforcePubSubSubscribeTransport } from "./salesforce-pubsub-subscribe-transport";
+import { SalesforceCdcEventReceiptService } from "./salesforce-cdc-event-receipt";
 
 const INITIAL_REQUEST_COUNT = 10;
-const EVENT_PERSISTENCE_DISABLED_CODE = "EVENT_PERSISTENCE_NOT_ENABLED";
+const EVENT_RECEIPT_PERSIST_FAILED_CODE = "EVENT_RECEIPT_PERSIST_FAILED";
 const CREDENTIAL_UNAVAILABLE_CODE = "CREDENTIAL_UNAVAILABLE";
 const SUBSCRIBE_START_FAILED_CODE = "SUBSCRIBE_START_FAILED";
 const SUBSCRIBE_STREAM_FAILED_CODE = "SUBSCRIBE_STREAM_FAILED";
@@ -40,6 +41,15 @@ type SalesforceSubscriberStateBoundary = {
   }): Promise<void>;
   release(subscriptionId: string, workerId: string): Promise<void>;
   markDegraded(subscriptionId: string, workerId: string, failureCode: string): Promise<void>;
+};
+
+type SalesforceEventReceiptBoundary = {
+  persist(input: {
+    subscriptionId: string;
+    connectionId: string;
+    topic: string;
+    event: import("./salesforce-pubsub-subscribe-protocol").SalesforcePubSubConsumerEventEnvelope;
+  }): Promise<{ id: string; duplicate: boolean; payloadSha256: string }>;
 };
 
 type SalesforceSubscribeTransportBoundary = {
@@ -68,6 +78,7 @@ export class SalesforceCdcSubscriberController {
     private readonly credentials: PlatformCredentialResolver,
     private readonly state: SalesforceSubscriberStateBoundary = new SalesforceCdcSubscriberStateService(),
     private readonly transport: SalesforceSubscribeTransportBoundary = new NodeHttp2SalesforcePubSubSubscribeTransport(),
+    private readonly receipts: SalesforceEventReceiptBoundary = new SalesforceCdcEventReceiptService(),
   ) {}
 
   async startNext(workerId: string): Promise<SalesforceCdcActiveSubscription | null> {
@@ -116,8 +127,27 @@ export class SalesforceCdcSubscriberController {
       onResponse: async (response) => {
         if (finalized) return;
 
-        if (!response.keepalive || response.events.length !== 0) {
-          await markDegraded(EVENT_PERSISTENCE_DISABLED_CODE);
+        if (response.keepalive && response.events.length === 0) {
+          await this.state.checkpoint({
+            subscriptionId: claim.id,
+            workerId,
+            replayIdBase64: response.latestReplayIdBase64,
+            kind: "KEEPALIVE",
+          });
+          return;
+        }
+
+        try {
+          for (const event of response.events) {
+            await this.receipts.persist({
+              subscriptionId: claim.id,
+              connectionId: claim.connectionId,
+              topic: claim.topic,
+              event,
+            });
+          }
+        } catch {
+          await markDegraded(EVENT_RECEIPT_PERSIST_FAILED_CODE);
           return;
         }
 
@@ -125,7 +155,7 @@ export class SalesforceCdcSubscriberController {
           subscriptionId: claim.id,
           workerId,
           replayIdBase64: response.latestReplayIdBase64,
-          kind: "KEEPALIVE",
+          kind: "EVENT",
         });
       },
 
@@ -178,5 +208,5 @@ export class SalesforceCdcSubscriberController {
 
 export const salesforceCdcSubscriberControllerConstants = Object.freeze({
   initialRequestCount: INITIAL_REQUEST_COUNT,
-  eventPersistenceDisabledCode: EVENT_PERSISTENCE_DISABLED_CODE,
+  eventReceiptPersistFailedCode: EVENT_RECEIPT_PERSIST_FAILED_CODE,
 });
