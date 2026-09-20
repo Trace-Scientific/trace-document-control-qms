@@ -41,10 +41,15 @@ describe("platform system health", () => {
     expect(panel).toContain("Notification delivery worker");
   });
 
-  it("reports unimplemented integration health honestly rather than inventing provider status", () => {
+  it("reports integration and Salesforce CDC operational health without exposing provider secrets", () => {
     expect(service).toContain('status: integrationStatus');
-    expect(service).toContain("Platform integration framework is not implemented until PR 10.");
-    expect(service).not.toMatch(/stripe|quickbooks|salesforce|hubspot/i);
+    expect(service).toContain("salesforceCdcStatus");
+    expect(service).toContain('FROM "PlatformSalesforceCdcSubscription"');
+    expect(service).toContain('FROM "PlatformSalesforceCdcEventReceipt"');
+    expect(service).toContain('FROM "PlatformSalesforceCdcNormalizedEvent"');
+    expect(service).not.toContain("accessToken");
+    expect(service).not.toContain("refreshToken");
+    expect(service).not.toContain("clientSecret");
   });
 
   it("keeps health authority out of tenant authorization", () => {
