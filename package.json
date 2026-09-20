@@ -24,7 +24,8 @@
     "db:studio": "prisma studio",
     "admin:bootstrap": "node scripts/bootstrap-admin.mjs",
     "salesforce:cdc:worker": "node scripts/run-salesforce-cdc-worker.mjs",
-    "test:salesforce-cdc-railway-readiness": "node --test scripts/salesforce-cdc-railway-readiness.node-test.mjs"
+    "test:salesforce-cdc-railway-readiness": "node --test scripts/salesforce-cdc-railway-readiness.node-test.mjs",
+    "salesforce:cdc:preflight": "node scripts/check-salesforce-cdc-worker-preflight.mjs"
   },
   "dependencies": {
     "@prisma/client": "6.12.0",
