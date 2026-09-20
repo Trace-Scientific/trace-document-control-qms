@@ -29,3 +29,23 @@ CREATE INDEX "PlatformSalesforceCdcEventReceipt_subscription_received_idx"
 
 CREATE INDEX "PlatformSalesforceCdcEventReceipt_connection_received_idx"
   ON "PlatformSalesforceCdcEventReceipt" ("connectionId","receivedAt");
+
+
+CREATE OR REPLACE FUNCTION "prevent_platform_salesforce_cdc_event_receipt_mutation"()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION 'PlatformSalesforceCdcEventReceipt rows are immutable';
+END;
+$$;
+
+CREATE TRIGGER "PlatformSalesforceCdcEventReceipt_immutable_update"
+BEFORE UPDATE ON "PlatformSalesforceCdcEventReceipt"
+FOR EACH ROW
+EXECUTE FUNCTION "prevent_platform_salesforce_cdc_event_receipt_mutation"();
+
+CREATE TRIGGER "PlatformSalesforceCdcEventReceipt_immutable_delete"
+BEFORE DELETE ON "PlatformSalesforceCdcEventReceipt"
+FOR EACH ROW
+EXECUTE FUNCTION "prevent_platform_salesforce_cdc_event_receipt_mutation"();
