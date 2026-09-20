@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import { PlatformIntegrationConfigurationError } from "./integration-framework";
 import type { SalesforceCdcReceiptInterpretation } from "./salesforce-cdc-receipt-interpretation";
+import type { SalesforcePubSubSchemaInfo } from "./salesforce-pubsub-discovery";
 
 const CHANGE_TYPES = new Set([
   "CREATE",
@@ -111,8 +113,94 @@ function normalizedFieldName(value: string) {
   return normalized;
 }
 
-function normalizedFieldArray(value: unknown, label: string) {
-  return stringArray(value, label, MAX_FIELD_NAMES).map(normalizedFieldName);
+type AvroField = { name: string; type: unknown };
+
+function schemaFields(schema: unknown, label: string): AvroField[] {
+  const record = object(schema, label);
+  if (record.type !== "record" || !Array.isArray(record.fields) || record.fields.length > MAX_FIELD_NAMES) {
+    throw new PlatformIntegrationConfigurationError(`${label} fields are invalid`);
+  }
+  return record.fields.map((field, index) => {
+    const value = object(field, `${label} field[${index}]`);
+    return {
+      name: normalizedFieldName(text(value.name, `${label} field name`, MAX_FIELD_NAME_LENGTH)),
+      type: value.type,
+    };
+  });
+}
+
+function valueSchema(schema: unknown) {
+  if (!Array.isArray(schema)) return schema;
+  if (schema.length === 2 && (schema[0] === "null" || schema[0] === "string")) return schema[1];
+  if (schema.length === 3 && schema[0] === "null" && schema[1] === "string") return schema[2];
+  return schema;
+}
+
+function bitPositions(bitmap: string) {
+  if (!/^0x(?:[A-Fa-f0-9]{2})+$/.test(bitmap)) {
+    throw new PlatformIntegrationConfigurationError("Salesforce CDC bitmap is invalid");
+  }
+  const hex = bitmap.slice(2);
+  const bytes = Buffer.from(hex, "hex");
+  const positions: number[] = [];
+  const reversed = Buffer.from(bytes).reverse();
+  for (let byteIndex = 0; byteIndex < reversed.length; byteIndex += 1) {
+    for (let bit = 0; bit < 8; bit += 1) {
+      if ((reversed[byteIndex] & (1 << bit)) !== 0) {
+        positions.push((byteIndex * 8) + bit);
+      }
+    }
+  }
+  return positions;
+}
+
+function fieldNamesFromBitmap(bitmap: string, fields: AvroField[]) {
+  return bitPositions(bitmap).map((position) => {
+    const field = fields[position];
+    if (!field) {
+      throw new PlatformIntegrationConfigurationError("Salesforce CDC bitmap references a field outside the Avro schema");
+    }
+    return field.name;
+  });
+}
+
+function expandBitmapField(value: unknown, label: string, rootFields: AvroField[]) {
+  const entries = stringArray(value ?? [], label, MAX_FIELD_NAMES, 4096);
+  if (entries.length === 0) return [];
+
+  const expanded: string[] = [];
+  for (const entry of entries) {
+    if (entry.startsWith("0x")) {
+      expanded.push(...fieldNamesFromBitmap(entry, rootFields));
+      continue;
+    }
+
+    const match = /^(\d+)-(0x(?:[A-Fa-f0-9]{2})+)$/.exec(entry);
+    if (!match) {
+      throw new PlatformIntegrationConfigurationError(`${label} contains an invalid bitmap entry`);
+    }
+
+    const parentPosition = Number(match[1]);
+    const parentField = rootFields[parentPosition];
+    if (!parentField) {
+      throw new PlatformIntegrationConfigurationError(`${label} compound bitmap parent is outside the Avro schema`);
+    }
+
+    const child = valueSchema(parentField.type);
+    const childFields = schemaFields(child, `Salesforce compound field ${parentField.name}`);
+    const nested = fieldNamesFromBitmap(match[2], childFields);
+
+    if (nested.length === childFields.length && nested.length > 0) {
+      expanded.push(parentField.name);
+    } else {
+      expanded.push(...nested.map((name) => `${parentField.name}.${name}`));
+    }
+  }
+
+  if (expanded.length > MAX_FIELD_NAMES) {
+    throw new PlatformIntegrationConfigurationError(`${label} expands beyond the field limit`);
+  }
+  return expanded.map(normalizedFieldName);
 }
 
 function changeType(value: unknown): SalesforceNormalizedChangeHeader["changeType"] {
@@ -134,15 +222,35 @@ function validateRecordIds(value: unknown) {
 }
 
 export class SalesforceCdcSemanticNormalizer {
-  normalize(input: SalesforceCdcReceiptInterpretation): SalesforceNormalizedCdcEvent {
-    const root = object(input.value, "Salesforce CDC interpreted event");
+  normalize(input: {
+    interpretation: SalesforceCdcReceiptInterpretation;
+    schema: SalesforcePubSubSchemaInfo;
+  }): SalesforceNormalizedCdcEvent {
+    const { interpretation, schema } = input;
+    if (interpretation.schemaId !== schema.schemaId) {
+      throw new PlatformIntegrationConfigurationError("Salesforce normalized event schema ID does not match governed schema");
+    }
+    const schemaSha256 = createHash("sha256").update(schema.schemaJson, "utf8").digest("hex");
+    if (schemaSha256 !== schema.schemaSha256 || interpretation.schemaSha256 !== schema.schemaSha256) {
+      throw new PlatformIntegrationConfigurationError("Salesforce normalized event schema hash does not match governed schema");
+    }
+
+    let parsedSchema: unknown;
+    try {
+      parsedSchema = JSON.parse(schema.schemaJson);
+    } catch {
+      throw new PlatformIntegrationConfigurationError("Salesforce normalized event schema JSON is invalid");
+    }
+    const rootFields = schemaFields(parsedSchema, "Salesforce CDC root schema");
+
+    const root = object(interpretation.value, "Salesforce CDC interpreted event");
     const header = object(root.ChangeEventHeader, "Salesforce ChangeEventHeader");
 
     return {
-      receiptId: input.receiptId,
-      schemaId: input.schemaId,
-      schemaSha256: input.schemaSha256,
-      payloadSha256: input.payloadSha256,
+      receiptId: interpretation.receiptId,
+      schemaId: interpretation.schemaId,
+      schemaSha256: interpretation.schemaSha256,
+      payloadSha256: interpretation.payloadSha256,
       header: {
         entityName: text(header.entityName, "Salesforce entityName", 256),
         recordIds: validateRecordIds(header.recordIds),
@@ -153,12 +261,21 @@ export class SalesforceCdcSemanticNormalizer {
         commitTimestamp: safeInteger(header.commitTimestamp, "Salesforce commitTimestamp", 0),
         commitUser: text(header.commitUser, "Salesforce commitUser", 64),
         commitNumber: safeInteger(header.commitNumber, "Salesforce commitNumber", 0),
-        changedFields: normalizedFieldArray(header.changedFields ?? [], "Salesforce changedFields"),
-        nulledFields: normalizedFieldArray(
+        changedFields: expandBitmapField(
+          header.changedFields ?? [],
+          "Salesforce changedFields",
+          rootFields,
+        ),
+        nulledFields: expandBitmapField(
           header.nulledfields ?? header.nulledFields ?? [],
           "Salesforce nulledFields",
+          rootFields,
         ),
-        diffFields: normalizedFieldArray(header.diffFields ?? [], "Salesforce diffFields"),
+        diffFields: expandBitmapField(
+          header.diffFields ?? [],
+          "Salesforce diffFields",
+          rootFields,
+        ),
       },
     };
   }
