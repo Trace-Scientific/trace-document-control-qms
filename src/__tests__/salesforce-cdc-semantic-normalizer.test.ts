@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { SalesforceCdcReceiptInterpretation } from "@/lib/platform/salesforce-cdc-receipt-interpretation";
 import {
   SalesforceCdcSemanticNormalizer,
   salesforceCdcSemanticNormalizationLimits,
@@ -41,7 +42,7 @@ const schemaObject = {
 const schemaJson = JSON.stringify(schemaObject);
 const schemaSha256 = createHash("sha256").update(schemaJson, "utf8").digest("hex");
 
-function baseInterpretation(header: Record<string, unknown>) {
+function baseInterpretation(header: Record<string, unknown>): SalesforceCdcReceiptInterpretation {
   return {
     receiptId: "11111111-2222-4333-8444-555555555555",
     schemaId: "schema-001",
@@ -52,7 +53,7 @@ function baseInterpretation(header: Record<string, unknown>) {
       Name: null,
       BillingAddress: null,
       Industry: null,
-    },
+    } as SalesforceCdcReceiptInterpretation["value"],
   };
 }
 
