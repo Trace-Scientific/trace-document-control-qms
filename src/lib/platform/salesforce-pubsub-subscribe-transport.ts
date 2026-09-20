@@ -20,6 +20,7 @@ const AUTHORITY = "https://api.pubsub.salesforce.com";
 const SUBSCRIBE_RPC_PATH = "/eventbus.v1.PubSub/Subscribe";
 const MAX_GRPC_MESSAGE_BYTES = 4 * 1024 * 1024;
 const MAX_BUFFERED_BYTES = MAX_GRPC_MESSAGE_BYTES + 5;
+const MAX_HTTP2_CHUNK_BYTES = 16 * 1024 * 1024;
 const STREAM_IDLE_TIMEOUT_MS = 300_000;
 
 type HeaderMap = Record<string, string | string[] | undefined>;
@@ -75,8 +76,8 @@ export class SalesforceGrpcStreamFrameDecoder {
 
   push(chunk: Uint8Array): Uint8Array[] {
     if (chunk.length === 0) return [];
-    if (this.buffered.length + chunk.length > MAX_BUFFERED_BYTES) {
-      throw new PlatformIntegrationConfigurationError("Salesforce gRPC stream buffer exceeds the maximum size");
+    if (chunk.length > MAX_HTTP2_CHUNK_BYTES) {
+      throw new PlatformIntegrationConfigurationError("Salesforce HTTP/2 data chunk exceeds the maximum size");
     }
 
     this.buffered = Buffer.concat([this.buffered, Buffer.from(chunk)]);
@@ -96,6 +97,10 @@ export class SalesforceGrpcStreamFrameDecoder {
 
       messages.push(Uint8Array.from(this.buffered.subarray(5, length + 5)));
       this.buffered = this.buffered.subarray(length + 5);
+    }
+
+    if (this.buffered.length > MAX_BUFFERED_BYTES) {
+      throw new PlatformIntegrationConfigurationError("Salesforce gRPC stream buffer exceeds the maximum size");
     }
 
     return messages;
@@ -269,5 +274,6 @@ export const salesforceSubscribeTransportConstants = Object.freeze({
   authority: AUTHORITY,
   rpcPath: SUBSCRIBE_RPC_PATH,
   maxGrpcMessageBytes: MAX_GRPC_MESSAGE_BYTES,
+  maxHttp2ChunkBytes: MAX_HTTP2_CHUNK_BYTES,
   idleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
 });
