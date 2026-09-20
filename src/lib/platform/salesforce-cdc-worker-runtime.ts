@@ -34,6 +34,24 @@ export function salesforceCdcWorkerEnabled(
   return value === ENABLED_VALUE;
 }
 
+export function inspectSalesforceCdcWorkerConfiguration(
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  try {
+    return {
+      enabled: salesforceCdcWorkerEnabled(env.SALESFORCE_CDC_WORKER_ENABLED),
+      maxRunMs: configuredMaxRunMs(env.SALESFORCE_CDC_WORKER_MAX_RUN_MS),
+      configurationValid: true as const,
+    };
+  } catch {
+    return {
+      enabled: salesforceCdcWorkerEnabled(env.SALESFORCE_CDC_WORKER_ENABLED),
+      maxRunMs: null,
+      configurationValid: false as const,
+    };
+  }
+}
+
 export function salesforceCdcWorkerConfiguration(
   env: NodeJS.ProcessEnv = process.env,
 ) {
