@@ -336,7 +336,9 @@ export async function receivePlatformIntegrationWebhook(input: PlatformIntegrati
         INSERT INTO "PlatformIntegrationNormalizedEvent" ("receiptId","connectionId","eventType","payload","correlationId")
         VALUES (${receiptId}::uuid,${connection.id}::uuid,${normalized.eventType},${JSON.stringify(normalized.payload)}::jsonb,${input.correlationId ?? null}::uuid)
       `);
-      await applyVerifiedTwilioStatusCallback(tx, { connectionId: connection.id, receiptId, normalized });\n      await applyVerifiedSendGridStatusCallback(tx, { connectionId: connection.id, receiptId, normalized });\n      await applyVerifiedZendeskTicketCallback(tx, { connectionId: connection.id, receiptId, normalized });
+      await applyVerifiedTwilioStatusCallback(tx, { connectionId: connection.id, receiptId, normalized });
+      await applyVerifiedSendGridStatusCallback(tx, { connectionId: connection.id, receiptId, normalized });
+      await applyVerifiedZendeskTicketCallback(tx, { connectionId: connection.id, receiptId, normalized });
     });
     return { duplicate: false, receiptId };
   } catch {
