@@ -78,8 +78,6 @@ describe("Zendesk signed ticket-event reconciliation boundary", () => {
 
     const normalized = await adapter.verifyAndNormalizeWebhook({
       rawBody: body,
-      rawBodyBytes: new TextEncoder().encode(body),
-      requestUrl: "https://traceqms.com/api/platform/integrations/inbound/11111111-2222-4333-8444-555555555555",
       headers: headers(body, "2026-09-18T13:00:00Z"),
       configuration: {},
       credential: JSON.stringify({
@@ -115,8 +113,6 @@ describe("Zendesk signed ticket-event reconciliation boundary", () => {
     const body = webhookBody();
     await expect(adapter.verifyAndNormalizeWebhook({
       rawBody: body,
-      rawBodyBytes: new TextEncoder().encode(body),
-      requestUrl: "https://traceqms.com/",
       headers: headers(body, "2026-09-18T13:00:00Z"),
       configuration: {},
       credential,
@@ -126,8 +122,6 @@ describe("Zendesk signed ticket-event reconciliation boundary", () => {
     const unsupported = webhookBody("zen:event-type:ticket.subject_changed");
     await expect(adapter.verifyAndNormalizeWebhook({
       rawBody: unsupported,
-      rawBodyBytes: new TextEncoder().encode(unsupported),
-      requestUrl: "https://traceqms.com/",
       headers: headers(unsupported, "2026-09-18T13:00:00Z"),
       configuration: {},
       credential,
@@ -140,8 +134,6 @@ describe("Zendesk signed ticket-event reconciliation boundary", () => {
     });
     await expect(adapter.verifyAndNormalizeWebhook({
       rawBody: unmanaged,
-      rawBodyBytes: new TextEncoder().encode(unmanaged),
-      requestUrl: "https://traceqms.com/",
       headers: headers(unmanaged, "2026-09-18T13:00:00Z"),
       configuration: {},
       credential,

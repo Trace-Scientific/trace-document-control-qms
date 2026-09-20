@@ -244,7 +244,7 @@ async function unaryRpc(input: {
     request.on("response", (headers) => {
       responseHeaders = headers as HeaderMap;
       const status = headers[http2Constants.HTTP2_HEADER_STATUS];
-      if (status !== 200) {
+      if (String(status) !== "200") {
         finishError(new Error(`Salesforce Pub/Sub HTTP transport failed with status ${status ?? "unknown"}`));
       }
     });
