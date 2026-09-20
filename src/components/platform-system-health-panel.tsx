@@ -13,6 +13,20 @@ type Snapshot = {
   backgroundJobs: { notificationDelivery: HealthState; pending: number; retry: number; processing: number; deadLetter: number; oldestAvailableAt: string | null; staleProcessing: number };
   scheduledTasks: { status: HealthState; detail: string };
   integrations: { status: HealthState; detail: string };
+  salesforceCdc: {
+    status: HealthState;
+    workerEnabled: boolean;
+    disabled: number;
+    ready: number;
+    running: number;
+    degraded: number;
+    staleRunning: number;
+    receiptsLast24Hours: number;
+    normalizedEventsLast24Hours: number;
+    latestCheckpointAt: string | null;
+    latestEventAt: string | null;
+    detail: string;
+  };
 };
 
 function timestamp(value: string | null) {
@@ -81,6 +95,17 @@ export function PlatformSystemHealthPanel() {
           <h3>Integrations</h3>
           <p><State value={data.integrations.status} /></p>
           <p>{data.integrations.detail}</p>
+        </article>
+        <article className={styles.card}>
+          <h3>Salesforce CDC</h3>
+          <p>Status: <State value={data.salesforceCdc.status} /></p>
+          <p>Worker enable flag: {data.salesforceCdc.workerEnabled ? "On" : "Off"}</p>
+          <p>Ready {data.salesforceCdc.ready} · Running {data.salesforceCdc.running} · Degraded {data.salesforceCdc.degraded} · Disabled {data.salesforceCdc.disabled}</p>
+          <p>Stale running claims: {data.salesforceCdc.staleRunning}</p>
+          <p>Receipts (24h): {data.salesforceCdc.receiptsLast24Hours} · Normalized events (24h): {data.salesforceCdc.normalizedEventsLast24Hours}</p>
+          <p>Latest checkpoint: {timestamp(data.salesforceCdc.latestCheckpointAt)}</p>
+          <p>Latest event: {timestamp(data.salesforceCdc.latestEventAt)}</p>
+          <p>{data.salesforceCdc.detail}</p>
         </article>
         <article className={styles.card}>
           <h3>Sanitized view</h3>
