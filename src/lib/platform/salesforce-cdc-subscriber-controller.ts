@@ -23,6 +23,7 @@ import { SalesforceCdcNormalizedEventPersistenceService } from "./salesforce-cdc
 import type { SalesforcePubSubSchemaInfo } from "./salesforce-pubsub-discovery";
 
 const INITIAL_REQUEST_COUNT = 10;
+const FLOW_WINDOW = 10;
 const EVENT_RECEIPT_PERSIST_FAILED_CODE = "EVENT_RECEIPT_PERSIST_FAILED";
 const EVENT_SCHEMA_RESOLUTION_FAILED_CODE = "EVENT_SCHEMA_RESOLUTION_FAILED";
 const EVENT_INTERPRETATION_FAILED_CODE = "EVENT_INTERPRETATION_FAILED";
@@ -101,11 +102,17 @@ type SalesforceSubscribeTransportBoundary = {
   }): SalesforceSubscribeStreamHandle;
 };
 
+export type SalesforceCdcSubscriptionCompletion =
+  | { outcome: "ENDED" }
+  | { outcome: "CLOSED" }
+  | { outcome: "DEGRADED"; code: string };
+
 export type SalesforceCdcActiveSubscription = {
   subscriptionId: string;
   connectionId: string;
   topic: string;
   replayMode: "LATEST" | "CUSTOM";
+  done: Promise<SalesforceCdcSubscriptionCompletion>;
   close(): Promise<void>;
 };
 
@@ -136,19 +143,40 @@ export class SalesforceCdcSubscriberController {
 
     let stream: SalesforceSubscribeStreamHandle | null = null;
     let finalized = false;
+    let resolveDone!: (value: SalesforceCdcSubscriptionCompletion) => void;
+    const done = new Promise<SalesforceCdcSubscriptionCompletion>((resolve) => {
+      resolveDone = resolve;
+    });
 
     const markDegraded = async (code: string) => {
       if (finalized) return;
       finalized = true;
       stream?.close();
-      await this.state.markDegraded(claim.id, workerId, code);
+      try {
+        await this.state.markDegraded(claim.id, workerId, code);
+      } finally {
+        resolveDone({ outcome: "DEGRADED", code });
+      }
     };
 
-    const release = async () => {
+    const release = async (outcome: "ENDED" | "CLOSED") => {
       if (finalized) return;
       finalized = true;
       stream?.close();
-      await this.state.release(claim.id, workerId);
+      try {
+        await this.state.release(claim.id, workerId);
+      } finally {
+        resolveDone({ outcome });
+      }
+    };
+
+    const refillAfterDurableCheckpoint = (pendingNumRequested: number) => {
+      if (finalized || !stream) return;
+      if (!Number.isInteger(pendingNumRequested) || pendingNumRequested < 0 || pendingNumRequested > FLOW_WINDOW) {
+        throw new PlatformIntegrationConfigurationError("Salesforce pending flow-control count is outside the worker window");
+      }
+      const refill = FLOW_WINDOW - pendingNumRequested;
+      if (refill > 0) stream.requestMore(refill);
     };
 
     let credential: string | null;
@@ -182,6 +210,7 @@ export class SalesforceCdcSubscriberController {
             replayIdBase64: response.latestReplayIdBase64,
             kind: "KEEPALIVE",
           });
+          refillAfterDurableCheckpoint(response.pendingNumRequested);
           return;
         }
 
@@ -256,6 +285,7 @@ export class SalesforceCdcSubscriberController {
           replayIdBase64: response.latestReplayIdBase64,
           kind: "EVENT",
         });
+        refillAfterDurableCheckpoint(response.pendingNumRequested);
       },
 
       onError: async (error) => {
@@ -263,7 +293,7 @@ export class SalesforceCdcSubscriberController {
       },
 
       onEnd: async () => {
-        await release();
+        await release("ENDED");
       },
     };
 
@@ -300,13 +330,15 @@ export class SalesforceCdcSubscriberController {
       connectionId: claim.connectionId,
       topic: claim.topic,
       replayMode: claim.replayIdBase64 ? "CUSTOM" : "LATEST",
-      close: release,
+      done,
+      close: async () => release("CLOSED"),
     };
   }
 }
 
 export const salesforceCdcSubscriberControllerConstants = Object.freeze({
   initialRequestCount: INITIAL_REQUEST_COUNT,
+  flowWindow: FLOW_WINDOW,
   eventReceiptPersistFailedCode: EVENT_RECEIPT_PERSIST_FAILED_CODE,
   eventSchemaResolutionFailedCode: EVENT_SCHEMA_RESOLUTION_FAILED_CODE,
   eventInterpretationFailedCode: EVENT_INTERPRETATION_FAILED_CODE,
