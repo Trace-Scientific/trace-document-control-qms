@@ -29,6 +29,7 @@ const EVENT_SCHEMA_RESOLUTION_FAILED_CODE = "EVENT_SCHEMA_RESOLUTION_FAILED";
 const EVENT_INTERPRETATION_FAILED_CODE = "EVENT_INTERPRETATION_FAILED";
 const EVENT_NORMALIZATION_FAILED_CODE = "EVENT_NORMALIZATION_FAILED";
 const NORMALIZED_EVENT_PERSIST_FAILED_CODE = "NORMALIZED_EVENT_PERSIST_FAILED";
+const FLOW_CONTROL_FAILED_CODE = "FLOW_CONTROL_FAILED";
 const CREDENTIAL_UNAVAILABLE_CODE = "CREDENTIAL_UNAVAILABLE";
 const SUBSCRIBE_START_FAILED_CODE = "SUBSCRIBE_START_FAILED";
 const SUBSCRIBE_STREAM_FAILED_CODE = "SUBSCRIBE_STREAM_FAILED";
@@ -170,13 +171,23 @@ export class SalesforceCdcSubscriberController {
       }
     };
 
-    const refillAfterDurableCheckpoint = (pendingNumRequested: number) => {
+    const refillAfterDurableCheckpoint = async (pendingNumRequested: number) => {
       if (finalized || !stream) return;
-      if (!Number.isInteger(pendingNumRequested) || pendingNumRequested < 0 || pendingNumRequested > FLOW_WINDOW) {
-        throw new PlatformIntegrationConfigurationError("Salesforce pending flow-control count is outside the worker window");
+      try {
+        if (
+          !Number.isInteger(pendingNumRequested) ||
+          pendingNumRequested < 0 ||
+          pendingNumRequested > FLOW_WINDOW
+        ) {
+          throw new PlatformIntegrationConfigurationError(
+            "Salesforce pending flow-control count is outside the worker window",
+          );
+        }
+        const refill = FLOW_WINDOW - pendingNumRequested;
+        if (refill > 0) stream.requestMore(refill);
+      } catch {
+        await markDegraded(FLOW_CONTROL_FAILED_CODE);
       }
-      const refill = FLOW_WINDOW - pendingNumRequested;
-      if (refill > 0) stream.requestMore(refill);
     };
 
     let credential: string | null;
@@ -210,7 +221,7 @@ export class SalesforceCdcSubscriberController {
             replayIdBase64: response.latestReplayIdBase64,
             kind: "KEEPALIVE",
           });
-          refillAfterDurableCheckpoint(response.pendingNumRequested);
+          await refillAfterDurableCheckpoint(response.pendingNumRequested);
           return;
         }
 
@@ -285,7 +296,7 @@ export class SalesforceCdcSubscriberController {
           replayIdBase64: response.latestReplayIdBase64,
           kind: "EVENT",
         });
-        refillAfterDurableCheckpoint(response.pendingNumRequested);
+        await refillAfterDurableCheckpoint(response.pendingNumRequested);
       },
 
       onError: async (error) => {
@@ -344,4 +355,5 @@ export const salesforceCdcSubscriberControllerConstants = Object.freeze({
   eventInterpretationFailedCode: EVENT_INTERPRETATION_FAILED_CODE,
   eventNormalizationFailedCode: EVENT_NORMALIZATION_FAILED_CODE,
   normalizedEventPersistFailedCode: NORMALIZED_EVENT_PERSIST_FAILED_CODE,
+  flowControlFailedCode: FLOW_CONTROL_FAILED_CODE,
 });
