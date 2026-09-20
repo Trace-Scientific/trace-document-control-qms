@@ -95,6 +95,7 @@ export class SalesforceCdcSubscriberStateService {
       connectionId: string;
       topic: string;
       replayIdBase64: string | null;
+      credentialRef: string;
     }>>(Prisma.sql`
       WITH candidates AS (
         SELECT s."id"
@@ -110,9 +111,9 @@ export class SalesforceCdcSubscriberStateService {
       )
       UPDATE "PlatformSalesforceCdcSubscription" s
       SET "status"='RUNNING',"claimedAt"=CURRENT_TIMESTAMP,"claimedBy"=${worker},"updatedAt"=CURRENT_TIMESTAMP
-      FROM candidates x
-      WHERE s."id"=x."id"
-      RETURNING s."id",s."connectionId",s."topic",s."replayIdBase64"
+      FROM candidates x, "PlatformIntegrationConnection" c
+      WHERE s."id"=x."id" AND c."id"=s."connectionId"
+      RETURNING s."id",s."connectionId",s."topic",s."replayIdBase64",c."credentialRef"
     `));
   }
 
