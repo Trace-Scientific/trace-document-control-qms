@@ -7,6 +7,7 @@ import {
 
 export type CatalogRecordStatus = "DRAFT" | "ACTIVE" | "RETIRED";
 export type SubscriptionStatus = "PENDING" | "ACTIVE" | "SUSPENDED" | "CANCELLED" | "EXPIRED";
+export type BillingCadence = "MONTHLY" | "ANNUAL" | "CUSTOM";
 export type EntitlementOverrideDecision = "ENABLE" | "DISABLE";
 
 export interface ProductRecord {
@@ -43,6 +44,13 @@ export interface PlanVersionRecord {
   effectiveFrom: Date | null;
   effectiveTo: Date | null;
   activatedAt: Date | null;
+  billingCadence: BillingCadence | null;
+  currency: string | null;
+  baseAmountCents: number | null;
+  includedFullUsers: number | null;
+  additionalUserRateCents: number | null;
+  storageAllowanceGb: number | null;
+  commercialMetadata: unknown;
 }
 
 export interface SubscriptionRecord {
@@ -171,12 +179,58 @@ export class SubscriptionCatalogService {
         INSERT INTO "PlanVersion" ("id", "planId", "version", "effectiveFrom", "effectiveTo")
         SELECT gen_random_uuid(), p."id", ${versions[0].nextVersion}, ${input.effectiveFrom ?? null}, ${input.effectiveTo ?? null}
         FROM "Plan" p WHERE p."id" = ${input.planId}::uuid AND p."status" <> 'RETIRED'
-        RETURNING "id", "planId", "version", "status"::text AS "status", "effectiveFrom", "effectiveTo", "activatedAt"
+        RETURNING "id", "planId", "version", "status"::text AS "status", "effectiveFrom", "effectiveTo", "activatedAt", "billingCadence"::text AS "billingCadence", "currency", "baseAmountCents", "includedFullUsers", "additionalUserRateCents", "storageAllowanceGb", "commercialMetadata"
       `);
       if (rows.length !== 1) throw new SubscriptionValidationError("Plan is not available for versioning");
       await writePlatformAudit(tx, context, "catalog.plan_version.created", "PlanVersion", rows[0].id, input.reason, {
         planId: rows[0].planId,
         version: rows[0].version,
+      });
+      return rows[0];
+    });
+  }
+
+  async setDraftCommercialTerms(
+    context: PlatformAuthorizationContext,
+    input: {
+      planVersionId: string;
+      billingCadence: BillingCadence;
+      currency: string;
+      baseAmountCents: number;
+      includedFullUsers: number;
+      additionalUserRateCents?: number | null;
+      storageAllowanceGb?: number | null;
+      commercialMetadata?: Record<string, unknown>;
+      reason: string;
+    },
+  ): Promise<PlanVersionRecord> {
+    requirePlatformAuthorization(context, { permission: "platform.subscription.manage" });
+    validateReason(input.reason);
+    validateCommercialTerms(input);
+
+    return db.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<PlanVersionRecord[]>(Prisma.sql`
+        UPDATE "PlanVersion"
+        SET "billingCadence"=${input.billingCadence}::"BillingCadence",
+            "currency"=${input.currency.trim().toUpperCase()},
+            "baseAmountCents"=${input.baseAmountCents},
+            "includedFullUsers"=${input.includedFullUsers},
+            "additionalUserRateCents"=${input.additionalUserRateCents ?? null},
+            "storageAllowanceGb"=${input.storageAllowanceGb ?? null},
+            "commercialMetadata"=${JSON.stringify(input.commercialMetadata ?? {})}::jsonb
+        WHERE "id"=${input.planVersionId}::uuid AND "status"='DRAFT'
+        RETURNING "id","planId","version","status"::text AS "status","effectiveFrom","effectiveTo","activatedAt",
+          "billingCadence"::text AS "billingCadence","currency","baseAmountCents","includedFullUsers",
+          "additionalUserRateCents","storageAllowanceGb","commercialMetadata"
+      `);
+      if (rows.length !== 1) throw new SubscriptionValidationError("Commercial terms can only be changed on a draft plan version");
+      await writePlatformAudit(tx, context, "catalog.plan_version.commercial_terms.set", "PlanVersion", rows[0].id, input.reason, {
+        billingCadence: rows[0].billingCadence,
+        currency: rows[0].currency,
+        baseAmountCents: rows[0].baseAmountCents,
+        includedFullUsers: rows[0].includedFullUsers,
+        additionalUserRateCents: rows[0].additionalUserRateCents,
+        storageAllowanceGb: rows[0].storageAllowanceGb,
       });
       return rows[0];
     });
@@ -566,5 +620,23 @@ export class FeatureNotEntitledError extends Error {
   constructor(public readonly featureKey: string) {
     super(`Feature is not entitled: ${featureKey}`);
     this.name = "FeatureNotEntitledError";
+  }
+}
+function validateCommercialTerms(input: {
+  billingCadence: BillingCadence;
+  currency: string;
+  baseAmountCents: number;
+  includedFullUsers: number;
+  additionalUserRateCents?: number | null;
+  storageAllowanceGb?: number | null;
+}): void {
+  if (!/^[A-Z]{3}$/.test(input.currency.trim().toUpperCase())) throw new SubscriptionValidationError("Currency must be a 3-letter ISO code");
+  for (const [label, value] of [
+    ["Base amount", input.baseAmountCents],
+    ["Included full users", input.includedFullUsers],
+    ["Additional user rate", input.additionalUserRateCents ?? 0],
+    ["Storage allowance", input.storageAllowanceGb ?? 0],
+  ] as const) {
+    if (!Number.isInteger(value) || value < 0) throw new SubscriptionValidationError(`${label} must be a non-negative integer`);
   }
 }
