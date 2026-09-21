@@ -45,12 +45,15 @@ export class HelpSupportQueueService {
     requirePlatformAuthorization(context, { permission: "platform.support.request" });
     validateReason(reason);
     await db.$transaction(async (tx) => {
-      const changed = await tx.$executeRaw(Prisma.sql`
+      const rows = await tx.$queryRaw<Array<{ id: string; organizationId: string; submittedByUserId: string; subject: string }>>(Prisma.sql`
         UPDATE "HelpSupportRequest"
         SET "status" = 'ACKNOWLEDGED', "acknowledgedAt" = COALESCE("acknowledgedAt", CURRENT_TIMESTAMP)
         WHERE "id" = ${requestId}::uuid AND "status" = 'OPEN'
+        RETURNING "id","organizationId","submittedByUserId","subject"
       `);
-      if (changed !== 1) throw new HelpSupportQueueConflictError("Only open support requests can be acknowledged");
+      const row = rows[0];
+      if (!row) throw new HelpSupportQueueConflictError("Only open support requests can be acknowledged");
+      await enqueueCustomerStatusNotification(tx, row, "ACKNOWLEDGED");
       await writeAudit(tx, context, "help_support_request.acknowledged", requestId, reason);
     });
   }
@@ -59,16 +62,42 @@ export class HelpSupportQueueService {
     requirePlatformAuthorization(context, { permission: "platform.support.request" });
     validateReason(reason);
     await db.$transaction(async (tx) => {
-      const changed = await tx.$executeRaw(Prisma.sql`
+      const rows = await tx.$queryRaw<Array<{ id: string; organizationId: string; submittedByUserId: string; subject: string }>>(Prisma.sql`
         UPDATE "HelpSupportRequest"
         SET "status" = 'CLOSED', "closedAt" = CURRENT_TIMESTAMP,
             "acknowledgedAt" = COALESCE("acknowledgedAt", CURRENT_TIMESTAMP)
         WHERE "id" = ${requestId}::uuid AND "status" IN ('OPEN', 'ACKNOWLEDGED')
+        RETURNING "id","organizationId","submittedByUserId","subject"
       `);
-      if (changed !== 1) throw new HelpSupportQueueConflictError("Support request is already closed or was not found");
+      const row = rows[0];
+      if (!row) throw new HelpSupportQueueConflictError("Support request is already closed or was not found");
+      await enqueueCustomerStatusNotification(tx, row, "CLOSED");
       await writeAudit(tx, context, "help_support_request.closed", requestId, reason);
     });
   }
+}
+
+async function enqueueCustomerStatusNotification(
+  tx: Prisma.TransactionClient,
+  request: { id: string; organizationId: string; submittedByUserId: string; subject: string },
+  status: "ACKNOWLEDGED" | "CLOSED",
+) {
+  await tx.notificationOutbox.create({
+    data: {
+      organizationId: request.organizationId,
+      recipientUserId: request.submittedByUserId,
+      channel: "IN_APP",
+      eventKey: `help-support-request:${request.id}:status:${status.toLowerCase()}`,
+      templateKey: status === "ACKNOWLEDGED" ? "HELP_SUPPORT_ACKNOWLEDGED" : "HELP_SUPPORT_CLOSED",
+      payload: {
+        supportRequestId: request.id,
+        reference: request.id.slice(0, 8),
+        subject: request.subject,
+        status,
+        helpPath: "/help",
+      },
+    },
+  });
 }
 
 async function writeAudit(tx: Prisma.TransactionClient, context: PlatformAuthorizationContext, action: string, requestId: string, reason: string) {
