@@ -41,9 +41,10 @@ function scopePayload(value: string) {
 }
 
 export function AccessAdministration() {
-  const [data, setData] = useState<AdminData | null>(null), [error, setError] = useState(""), [notice, setNotice] = useState(""), [section, setSection] = useState<AdminSection>("overview");
+  const [data, setData] = useState<AdminData | null>(null), [error, setError] = useState(""), [notice, setNotice] = useState(""), [section, setSection] = useState<AdminSection>("overview"), [platformAccess, setPlatformAccess] = useState(false);
   async function load() { const response = await fetch("/api/admin"); const body = await response.json().catch(() => null); if (response.ok) setData(body.data); else setError(body?.error ?? "Administration could not be loaded."); }
   useEffect(() => { let active = true; fetch("/api/admin").then(async (response) => ({ response, body: await response.json().catch(() => null) })).then(({ response, body }) => { if (!active) return; if (response.ok) setData(body.data); else setError(body?.error ?? "Administration could not be loaded."); }); return () => { active = false; }; }, []);
+  useEffect(() => { let active = true; fetch("/api/platform/me", { cache: "no-store" }).then((response) => { if (active) setPlatformAccess(response.ok); }).catch(() => { if (active) setPlatformAccess(false); }); return () => { active = false; }; }, []);
   async function command(payload: Record<string, unknown>) { setError(""); setNotice(""); const response = await fetch("/api/admin/commands", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }); const body = await response.json().catch(() => null); if (!response.ok) return setError(body?.error ?? "Change could not be completed."); setNotice("The controlled administration change was completed and audited."); await load(); }
   function form(operation: string, fields: (form: FormData) => Record<string, unknown>) { return (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const formData = new FormData(event.currentTarget); command({ operation, ...fields(formData) }); event.currentTarget.reset(); }; }
   if (!data) return <section className="panel documents-panel"><p>{error || "Loading access administration…"}</p></section>;
@@ -75,7 +76,7 @@ export function AccessAdministration() {
       {error && <div className="detail-error" role="alert">{error}</div>}{notice && <div className="detail-notice">{notice}</div>}
       <nav className="section-nav" aria-label="Administration sections">{sections.map((item) => <button type="button" key={item.id} className={section === item.id ? "active" : ""} aria-current={section === item.id ? "page" : undefined} onClick={() => setSection(item.id)}>{item.label}</button>)}</nav>
 
-      {section === "overview" && <div className="admin-overview-grid">{sections.filter((item) => item.id !== "overview").map((item) => <button type="button" className="admin-overview-card" key={item.id} onClick={() => setSection(item.id)}><strong>{item.label}</strong><span>{item.description}</span></button>)}</div>}
+      {section === "overview" && <div className="admin-overview-grid">{sections.filter((item) => item.id !== "overview").map((item) => <button type="button" className="admin-overview-card" key={item.id} onClick={() => setSection(item.id)}><strong>{item.label}</strong><span>{item.description}</span></button>)}{platformAccess ? <a className="admin-overview-card" href="/platform"><strong>Platform Administration</strong><span>Open the separate Trace control plane for Help &amp; User Manual and other platform-governed functions.</span></a> : null}</div>}
 
       {section === "organization" && <div className="admin-section-stack"><div className="section-heading"><h3>Organization</h3><p>Maintain the controlled site and department structure.</p></div><div className="template-layout">
         <form className="template-form" onSubmit={form("CREATE_SITE", (f) => ({ name: String(f.get("name")) }))}><strong>Add site</strong><label>Name<input name="name" required /></label><button className="primary-button">Create site</button></form>
