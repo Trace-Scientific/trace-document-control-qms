@@ -26,7 +26,9 @@
     "salesforce:cdc:worker": "node scripts/run-salesforce-cdc-worker.mjs",
     "test:salesforce-cdc-railway-readiness": "node --test scripts/salesforce-cdc-railway-readiness.node-test.mjs",
     "salesforce:cdc:preflight": "node scripts/check-salesforce-cdc-worker-preflight.mjs",
-    "support:sla:scan": "node scripts/run-support-sla-scan.mjs"
+    "support:sla:scan": "node scripts/run-support-sla-scan.mjs",
+    "platform-admin:bootstrap": "node scripts/bootstrap-platform-admin.mjs",
+    "test:platform-admin-bootstrap": "node --test scripts/platform-admin-bootstrap.node-test.mjs"
   },
   "dependencies": {
     "@prisma/client": "6.12.0",
