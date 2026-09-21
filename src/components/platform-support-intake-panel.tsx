@@ -12,6 +12,7 @@ type Intake = {
   responseDueAt: string | null; closureDueAt: string | null;
   responseSlaState: "NONE" | "ON_TRACK" | "OVERDUE" | "MET";
   closureSlaState: "NONE" | "ON_TRACK" | "OVERDUE" | "MET";
+  linkedSupportCaseId: string | null; linkedSupportCaseNumber: string | null;
 };
 type Owner = { platformIdentityId: string; displayName: string };
 
@@ -74,6 +75,20 @@ export function PlatformSupportIntakePanel() {
     });
   }
 
+  async function createControlledCase(item: Intake) {
+    const reason = window.prompt("Reason controlled tenant support access may be required");
+    if (!reason?.trim()) return;
+    const response = await fetch(`/api/platform/support/intake?id=${encodeURIComponent(item.id)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "CREATE_SUPPORT_CASE", reason }),
+    });
+    const payload = await response.json().catch(() => null) as { data?: { supportCaseId?: string; caseNumber?: string }; error?: string } | null;
+    if (!response.ok) { setError(payload?.error || "Controlled support case could not be created."); return; }
+    setScanNotice(`Controlled support case ${payload?.data?.caseNumber ?? ""} created. Tenant access still requires a separate access request and approval.`);
+    await load();
+  }
+
   async function scanOverdueSlas() {
     setScanBusy(true); setError(null); setScanNotice(null);
     try {
@@ -118,8 +133,11 @@ export function PlatformSupportIntakePanel() {
         <p><strong>SLA:</strong> {formatSla("Response", item.responseSlaState, item.responseDueAt)}<br />{formatSla("Closure", item.closureSlaState, item.closureDueAt)}</p>
         <p><strong>Context:</strong> {item.pageContext ?? "Not provided"} · <strong>Browser:</strong> {item.browserFamily ?? "Not provided"}</p>
         <p><strong>App version:</strong> {item.applicationVersion ?? "Not provided"} · <strong>Correlation:</strong> {item.correlationId ?? "Not provided"}</p>
+        <p><strong>Controlled support case:</strong> {item.linkedSupportCaseNumber ?? "Not created"}</p>
         <div className={styles.toolbar}>
           {item.status !== "CLOSED" ? <button type="button" onClick={() => void assign(item)}>{item.assignedToIdentityId ? "Reassign / SLA" : "Assign / SLA"}</button> : null}
+          {item.status !== "CLOSED" && !item.linkedSupportCaseId ? <button type="button" onClick={() => void createControlledCase(item)}>Create controlled support case</button> : null}
+          {item.linkedSupportCaseId ? <a className={styles.cardLink} href="/support-access">Open controlled support access</a> : null}
           {item.status === "OPEN" ? <button type="button" onClick={() => void act(item, "ACKNOWLEDGE")}>Acknowledge</button> : null}
           {item.status !== "CLOSED" ? <button type="button" onClick={() => void act(item, "CLOSE")}>Close</button> : null}
         </div>
