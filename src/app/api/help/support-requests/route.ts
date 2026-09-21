@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authenticateRequest, AuthenticationRequiredError } from "@/lib/security/authenticated-request";
-import { createHelpSupportRequest, HELP_SUPPORT_CATEGORIES, HELP_SUPPORT_PRIORITIES, HelpSupportRequestValidationError } from "@/lib/platform/help-support-request";
+import { createHelpSupportRequest, HELP_SUPPORT_CATEGORIES, HELP_SUPPORT_PRIORITIES, HelpSupportRequestValidationError, listOwnHelpSupportRequests } from "@/lib/platform/help-support-request";
 
 const schema = z.object({
   subject: z.string().min(3).max(200),
@@ -13,6 +13,16 @@ const schema = z.object({
   browserFamily: z.string().max(120).nullish(),
   correlationId: z.string().max(160).nullish(),
 });
+
+export async function GET(request: NextRequest) {
+  try {
+    const context = await authenticateRequest(request);
+    return NextResponse.json({ data: await listOwnHelpSupportRequests(context) }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    if (error instanceof AuthenticationRequiredError) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    return NextResponse.json({ error: "Support request history could not be loaded" }, { status: 500 });
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
