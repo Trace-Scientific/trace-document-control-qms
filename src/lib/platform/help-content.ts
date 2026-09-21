@@ -380,8 +380,8 @@ export class HelpContentService {
     requirePlatformAuthorization(context, { permission: "platform.help.manage" });
     requireReason(input.reason);
     return db.$transaction(async (tx) => {
-      const releases = await tx.$queryRaw<{ id: string; status: string; lockVersion: number; sectionCount: bigint }[]>(Prisma.sql`
-        SELECT umr."id", umr."status"::text AS "status", umr."lockVersion", COUNT(umrs."sectionRevisionId") AS "sectionCount"
+      const releases = await tx.$queryRaw<{ id: string; status: string; lockVersion: number; sectionCount: bigint; effectiveAt: Date | null }[]>(Prisma.sql`
+        SELECT umr."id", umr."status"::text AS "status", umr."lockVersion", umr."effectiveAt", COUNT(umrs."sectionRevisionId") AS "sectionCount"
         FROM "UserManualRelease" umr LEFT JOIN "UserManualReleaseSection" umrs ON umrs."releaseId" = umr."id"
         WHERE umr."id" = ${input.releaseId}::uuid GROUP BY umr."id" FOR UPDATE OF umr
       `);
@@ -389,6 +389,7 @@ export class HelpContentService {
       if (releases[0].status !== "DRAFT") throw new HelpContentValidationError("Only draft manual releases can be published");
       if (releases[0].lockVersion !== input.expectedLockVersion) throw new HelpContentConflictError();
       if (Number(releases[0].sectionCount) < 1) throw new HelpContentValidationError("A manual release must contain at least one section");
+      if (!releases[0].effectiveAt) throw new HelpContentValidationError("Set an effective date before publishing a manual release");
       const updated = await tx.$queryRaw<{ id: string; status: string; lockVersion: number }[]>(Prisma.sql`
         UPDATE "UserManualRelease"
         SET "status" = 'PUBLISHED', "publishedAt" = CURRENT_TIMESTAMP, "lockVersion" = "lockVersion" + 1, "updatedAt" = CURRENT_TIMESTAMP
@@ -430,6 +431,8 @@ export class HelpContentService {
       SELECT um."code" AS "manualCode", um."name" AS "manualName", umr."version", umr."effectiveAt", umr."releaseApplicability", umr."releaseNotes", umr."publishedAt"
       FROM "UserManualRelease" umr INNER JOIN "UserManual" um ON um."id" = umr."manualId"
       WHERE umr."status" = 'PUBLISHED'
+        AND umr."effectiveAt" IS NOT NULL
+        AND umr."effectiveAt" <= CURRENT_TIMESTAMP
       ORDER BY um."name", umr."effectiveAt" DESC
     `);
   }
@@ -438,7 +441,12 @@ export class HelpContentService {
     const releases = await db.$queryRaw<{ id: string; manualCode: string; manualName: string; version: string; effectiveAt: Date; releaseApplicability: unknown; releaseNotes: string; publishedAt: Date }[]>(Prisma.sql`
       SELECT umr."id", um."code" AS "manualCode", um."name" AS "manualName", umr."version", umr."effectiveAt", umr."releaseApplicability", umr."releaseNotes", umr."publishedAt"
       FROM "UserManualRelease" umr INNER JOIN "UserManual" um ON um."id" = umr."manualId"
-      WHERE um."code" = ${manualCode} AND umr."version" = ${version} AND umr."status" = 'PUBLISHED' LIMIT 1
+      WHERE um."code" = ${manualCode}
+        AND umr."version" = ${version}
+        AND umr."status" = 'PUBLISHED'
+        AND umr."effectiveAt" IS NOT NULL
+        AND umr."effectiveAt" <= CURRENT_TIMESTAMP
+      LIMIT 1
     `);
     if (releases.length !== 1) throw new HelpContentNotFoundError("Published manual release not found");
     const sections = await db.$queryRaw(Prisma.sql`
