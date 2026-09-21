@@ -240,7 +240,7 @@ export class HelpContentService {
 
   async getManualAuthoring(context: PlatformAuthorizationContext, manualId: string) {
     requirePlatformAuthorization(context, { permission: "platform.help.manage" });
-    const manuals = await db.$queryRaw(Prisma.sql`
+    const manuals = await db.$queryRaw<{ id: string; code: string; name: string; description: string | null }[]>(Prisma.sql`
       SELECT "id","code","name","description" FROM "UserManual" WHERE "id"=${manualId}::uuid
     `);
     if (manuals.length !== 1) throw new HelpContentNotFoundError("User manual not found");
