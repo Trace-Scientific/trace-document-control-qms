@@ -809,6 +809,12 @@ export function DocumentControlDashboard({
           ))}
         </nav>
         <div className="sidebar-foot">
+          <a
+            className="sidebar-help-link"
+            href={`/help?context=${encodeURIComponent(view.toLowerCase().replaceAll(" ", "-"))}`}
+          >
+            Help Center
+          </a>
           <div className="compliance">
             <Icon name="shield" />
             <div>

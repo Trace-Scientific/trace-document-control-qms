@@ -8,6 +8,18 @@ type ArticleDetail = ArticleSummary & { body: string; changeSummary: string };
 type ManualSummary = { manualCode: string; manualName: string; version: string; effectiveAt: string; releaseNotes: string; publishedAt: string; releaseApplicability: unknown };
 type ManualDetail = ManualSummary & { sections: { sectionCode: string; title: string; revisionNumber: number; body: string; changeSummary: string; displayOrder: number }[] };
 
+const contextualSearch: Record<string, { label: string; query: string }> = {
+  documents: { label: "Documents", query: "controlled document" },
+  "review-queue": { label: "Review queue", query: "review approval" },
+  administration: { label: "Administration", query: "administration" },
+  records: { label: "Records", query: "records" },
+  personnel: { label: "Personnel", query: "personnel" },
+  training: { label: "Training & competency", query: "training competency" },
+  quality: { label: "Quality", query: "quality event CAPA" },
+  laboratory: { label: "Laboratory operations", query: "laboratory equipment validation calibration" },
+  reporting: { label: "Reporting & analytics", query: "reporting export" },
+};
+
 export function HelpCenter() {
   const [tab, setTab] = useState<"articles" | "manuals">("articles");
   const [query, setQuery] = useState("");
@@ -16,6 +28,7 @@ export function HelpCenter() {
   const [article, setArticle] = useState<ArticleDetail | null>(null);
   const [manual, setManual] = useState<ManualDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [contextLabel, setContextLabel] = useState<string | null>(null);
 
   async function loadArticles(search = "") {
     setError(null);
@@ -26,7 +39,12 @@ export function HelpCenter() {
   }
 
   useEffect(() => {
-    void loadArticles().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Help articles could not be loaded."));
+    const params = new URLSearchParams(window.location.search);
+    const context = contextualSearch[params.get("context") ?? ""];
+    const initialQuery = params.get("query")?.trim() || context?.query || "";
+    if (context) setContextLabel(context.label);
+    if (initialQuery) setQuery(initialQuery);
+    void loadArticles(initialQuery).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Help articles could not be loaded."));
     void fetch("/api/help/manuals", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error("User manual releases could not be loaded.");
@@ -59,6 +77,7 @@ export function HelpCenter() {
           <p className={styles.eyebrow}>TRACE QMS HELP</p>
           <h1>Help Center</h1>
           <p className={styles.muted}>Search published operational guidance or open a controlled user-manual release.</p>
+          {contextLabel ? <p className={styles.context}>Showing guidance for: <strong>{contextLabel}</strong></p> : null}
         </div>
         <a className={styles.back} href="/">Return to QMS</a>
       </header>
@@ -76,6 +95,11 @@ export function HelpCenter() {
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search published help articles" aria-label="Search help articles" />
             <button type="submit">Search</button>
           </form>
+          {articles.length === 0 ? (
+            <div className={styles.notice}>
+              No published help article matched this context. Clear or broaden the search to see other published guidance.
+            </div>
+          ) : null}
           <div className={styles.grid}>
             {articles.map((item) => (
               <article className={styles.card} key={item.slug}>
