@@ -7,6 +7,7 @@ type ArticleSummary = { slug: string; title: string; summary: string; categoryNa
 type ArticleDetail = ArticleSummary & { body: string; changeSummary: string };
 type ManualSummary = { manualCode: string; manualName: string; version: string; effectiveAt: string; releaseNotes: string; publishedAt: string; releaseApplicability: unknown };
 type ManualDetail = ManualSummary & { sections: { sectionCode: string; title: string; revisionNumber: number; body: string; changeSummary: string; displayOrder: number }[] };
+type SupportHistoryItem = { id: string; subject: string; category: string; priority: string; status: "OPEN" | "ACKNOWLEDGED" | "CLOSED"; submittedAt: string; acknowledgedAt: string | null; closedAt: string | null };
 
 const contextualSearch: Record<string, { label: string; query: string }> = {
   documents: { label: "Documents", query: "controlled document" },
@@ -21,7 +22,7 @@ const contextualSearch: Record<string, { label: string; query: string }> = {
 };
 
 export function HelpCenter() {
-  const [tab, setTab] = useState<"articles" | "manuals" | "support">("articles");
+  const [tab, setTab] = useState<"articles" | "manuals" | "support" | "history">("articles");
   const [query, setQuery] = useState("");
   const [articles, setArticles] = useState<ArticleSummary[]>([]);
   const [manuals, setManuals] = useState<ManualSummary[]>([]);
@@ -32,6 +33,7 @@ export function HelpCenter() {
   const [pageContext, setPageContext] = useState("help");
   const [supportNotice, setSupportNotice] = useState<string | null>(null);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
+  const [supportHistory, setSupportHistory] = useState<SupportHistoryItem[] | null>(null);
 
   async function loadArticles(search = "") {
     setError(null);
@@ -58,6 +60,14 @@ export function HelpCenter() {
       .then((payload) => setManuals(payload.data))
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "User manual releases could not be loaded."));
   }, []);
+
+  async function loadSupportHistory() {
+    setError(null);
+    const response = await fetch("/api/help/support-requests", { cache: "no-store" });
+    if (!response.ok) throw new Error("Support request history could not be loaded.");
+    const payload = await response.json() as { data: SupportHistoryItem[] };
+    setSupportHistory(payload.data);
+  }
 
   async function submitSupportRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -87,6 +97,7 @@ export function HelpCenter() {
     }
     event.currentTarget.reset();
     setSupportNotice(`Support request ${String(body?.data?.id ?? "").slice(0, 8)} submitted successfully.`);
+    setSupportHistory(null);
   }
 
   async function openArticle(slug: string) {
@@ -121,6 +132,7 @@ export function HelpCenter() {
         <button className={`${styles.tab} ${tab === "articles" ? styles.active : ""}`} type="button" onClick={() => { setTab("articles"); setManual(null); }}>Help articles</button>
         <button className={`${styles.tab} ${tab === "manuals" ? styles.active : ""}`} type="button" onClick={() => { setTab("manuals"); setArticle(null); }}>Controlled user manual</button>
         <button className={`${styles.tab} ${tab === "support" ? styles.active : ""}`} type="button" onClick={() => { setTab("support"); setArticle(null); setManual(null); }}>Contact support</button>
+        <button className={`${styles.tab} ${tab === "history" ? styles.active : ""}`} type="button" onClick={() => { setTab("history"); setArticle(null); setManual(null); if (supportHistory === null) void loadSupportHistory().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Support request history could not be loaded.")); }}>My support requests</button>
       </div>
 
       {error ? <div className={styles.notice} role="alert">{error}</div> : null}
@@ -192,6 +204,27 @@ export function HelpCenter() {
             <p className={styles.meta}>Safe diagnostic context included automatically: current QMS workspace and browser family only.</p>
             <button type="submit" disabled={supportSubmitting}>{supportSubmitting ? "Submitting…" : "Submit support request"}</button>
           </form>
+        </section>
+      ) : null}
+
+      {tab === "history" ? (
+        <section className={styles.detail}>
+          <p className={styles.eyebrow}>SUPPORT HISTORY</p>
+          <h2>My support requests</h2>
+          <p className={styles.muted}>Only requests submitted by your account are shown. Internal Trace notes, platform audit details, and controlled support-access information are never displayed here.</p>
+          {supportHistory === null ? <div className={styles.notice}>Loading your support requests…</div> : null}
+          {supportHistory?.length === 0 ? <div className={styles.notice}>You have not submitted any support requests.</div> : null}
+          <div className={styles.historyList}>
+            {supportHistory?.map((item) => (
+              <article className={styles.historyItem} key={item.id}>
+                <div className={styles.historyHeader}><div><p className={styles.eyebrow}>{item.category} · {item.priority}</p><h3>{item.subject}</h3></div><span className={styles.statusBadge}>{item.status === "ACKNOWLEDGED" ? "Acknowledged" : item.status === "CLOSED" ? "Closed" : "Open"}</span></div>
+                <p className={styles.meta}>Submitted {new Date(item.submittedAt).toLocaleString()}</p>
+                {item.acknowledgedAt ? <p className={styles.meta}>Acknowledged {new Date(item.acknowledgedAt).toLocaleString()}</p> : null}
+                {item.closedAt ? <p className={styles.meta}>Closed {new Date(item.closedAt).toLocaleString()}</p> : null}
+                <p className={styles.meta}>Request reference: {item.id.slice(0, 8)}</p>
+              </article>
+            ))}
+          </div>
         </section>
       ) : null}
 
