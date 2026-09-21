@@ -223,6 +223,50 @@ export class HelpContentService {
     });
   }
 
+  async listManualAuthoring(context: PlatformAuthorizationContext) {
+    requirePlatformAuthorization(context, { permission: "platform.help.manage" });
+    return db.$queryRaw(Prisma.sql`
+      SELECT um."id", um."code", um."name", um."description",
+             COUNT(DISTINCT us."id")::int AS "sectionCount",
+             COUNT(DISTINCT umr."id")::int AS "releaseCount",
+             MAX(umr."publishedAt") AS "latestPublishedAt"
+      FROM "UserManual" um
+      LEFT JOIN "UserManualSection" us ON us."manualId" = um."id"
+      LEFT JOIN "UserManualRelease" umr ON umr."manualId" = um."id"
+      GROUP BY um."id"
+      ORDER BY um."code"
+    `);
+  }
+
+  async getManualAuthoring(context: PlatformAuthorizationContext, manualId: string) {
+    requirePlatformAuthorization(context, { permission: "platform.help.manage" });
+    const manuals = await db.$queryRaw(Prisma.sql`
+      SELECT "id","code","name","description" FROM "UserManual" WHERE "id"=${manualId}::uuid
+    `);
+    if (manuals.length !== 1) throw new HelpContentNotFoundError("User manual not found");
+    const sections = await db.$queryRaw(Prisma.sql`
+      SELECT us."id",us."sectionCode",us."title",us."displayOrder",
+             MAX(usr."revisionNumber")::int AS "latestRevisionNumber",
+             COUNT(usr."id")::int AS "revisionCount"
+      FROM "UserManualSection" us
+      LEFT JOIN "UserManualSectionRevision" usr ON usr."sectionId"=us."id"
+      WHERE us."manualId"=${manualId}::uuid
+      GROUP BY us."id"
+      ORDER BY us."displayOrder",us."sectionCode"
+    `);
+    const releases = await db.$queryRaw(Prisma.sql`
+      SELECT umr."id",umr."version",umr."status"::text AS "status",umr."effectiveAt",
+             umr."releaseNotes",umr."lockVersion",umr."publishedAt",umr."archivedAt",
+             COUNT(umrs."sectionRevisionId")::int AS "sectionCount"
+      FROM "UserManualRelease" umr
+      LEFT JOIN "UserManualReleaseSection" umrs ON umrs."releaseId"=umr."id"
+      WHERE umr."manualId"=${manualId}::uuid
+      GROUP BY umr."id"
+      ORDER BY umr."effectiveAt" DESC,umr."createdAt" DESC
+    `);
+    return { manual: manuals[0], sections, releases };
+  }
+
   async createManual(context: PlatformAuthorizationContext, input: { code: string; name: string; description?: string | null; reason: string }) {
     requirePlatformAuthorization(context, { permission: "platform.help.manage" });
     requireReason(input.reason);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { PlatformControlledUserManualPanel } from "./platform-controlled-user-manual-panel";
 import type { PlatformPermissionKey } from "@/lib/platform/permissions";
 import { PlatformNotificationsPanel, PlatformReportingPanel } from "./platform-notifications-reporting-panel";
 import { PlatformSystemHealthPanel } from "./platform-system-health-panel";
@@ -79,7 +80,7 @@ function SectionContent({ section, permissions, customers, customerError }: { se
   if (section.id === "subscriptions") return <div className={styles.grid}><article className={styles.card}><h3>Catalog foundation</h3><p>Products, features, plans, plan versions, and immutable activated feature matrices are available through the governed platform APIs.</p></article><article className={styles.card}><h3>Subscription foundation</h3><p>Customer subscriptions and effective-dated entitlement overrides are available. Tenant RBAC remains a separate authorization layer.</p></article></div>;
   if (section.id === "sales") return <div className={styles.grid}><article className={styles.card}><h3>Sales representatives</h3><p>Trace-side sales representative profiles are linked to active platform identities and governed by separate sales permissions.</p></article><article className={styles.card}><h3>Customer attribution</h3><p>Effective-dated sales assignments preserve which representative owned a customer relationship at the time of a commission event.</p></article></div>;
   if (section.id === "commissions") return <div className={styles.grid}><article className={styles.card}><h3>Versioned commission rules</h3><p>Draft plan versions and rules become immutable historical configuration when activated.</p></article><article className={styles.card}><h3>Governed lifecycle</h3><p>Accruals progress PENDING → EARNED → APPROVED → PAID, with separate append-only adjustments, reversals, and payment evidence.</p></article></div>;
-  if (section.id === "help") return <div className={styles.grid}><article className={styles.card}><h3>Help Center</h3><p>Published operational articles are searchable by authenticated QMS users. Draft and archived content remain unavailable from the user-facing read API.</p><a className={styles.cardLink} href="/help">Open Help Center</a></article><article className={styles.card}><h3>Controlled user manual</h3><p>Manual section revisions are append-only and published releases freeze version, effective date, applicability, release notes, and section composition. Authoring and publishing require platform.help.manage.</p></article></div>;
+  if (section.id === "help") return <><div className={styles.grid}><article className={styles.card}><h3>Help Center</h3><p>Published operational articles are searchable by authenticated QMS users. Draft and archived content remain unavailable from the user-facing read API.</p><a className={styles.cardLink} href="/help">Open Help Center</a></article></div><PlatformControlledUserManualPanel /></>;
   if (section.id === "notifications") return <PlatformNotificationsPanel canRead={permissions.includes("platform.notification.read")} canManage={permissions.includes("platform.notification.manage")} />;
   if (section.id === "reporting") return <PlatformReportingPanel />;
   if (section.id === "health") return <PlatformSystemHealthPanel />;
