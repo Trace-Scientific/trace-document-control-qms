@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import styles from "./platform-administration-shell.module.css";
+import { PlatformCatalogAdministrationPanel } from "./platform-catalog-administration-panel";
 
 type Customer={id:string;accountCode:string;displayName:string;legalName:string;status:string;organizationId:string|null};
 type Plan={planVersionId:string;planId:string;planCode:string;planName:string;version:number;billingCadence:"MONTHLY"|"ANNUAL"|"CUSTOM"|null;currency:string|null;baseAmountCents:number|null;includedFullUsers:number|null;additionalUserRateCents:number|null;storageAllowanceGb:number|null};
@@ -73,6 +74,7 @@ export function PlatformSubscriptionsPanel({customers,canManage}:{customers:Cust
   }
 
   return <div className={styles.grid}>
+    <PlatformCatalogAdministrationPanel canManage={canManage} />
     <article className={styles.card}>
       <h3>Active plan versions</h3>
       <p>Pricing and allowances come from immutable activated plan versions. Existing subscriptions remain pinned to their contracted version.</p>
