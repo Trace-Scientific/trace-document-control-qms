@@ -11,7 +11,7 @@ export interface PlatformSystemHealthSnapshot {
   application: { readiness: HealthState; releaseIdentity: string | null; environmentClass: "DEVELOPMENT_PREVIEW" | "PROTECTED_VALIDATION" | "PRODUCTION" | "LOCAL_OR_UNKNOWN" };
   database: { connectivity: HealthState; latestMigration: string | null; latestMigrationFinishedAt: string | null; failedMigrationCount: number };
   backgroundJobs: { notificationDelivery: HealthState; pending: number; retry: number; processing: number; deadLetter: number; oldestAvailableAt: string | null; staleProcessing: number };
-  scheduledTasks: { status: HealthState; detail: string };
+  scheduledTasks: { status: HealthState; detail: string; supportSla: { status: HealthState; detail: string; lastSucceededAt: string | null; lastFailedAt: string | null; consecutiveFailures: number } };
   integrations: { status: HealthState; detail: string };
   salesforceCdc: {
     status: HealthState;
@@ -88,6 +88,7 @@ export class PlatformSystemHealthService {
     let notification: NotificationHealthRow = { pending: BigInt(0), retry: BigInt(0), processing: BigInt(0), deadLetter: BigInt(0), staleProcessing: BigInt(0), oldestAvailableAt: null };
     let integration: IntegrationHealthRow = { activeConnections: BigInt(0), suspendedConnections: BigInt(0), retryDeliveries: BigInt(0), deadLetterDeliveries: BigInt(0), reconciliationRequired: BigInt(0), staleProcessing: BigInt(0), recentTwilioDeliveryFailures: BigInt(0), twilioStatusPollErrors: BigInt(0) };
     let scheduler: SchedulerHealthRow | null = null;
+    let supportSlaScheduler: SchedulerHealthRow | null = null;
     let salesforceCdc: SalesforceCdcHealthRow = {
       disabled: BigInt(0),
       ready: BigInt(0),
@@ -130,6 +131,10 @@ export class PlatformSystemHealthService {
         SELECT "lastSucceededAt","lastFailedAt","consecutiveFailures","leaseUntil"
         FROM "PlatformScheduledOperationState" WHERE "operationKey"='twilio.delivery-status.poll'
       `))[0] ?? null;
+      supportSlaScheduler = (await db.$queryRaw<SchedulerHealthRow[]>(Prisma.sql`
+        SELECT "lastSucceededAt","lastFailedAt","consecutiveFailures","leaseUntil"
+        FROM "PlatformScheduledOperationState" WHERE "operationKey"='support.sla.overdue.scan'
+      `))[0] ?? null;
       salesforceCdc = (await db.$queryRaw<SalesforceCdcHealthRow[]>(Prisma.sql`
         SELECT
           COUNT(*) FILTER (WHERE "status"='DISABLED')::bigint AS "disabled",
@@ -155,9 +160,17 @@ export class PlatformSystemHealthService {
     const notificationState: HealthState = databaseConnectivity === "UNAVAILABLE" ? "UNAVAILABLE" : Number(notification.deadLetter) > 0 || Number(notification.staleProcessing) > 0 ? "DEGRADED" : "HEALTHY";
     const migrationState: HealthState = databaseConnectivity === "UNAVAILABLE" ? "UNAVAILABLE" : failedMigrationCount > 0 ? "DEGRADED" : "HEALTHY";
     const schedulerConfigured = process.env.PLATFORM_SCHEDULER_CONFIGURED === "true";
+    const supportSlaSchedulerConfigured = process.env.SUPPORT_SLA_SCHEDULER_CONFIGURED === "true";
     const schedulerOverdue = schedulerConfigured && (!scheduler?.lastSucceededAt || Date.now() - scheduler.lastSucceededAt.getTime() > 30 * 60 * 1000);
     const schedulerFailed = schedulerConfigured && (scheduler?.consecutiveFailures ?? 0) > 0;
     const scheduledStatus: HealthState = databaseConnectivity === "UNAVAILABLE" ? "UNAVAILABLE" : !schedulerConfigured ? "NOT_CONFIGURED" : schedulerOverdue || schedulerFailed ? "DEGRADED" : "HEALTHY";
+    const supportSlaSchedulerOverdue = supportSlaSchedulerConfigured && (!supportSlaScheduler?.lastSucceededAt || Date.now() - supportSlaScheduler.lastSucceededAt.getTime() > 30 * 60 * 1000);
+    const supportSlaSchedulerFailed = supportSlaSchedulerConfigured && (supportSlaScheduler?.consecutiveFailures ?? 0) > 0;
+    const supportSlaSchedulerStatus: HealthState =
+      databaseConnectivity === "UNAVAILABLE" ? "UNAVAILABLE"
+      : !supportSlaSchedulerConfigured ? "NOT_CONFIGURED"
+      : supportSlaSchedulerOverdue || supportSlaSchedulerFailed ? "DEGRADED"
+      : "HEALTHY";
     const integrationStatus: HealthState = databaseConnectivity === "UNAVAILABLE" ? "UNAVAILABLE" : Number(integration.activeConnections) === 0 && Number(integration.suspendedConnections) === 0 ? "NOT_CONFIGURED" : Number(integration.deadLetterDeliveries) > 0 || Number(integration.reconciliationRequired) > 0 || Number(integration.staleProcessing) > 0 || Number(integration.recentTwilioDeliveryFailures) > 0 || Number(integration.twilioStatusPollErrors) > 0 ? "DEGRADED" : "HEALTHY";
     const salesforceCdcSubscriptionCount =
       Number(salesforceCdc.disabled) +
@@ -176,19 +189,28 @@ export class PlatformSystemHealthService {
 
     return {
       checkedAt,
-      overall: deriveOverall([databaseConnectivity, migrationState, notificationState, scheduledStatus, integrationStatus, salesforceCdcStatus]),
+      overall: deriveOverall([databaseConnectivity, migrationState, notificationState, scheduledStatus, supportSlaSchedulerStatus, integrationStatus, salesforceCdcStatus]),
       application: { readiness: databaseConnectivity === "UNAVAILABLE" ? "DEGRADED" : "HEALTHY", releaseIdentity: releaseIdentity(), environmentClass: environmentClass() },
       database: { connectivity: databaseConnectivity, latestMigration: latestMigration?.migration_name ?? null, latestMigrationFinishedAt: latestMigration?.finished_at?.toISOString() ?? null, failedMigrationCount },
       backgroundJobs: { notificationDelivery: notificationState, pending: Number(notification.pending), retry: Number(notification.retry), processing: Number(notification.processing), deadLetter: Number(notification.deadLetter), oldestAvailableAt: notification.oldestAvailableAt?.toISOString() ?? null, staleProcessing: Number(notification.staleProcessing) },
       scheduledTasks: {
-        status: scheduledStatus,
-        detail: !schedulerConfigured
-          ? "No platform scheduler is declared in this release."
-          : schedulerOverdue
-            ? "Twilio delivery-status scheduler has not recorded a successful run within 30 minutes."
-            : schedulerFailed
-              ? `Twilio delivery-status scheduler has ${scheduler?.consecutiveFailures ?? 0} consecutive failure(s).`
-              : "Twilio delivery-status scheduler heartbeat is current.",
+        status: deriveOverall([scheduledStatus, supportSlaSchedulerStatus]),
+        detail: !schedulerConfigured && !supportSlaSchedulerConfigured
+          ? "No recurring platform scheduler is declared in this release."
+          : "Recurring scheduler health is reported per operation.",
+        supportSla: {
+          status: supportSlaSchedulerStatus,
+          detail: !supportSlaSchedulerConfigured
+            ? "Support SLA scheduler is not declared as configured."
+            : supportSlaSchedulerOverdue
+              ? "Support SLA scheduler has not recorded a successful run within 30 minutes."
+              : supportSlaSchedulerFailed
+                ? `Support SLA scheduler has ${supportSlaScheduler?.consecutiveFailures ?? 0} consecutive failure(s).`
+                : "Support SLA scheduler heartbeat is current.",
+          lastSucceededAt: supportSlaScheduler?.lastSucceededAt?.toISOString() ?? null,
+          lastFailedAt: supportSlaScheduler?.lastFailedAt?.toISOString() ?? null,
+          consecutiveFailures: supportSlaScheduler?.consecutiveFailures ?? 0,
+        },
       },
       integrations: {
         status: integrationStatus,

@@ -11,7 +11,7 @@ type Snapshot = {
   application: { readiness: HealthState; releaseIdentity: string | null; environmentClass: string };
   database: { connectivity: HealthState; latestMigration: string | null; latestMigrationFinishedAt: string | null; failedMigrationCount: number };
   backgroundJobs: { notificationDelivery: HealthState; pending: number; retry: number; processing: number; deadLetter: number; oldestAvailableAt: string | null; staleProcessing: number };
-  scheduledTasks: { status: HealthState; detail: string };
+  scheduledTasks: { status: HealthState; detail: string; supportSla: { status: HealthState; detail: string; lastSucceededAt: string | null; lastFailedAt: string | null; consecutiveFailures: number } };
   integrations: { status: HealthState; detail: string };
   salesforceCdc: {
     status: HealthState;
@@ -90,6 +90,9 @@ export function PlatformSystemHealthPanel() {
           <h3>Scheduled tasks</h3>
           <p><State value={data.scheduledTasks.status} /></p>
           <p>{data.scheduledTasks.detail}</p>
+          <p>Support SLA scheduler: <State value={data.scheduledTasks.supportSla.status} /></p>
+          <p>{data.scheduledTasks.supportSla.detail}</p>
+          <p>Last success: {timestamp(data.scheduledTasks.supportSla.lastSucceededAt)} · Last failure: {timestamp(data.scheduledTasks.supportSla.lastFailedAt)}</p>
         </article>
         <article className={styles.card}>
           <h3>Integrations</h3>
