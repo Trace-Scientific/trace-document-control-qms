@@ -8,6 +8,7 @@ export const HELP_SUPPORT_PRIORITIES = ["LOW","NORMAL","HIGH"] as const;
 export type HelpSupportPriority = (typeof HELP_SUPPORT_PRIORITIES)[number];
 
 export type HelpSupportRequestRecord = { id: string; status: "OPEN" | "ACKNOWLEDGED" | "CLOSED"; submittedAt: Date };
+export type HelpSupportRequestHistoryRecord = HelpSupportRequestRecord & { subject: string; category: HelpSupportCategory; priority: HelpSupportPriority; acknowledgedAt: Date | null; closedAt: Date | null };
 
 const SAFE_PAGE_CONTEXTS = new Set(["documents","review-queue","administration","records","personnel","training","quality","laboratory","reporting","help"]);
 
@@ -24,6 +25,16 @@ export function sanitizeHelpDiagnosticContext(input: { applicationVersion?: stri
     browserFamily: boundedText(input.browserFamily, 120),
     correlationId: boundedText(input.correlationId, 160),
   };
+}
+
+export async function listOwnHelpSupportRequests(context: AuthorizationContext): Promise<HelpSupportRequestHistoryRecord[]> {
+  return db.$queryRaw<HelpSupportRequestHistoryRecord[]>(Prisma.sql`
+    SELECT "id","subject","category","priority","status"::text AS "status","submittedAt","acknowledgedAt","closedAt"
+    FROM "HelpSupportRequest"
+    WHERE "organizationId"=${context.organizationId}::uuid AND "submittedByUserId"=${context.userId}::uuid
+    ORDER BY "submittedAt" DESC, "id"
+    LIMIT 100
+  `);
 }
 
 export async function createHelpSupportRequest(
