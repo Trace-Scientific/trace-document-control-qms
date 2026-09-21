@@ -32,6 +32,7 @@ export class ControlledUserManualAssemblyService {
     if (!reason.trim()) throw new HelpContentValidationError("A reason is required");
 
     return db.$transaction(async (tx) => {
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('UM-QMS-001-reviewed-draft-assembly'))`);
       const existingManuals = await tx.$queryRaw<Array<{ id: string; name: string }>>(Prisma.sql`
         SELECT "id","name" FROM "UserManual" WHERE "code"=${CONTROLLED_USER_MANUAL.code} FOR UPDATE
       `);
