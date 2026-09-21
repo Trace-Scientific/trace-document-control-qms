@@ -293,6 +293,44 @@ export class SubscriptionCatalogService {
     });
   }
 
+  async workspace(context: PlatformAuthorizationContext) {
+    requirePlatformAuthorization(context, { permission: "platform.subscription.read" });
+    const [plans, subscriptions, overrides] = await Promise.all([
+      db.$queryRaw<Array<{
+        planVersionId: string; planId: string; planCode: string; planName: string; version: number;
+        billingCadence: BillingCadence | null; currency: string | null; baseAmountCents: number | null;
+        includedFullUsers: number | null; additionalUserRateCents: number | null; storageAllowanceGb: number | null;
+      }>>(Prisma.sql`
+        SELECT pv."id" AS "planVersionId",p."id" AS "planId",p."code" AS "planCode",p."name" AS "planName",
+          pv."version",pv."billingCadence"::text AS "billingCadence",pv."currency",pv."baseAmountCents",
+          pv."includedFullUsers",pv."additionalUserRateCents",pv."storageAllowanceGb"
+        FROM "PlanVersion" pv INNER JOIN "Plan" p ON p."id"=pv."planId"
+        WHERE pv."status"='ACTIVE' AND p."status"='ACTIVE'
+        ORDER BY p."name",pv."version" DESC
+      `),
+      db.$queryRaw<Array<SubscriptionRecord & { customerCode:string; customerName:string; planCode:string; planName:string; planVersion:number }>>(Prisma.sql`
+        SELECT s."id",s."customerAccountId",s."planVersionId",s."status"::text AS "status",s."startsAt",s."endsAt",
+          s."lockVersion",s."createdAt",s."updatedAt",ca."accountCode" AS "customerCode",ca."displayName" AS "customerName",
+          p."code" AS "planCode",p."name" AS "planName",pv."version" AS "planVersion"
+        FROM "Subscription" s
+        INNER JOIN "CustomerAccount" ca ON ca."id"=s."customerAccountId"
+        INNER JOIN "PlanVersion" pv ON pv."id"=s."planVersionId"
+        INNER JOIN "Plan" p ON p."id"=pv."planId"
+        ORDER BY ca."displayName",s."createdAt" DESC
+      `),
+      db.$queryRaw<Array<{id:string;customerAccountId:string;customerCode:string;customerName:string;featureKey:string;featureName:string;decision:EntitlementOverrideDecision;effectiveFrom:Date;effectiveTo:Date|null;reason:string;createdAt:Date}>>(Prisma.sql`
+        SELECT eo."id",eo."customerAccountId",ca."accountCode" AS "customerCode",ca."displayName" AS "customerName",
+          f."key" AS "featureKey",f."name" AS "featureName",eo."decision"::text AS "decision",eo."effectiveFrom",eo."effectiveTo",eo."reason",eo."createdAt"
+        FROM "EntitlementOverride" eo
+        INNER JOIN "CustomerAccount" ca ON ca."id"=eo."customerAccountId"
+        INNER JOIN "Feature" f ON f."id"=eo."featureId"
+        WHERE eo."revokedAt" IS NULL
+        ORDER BY ca."displayName",f."key",eo."createdAt" DESC
+      `)
+    ]);
+    return { plans, subscriptions, overrides };
+  }
+
   async createSubscription(
     context: PlatformAuthorizationContext,
     input: { customerAccountId: string; planVersionId: string; startsAt: Date; endsAt?: Date | null; reason: string },
