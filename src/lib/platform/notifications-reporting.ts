@@ -41,6 +41,10 @@ export interface PlatformOperationalReport {
     requestsByStatus: Record<string, number>;
     sessionsByStatus: Record<string, number>;
     activeUnexpiredSessions: number;
+    customerHelpRequestsByStatus: Record<string, number>;
+    overdueResponseSla: number;
+    overdueClosureSla: number;
+    unassignedActiveRequests: number;
   };
   sales: { representativesByStatus: Record<string, number>; currentAssignments: number };
   commissions: { accrualsByStatus: Record<string, number>; unpaidApprovedAmount: string };
@@ -391,6 +395,23 @@ export class PlatformNotificationReportingService {
       const activeSupportRows = await tx.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
         SELECT COUNT(*)::bigint AS "count" FROM "SupportSession" WHERE "status" = 'ACTIVE' AND "expiresAt" > CURRENT_TIMESTAMP
       `);
+      const customerHelpRows = await tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`
+        SELECT "status"::text AS "status", COUNT(*)::bigint AS "count"
+        FROM "HelpSupportRequest" GROUP BY "status" ORDER BY "status"
+      `);
+      const supportSlaRows = await tx.$queryRaw<Array<{ overdueResponse: bigint; overdueClosure: bigint; unassignedActive: bigint }>>(Prisma.sql`
+        SELECT
+          COUNT(*) FILTER (
+            WHERE "status"='OPEN' AND "responseDueAt" IS NOT NULL AND "responseDueAt" < CURRENT_TIMESTAMP
+          )::bigint AS "overdueResponse",
+          COUNT(*) FILTER (
+            WHERE "status"<>'CLOSED' AND "closureDueAt" IS NOT NULL AND "closureDueAt" < CURRENT_TIMESTAMP
+          )::bigint AS "overdueClosure",
+          COUNT(*) FILTER (
+            WHERE "status"<>'CLOSED' AND "assignedToIdentityId" IS NULL
+          )::bigint AS "unassignedActive"
+        FROM "HelpSupportRequest"
+      `);
       const salesRepRows = await tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`
         SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "SalesRepresentative" GROUP BY "status" ORDER BY "status"
       `);
@@ -413,6 +434,8 @@ export class PlatformNotificationReportingService {
       const supportCaseMap = statusMap(supportCaseRows);
       const supportRequestMap = statusMap(supportRequestRows);
       const supportSessionMap = statusMap(supportSessionRows);
+      const customerHelpMap = statusMap(customerHelpRows);
+      const supportSla = supportSlaRows[0] ?? { overdueResponse: 0n, overdueClosure: 0n, unassignedActive: 0n };
       const salesRepMap = statusMap(salesRepRows);
       const commissionMap = statusMap(commissionRows);
       const notificationMap = statusMap(notificationRows);
@@ -433,6 +456,10 @@ export class PlatformNotificationReportingService {
           requestsByStatus: supportRequestMap,
           sessionsByStatus: supportSessionMap,
           activeUnexpiredSessions: Number(activeSupportRows[0]?.count ?? 0),
+          customerHelpRequestsByStatus: customerHelpMap,
+          overdueResponseSla: Number(supportSla.overdueResponse),
+          overdueClosureSla: Number(supportSla.overdueClosure),
+          unassignedActiveRequests: Number(supportSla.unassignedActive),
         },
         sales: {
           representativesByStatus: salesRepMap,
