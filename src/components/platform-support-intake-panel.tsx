@@ -20,6 +20,8 @@ export function PlatformSupportIntakePanel() {
   const [owners, setOwners] = useState<Owner[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<"OPEN" | "ACKNOWLEDGED" | "CLOSED" | "ALL">("OPEN");
+  const [scanNotice, setScanNotice] = useState<string | null>(null);
+  const [scanBusy, setScanBusy] = useState(false);
 
   async function load(nextStatus = status) {
     setError(null);
@@ -72,6 +74,18 @@ export function PlatformSupportIntakePanel() {
     });
   }
 
+  async function scanOverdueSlas() {
+    setScanBusy(true); setError(null); setScanNotice(null);
+    try {
+      const response = await fetch("/api/platform/support/sla-escalations", { method: "POST" });
+      const payload = await response.json().catch(() => null) as { data?: { evaluated?: number; notificationsCreated?: number }; error?: string } | null;
+      if (!response.ok) throw new Error(payload?.error || "Support SLA escalation scan failed.");
+      setScanNotice(`SLA scan complete: ${payload?.data?.evaluated ?? 0} overdue requests evaluated, ${payload?.data?.notificationsCreated ?? 0} new alerts created.`);
+      await load();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Support SLA escalation scan failed."); }
+    finally { setScanBusy(false); }
+  }
+
   function changeStatus(next: typeof status) { setStatus(next); void load(next).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Support intake queue could not be loaded.")); }
   function formatSla(label: string, state: Intake["responseSlaState"], dueAt: string | null) {
     return dueAt ? `${label}: ${state.replace("_", " ").toLowerCase()} · ${new Date(dueAt).toLocaleString()}` : `${label}: not set`;
@@ -82,6 +96,10 @@ export function PlatformSupportIntakePanel() {
       <article className={styles.card}><h3>Customer support intake</h3><p>Review, assign, and track tenant-submitted Help requests without entering the tenant QMS or creating a support session.</p></article>
       <article className={styles.card}><h3>Controlled tenant access</h3><p>If troubleshooting later requires tenant access, use the separate case-bound approval workflow.</p><a className={styles.cardLink} href="/support-access">Open support access</a></article>
     </div>
+    <div className={styles.toolbar}>
+      <button type="button" disabled={scanBusy} onClick={() => void scanOverdueSlas()}>{scanBusy ? "Scanning…" : "Scan overdue SLAs"}</button>
+    </div>
+    {scanNotice ? <div className={styles.notice} role="status">{scanNotice}</div> : null}
     <div className={styles.toolbar} aria-label="Support intake status filter">
       {(["OPEN","ACKNOWLEDGED","CLOSED","ALL"] as const).map((value) => <button type="button" key={value} onClick={() => changeStatus(value)} disabled={status === value}>{value === "ALL" ? "All" : value.toLowerCase()}</button>)}
     </div>
