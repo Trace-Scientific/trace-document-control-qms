@@ -21,7 +21,7 @@ const sections: SectionDefinition[] = [
   { id: "support", label: "Support access", description: "Case-bound controlled tenant support access.", anyPermission: ["platform.support.request", "platform.support.approve", "platform.support.access"], phase: "available" },
   { id: "sales", label: "Sales", description: "Sales ownership and customer attribution.", anyPermission: ["platform.sales.read", "platform.sales.manage"], phase: "foundation" },
   { id: "commissions", label: "Commissions", description: "Governed commission accruals and payments.", anyPermission: ["platform.commission.read", "platform.commission.manage"], phase: "foundation" },
-  { id: "help", label: "Help content", description: "Help Center and controlled user-manual publishing.", anyPermission: ["platform.help.manage"], phase: "foundation" },
+  { id: "help", label: "Help & User Manual", description: "Help Center and controlled user-manual authoring, readiness, and publishing.", anyPermission: ["platform.help.manage"], phase: "foundation" },
   { id: "notifications", label: "Notifications", description: "Platform-scoped inbox, delivery monitoring, retry, and dead-letter controls.", anyPermission: ["platform.notification.read", "platform.notification.manage"], phase: "foundation" },
   { id: "reporting", label: "Reporting", description: "Commercial and operational control-plane reporting without regulated tenant content.", anyPermission: ["platform.reporting.read"], phase: "foundation" },
   { id: "audit", label: "Platform audit", description: "Trace-side control-plane audit history.", anyPermission: ["platform.audit.read"], phase: "foundation" },
