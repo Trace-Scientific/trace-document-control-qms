@@ -8,6 +8,7 @@ type ArticleDetail = ArticleSummary & { body: string; changeSummary: string };
 type ManualSummary = { manualCode: string; manualName: string; version: string; effectiveAt: string; releaseNotes: string; publishedAt: string; releaseApplicability: unknown };
 type ManualDetail = ManualSummary & { sections: { sectionCode: string; title: string; revisionNumber: number; body: string; changeSummary: string; displayOrder: number }[] };
 type SupportHistoryItem = { id: string; subject: string; category: string; priority: string; status: "OPEN" | "ACKNOWLEDGED" | "CLOSED"; submittedAt: string; acknowledgedAt: string | null; closedAt: string | null };
+type HelpRecommendation = { key:string; label:string; description:string; query:string; context:string };
 
 const contextualSearch: Record<string, { label: string; query: string }> = {
   documents: { label: "Documents", query: "controlled document" },
@@ -34,6 +35,7 @@ export function HelpCenter() {
   const [supportNotice, setSupportNotice] = useState<string | null>(null);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
   const [supportHistory, setSupportHistory] = useState<SupportHistoryItem[] | null>(null);
+  const [recommendations, setRecommendations] = useState<HelpRecommendation[]>([]);
 
   async function loadArticles(search = "") {
     setError(null);
@@ -52,6 +54,13 @@ export function HelpCenter() {
     if (context) setContextLabel(context.label);
     if (initialQuery) setQuery(initialQuery);
     void loadArticles(initialQuery).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Help articles could not be loaded."));
+    void fetch(`/api/help/recommendations?context=${encodeURIComponent(context ? rawContext : "help")}`, { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Role-aware Help recommendations could not be loaded.");
+        return response.json() as Promise<{ data: HelpRecommendation[] }>;
+      })
+      .then((payload) => setRecommendations(payload.data))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Role-aware Help recommendations could not be loaded."));
     void fetch("/api/help/manuals", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error("User manual releases could not be loaded.");
@@ -139,6 +148,23 @@ export function HelpCenter() {
 
       {tab === "articles" && !article ? (
         <>
+          {recommendations.length ? (
+            <section className={styles.recommendations} aria-label="Recommended Help for your access">
+              <div>
+                <p className={styles.eyebrow}>RECOMMENDED FOR YOUR ACCESS</p>
+                <h2>Relevant operating guidance</h2>
+                <p className={styles.muted}>Suggestions are based only on the QMS permissions already assigned to your account. Help does not grant additional access.</p>
+              </div>
+              <div className={styles.recommendationGrid}>
+                {recommendations.map((item) => (
+                  <button key={item.key} type="button" className={styles.recommendationCard} onClick={() => { setQuery(item.query); void loadArticles(item.query).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Search failed.")); }}>
+                    <strong>{item.label}</strong>
+                    <span>{item.description}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
           <form className={styles.search} onSubmit={(event) => { event.preventDefault(); void loadArticles(query).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Search failed.")); }}>
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search published help articles" aria-label="Search help articles" />
             <button type="submit">Search</button>
