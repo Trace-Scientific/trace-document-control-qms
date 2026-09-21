@@ -195,18 +195,28 @@ export class ControlledUserManualAssemblyService {
         `);
       }
 
-      await writeAudit(tx, context, "manual.reviewed_draft.assembled", "UserManualRelease", releaseId, reason, {
-        manualCode: CONTROLLED_USER_MANUAL.code,
-        version: INITIAL_DRAFT_VERSION,
-        sectionCount: revisionIds.length,
-        manualCreated,
-        sectionsCreated,
-        revisionsCreated,
-        releaseCreated,
-        sectionsChanged: !sectionsAlreadyExact,
-        publicationState: "DRAFT",
-        effectiveAt: null,
-      });
+      const changed =
+        manualCreated ||
+        sectionsCreated > 0 ||
+        revisionsCreated > 0 ||
+        releaseCreated ||
+        !sectionsAlreadyExact;
+
+      if (changed) {
+        await writeAudit(tx, context, "manual.reviewed_draft.assembled", "UserManualRelease", releaseId, reason, {
+          manualCode: CONTROLLED_USER_MANUAL.code,
+          version: INITIAL_DRAFT_VERSION,
+          sectionCount: revisionIds.length,
+          sectionRevisionIds: revisionIds,
+          manualCreated,
+          sectionsCreated,
+          revisionsCreated,
+          releaseCreated,
+          sectionsChanged: !sectionsAlreadyExact,
+          publicationState: "DRAFT",
+          effectiveAt: null,
+        });
+      }
 
       return {
         manualId,
@@ -215,11 +225,13 @@ export class ControlledUserManualAssemblyService {
         status: "DRAFT" as const,
         effectiveAt: null,
         sectionCount: revisionIds.length,
+        sectionRevisionIds: revisionIds,
         manualCreated,
         sectionsCreated,
         revisionsCreated,
         releaseCreated,
         sectionsChanged: !sectionsAlreadyExact,
+        changed,
       };
     });
   }
