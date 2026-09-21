@@ -7,6 +7,7 @@ type ArticleSummary = { slug: string; title: string; summary: string; categoryNa
 type ArticleDetail = ArticleSummary & { body: string; changeSummary: string };
 type ManualSummary = { manualCode: string; manualName: string; version: string; effectiveAt: string; releaseNotes: string; publishedAt: string; releaseApplicability: unknown };
 type ManualDetail = ManualSummary & { sections: { sectionCode: string; title: string; revisionNumber: number; body: string; changeSummary: string; displayOrder: number }[] };
+type SupportHistoryItem = { id: string; subject: string; description: string; category: string; priority: string; status: "OPEN" | "ACKNOWLEDGED" | "CLOSED"; submittedAt: string; acknowledgedAt: string | null; closedAt: string | null };
 
 const contextualSearch: Record<string, { label: string; query: string }> = {
   documents: { label: "Documents", query: "controlled document" },
@@ -32,6 +33,8 @@ export function HelpCenter() {
   const [pageContext, setPageContext] = useState("help");
   const [supportNotice, setSupportNotice] = useState<string | null>(null);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
+  const [supportHistory, setSupportHistory] = useState<SupportHistoryItem[] | null>(null);
+  const [supportHistoryLoading, setSupportHistoryLoading] = useState(false);
 
   async function loadArticles(search = "") {
     setError(null);
@@ -58,6 +61,19 @@ export function HelpCenter() {
       .then((payload) => setManuals(payload.data))
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "User manual releases could not be loaded."));
   }, []);
+
+  async function loadSupportHistory() {
+    setSupportHistoryLoading(true);
+    setError(null);
+    const response = await fetch("/api/help/support-requests", { cache: "no-store" });
+    if (!response.ok) {
+      setSupportHistoryLoading(false);
+      throw new Error("Support request history could not be loaded.");
+    }
+    const body = await response.json() as { data: SupportHistoryItem[] };
+    setSupportHistory(body.data);
+    setSupportHistoryLoading(false);
+  }
 
   async function submitSupportRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -87,6 +103,7 @@ export function HelpCenter() {
     }
     event.currentTarget.reset();
     setSupportNotice(`Support request ${String(body?.data?.id ?? "").slice(0, 8)} submitted successfully.`);
+    await loadSupportHistory().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Support request history could not be loaded."));
   }
 
   async function openArticle(slug: string) {
@@ -120,7 +137,7 @@ export function HelpCenter() {
       <div className={styles.tabs} role="tablist" aria-label="Help Center content">
         <button className={`${styles.tab} ${tab === "articles" ? styles.active : ""}`} type="button" onClick={() => { setTab("articles"); setManual(null); }}>Help articles</button>
         <button className={`${styles.tab} ${tab === "manuals" ? styles.active : ""}`} type="button" onClick={() => { setTab("manuals"); setArticle(null); }}>Controlled user manual</button>
-        <button className={`${styles.tab} ${tab === "support" ? styles.active : ""}`} type="button" onClick={() => { setTab("support"); setArticle(null); setManual(null); }}>Contact support</button>
+        <button className={`${styles.tab} ${tab === "support" ? styles.active : ""}`} type="button" onClick={() => { setTab("support"); setArticle(null); setManual(null); if (supportHistory === null) void loadSupportHistory().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Support request history could not be loaded.")); }}>Contact support</button>
       </div>
 
       {error ? <div className={styles.notice} role="alert">{error}</div> : null}
@@ -184,6 +201,11 @@ export function HelpCenter() {
           <h2>Contact Trace QMS support</h2>
           <p className={styles.muted}>Describe the problem without including passwords, credentials, patient information, controlled document content, or other regulated record data.</p>
           {supportNotice ? <div className={styles.notice} role="status">{supportNotice}</div> : null}
+          <div className={styles.supportHistoryHeader}><h3>My support requests</h3><button type="button" onClick={() => void loadSupportHistory().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Support request history could not be loaded."))} disabled={supportHistoryLoading}>{supportHistoryLoading ? "Refreshing…" : "Refresh"}</button></div>
+          {supportHistory === null && supportHistoryLoading ? <div className={styles.notice}>Loading support request history…</div> : null}
+          {supportHistory?.length === 0 ? <div className={styles.notice}>No support requests have been submitted for this organization.</div> : null}
+          {supportHistory && supportHistory.length > 0 ? <div className={styles.supportHistoryList}>{supportHistory.map((item) => <article className={styles.card} key={item.id}><p className={styles.eyebrow}>{item.priority} · {item.category} · {item.status}</p><h3>{item.subject}</h3><p>{item.description}</p><p className={styles.meta}>Submitted {new Date(item.submittedAt).toLocaleString()}</p>{item.status === "ACKNOWLEDGED" && item.acknowledgedAt ? <p className={styles.meta}>Acknowledged {new Date(item.acknowledgedAt).toLocaleString()}</p> : null}{item.status === "CLOSED" && item.closedAt ? <p className={styles.meta}>Closed {new Date(item.closedAt).toLocaleString()}</p> : null}</article>)}</div> : null}
+          <hr className={styles.divider} />
           <form className={styles.supportForm} onSubmit={submitSupportRequest}>
             <label>Category<select name="category" defaultValue="GENERAL"><option value="GENERAL">General</option><option value="ACCESS">Access</option><option value="DOCUMENTS">Documents</option><option value="TRAINING">Training</option><option value="QUALITY">Quality</option><option value="LABORATORY">Laboratory</option><option value="REPORTING">Reporting</option><option value="TECHNICAL">Technical</option></select></label>
             <label>Priority<select name="priority" defaultValue="NORMAL"><option value="LOW">Low</option><option value="NORMAL">Normal</option><option value="HIGH">High</option></select></label>
