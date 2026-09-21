@@ -28,6 +28,8 @@ export type HelpSupportQueueRecord = {
   closureDueAt: Date | null;
   responseSlaState: "NONE" | "ON_TRACK" | "OVERDUE" | "MET";
   closureSlaState: "NONE" | "ON_TRACK" | "OVERDUE" | "MET";
+  linkedSupportCaseId: string | null;
+  linkedSupportCaseNumber: string | null;
 };
 
 export class HelpSupportQueueService {
@@ -52,12 +54,15 @@ export class HelpSupportQueueService {
                WHEN h."closedAt" IS NOT NULL THEN 'MET'
                WHEN h."closureDueAt" < CURRENT_TIMESTAMP THEN 'OVERDUE'
                ELSE 'ON_TRACK'
-             END AS "closureSlaState"
+             END AS "closureSlaState",
+             sc."id" AS "linkedSupportCaseId",
+             sc."caseNumber" AS "linkedSupportCaseNumber"
       FROM "HelpSupportRequest" h
       INNER JOIN "Organization" o ON o."id" = h."organizationId"
       INNER JOIN "User" u ON u."id" = h."submittedByUserId"
       LEFT JOIN "PlatformIdentity" api ON api."id" = h."assignedToIdentityId"
       LEFT JOIN "User" au ON au."id" = api."sourceUserId"
+      LEFT JOIN "SupportCase" sc ON sc."sourceHelpSupportRequestId" = h."id"
       WHERE (${status ?? null}::text IS NULL OR h."status"::text = ${status ?? null})
       ORDER BY CASE h."priority" WHEN 'HIGH' THEN 0 WHEN 'NORMAL' THEN 1 ELSE 2 END,
                h."submittedAt" ASC, h."id"
@@ -123,6 +128,69 @@ export class HelpSupportQueueService {
         responseDueAt: responseDueAt?.toISOString() ?? null,
         closureDueAt: closureDueAt?.toISOString() ?? null,
       });
+    });
+  }
+
+  async createLinkedSupportCase(
+    context: PlatformAuthorizationContext,
+    requestId: string,
+    reason: string,
+  ): Promise<{ supportCaseId: string; caseNumber: string }> {
+    requirePlatformAuthorization(context, { permission: "platform.support.request" });
+    validateReason(reason);
+
+    return db.$transaction(async (tx) => {
+      const requests = await tx.$queryRaw<Array<{
+        id: string;
+        organizationId: string;
+        subject: string;
+        status: HelpSupportQueueStatus;
+      }>>(Prisma.sql`
+        SELECT "id","organizationId","subject","status"::text AS "status"
+        FROM "HelpSupportRequest"
+        WHERE "id"=${requestId}::uuid
+        FOR UPDATE
+      `);
+      const request = requests[0];
+      if (!request) throw new HelpSupportQueueConflictError("Support request was not found");
+      if (request.status === "CLOSED") throw new HelpSupportQueueConflictError("Closed support requests cannot create a new controlled support case");
+
+      const existing = await tx.$queryRaw<Array<{ id: string; caseNumber: string }>>(Prisma.sql`
+        SELECT "id","caseNumber" FROM "SupportCase"
+        WHERE "sourceHelpSupportRequestId"=${request.id}::uuid
+      `);
+      if (existing[0]) return { supportCaseId: existing[0].id, caseNumber: existing[0].caseNumber };
+
+      const customers = await tx.$queryRaw<Array<{ id: string; status: string }>>(Prisma.sql`
+        SELECT "id","status"::text AS "status"
+        FROM "CustomerAccount"
+        WHERE "organizationId"=${request.organizationId}::uuid
+        FOR SHARE
+      `);
+      const customer = customers[0];
+      if (!customer) throw new HelpSupportQueueValidationError("Tenant organization must be linked to a customer account before controlled support access can be requested");
+      if (customer.status === "TERMINATED") throw new HelpSupportQueueValidationError("Terminated customer accounts cannot receive new controlled support cases");
+
+      const caseNumber = `HELP-${request.id}`;
+      const rows = await tx.$queryRaw<Array<{ id: string; caseNumber: string }>>(Prisma.sql`
+        INSERT INTO "SupportCase" (
+          "id","customerAccountId","targetOrganizationId","caseNumber","title","description",
+          "openedByMembershipId","sourceHelpSupportRequestId"
+        ) VALUES (
+          gen_random_uuid(),${customer.id}::uuid,${request.organizationId}::uuid,
+          ${caseNumber},${request.subject},NULL,${context.platformMembershipId}::uuid,${request.id}::uuid
+        )
+        RETURNING "id","caseNumber"
+      `);
+      const supportCase = rows[0];
+      if (!supportCase) throw new Error("Controlled support case could not be created");
+
+      await writeAudit(tx, context, "help_support_request.support_case_linked", request.id, reason, {
+        supportCaseId: supportCase.id,
+        caseNumber: supportCase.caseNumber,
+        targetOrganizationId: request.organizationId,
+      });
+      return { supportCaseId: supportCase.id, caseNumber: supportCase.caseNumber };
     });
   }
 
