@@ -8,6 +8,7 @@ const platformShell = readFileSync(join(root, "src/components/platform-administr
 const platformMe = readFileSync(join(root, "src/app/api/platform/me/route.ts"), "utf8");
 const tenantPage = readFileSync(join(root, "src/app/page.tsx"), "utf8");
 const tenantAuthorization = readFileSync(join(root, "src/lib/security/authorization.ts"), "utf8");
+const tenantAdministration = readFileSync(join(root, "src/components/access-administration.tsx"), "utf8");
 
 describe("platform administration shell", () => {
   it("uses a dedicated top-level platform route instead of the tenant QMS shell", () => {
@@ -38,6 +39,13 @@ describe("platform administration shell", () => {
     expect(tenantAuthorization).not.toContain("bypass");
   });
 
+  it("surfaces a tenant-side platform entry only after server-authoritative platform access succeeds", () => {
+    expect(tenantAdministration).toContain('fetch("/api/platform/me"');
+    expect(tenantAdministration).toContain("setPlatformAccess(response.ok)");
+    expect(tenantAdministration).toContain('href="/platform"');
+    expect(tenantAdministration).toContain("Help &amp; User Manual");
+  });
+
   it("does not convert the tenant homepage into the platform control surface", () => {
     expect(tenantPage).toContain("QmsModuleShell");
     expect(tenantPage).not.toContain("PlatformAdministrationShell");
@@ -46,7 +54,7 @@ describe("platform administration shell", () => {
   it("surfaces later platform domains as planned rather than implementing them early", () => {
     expect(platformShell).toContain('label: "Sales"');
     expect(platformShell).toContain('label: "Commissions"');
-    expect(platformShell).toContain('label: "Help content"');
+    expect(platformShell).toContain('label: "Help & User Manual"');
     expect(platformShell).toContain('label: "System health"');
     expect(platformShell).toContain('label: "Integrations"');
     expect(platformShell).toContain('phase: "planned"');
