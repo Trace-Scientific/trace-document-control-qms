@@ -16,6 +16,7 @@ const actionSchema = z.discriminatedUnion("action", [
     closureDueAt: z.string().datetime().nullable().optional(),
     reason: z.string().min(1).max(1000),
   }),
+  z.object({ action: z.literal("CREATE_SUPPORT_CASE"), reason: z.string().min(1).max(1000) }),
 ]);
 
 export async function GET(request: NextRequest) {
@@ -41,10 +42,19 @@ export async function POST(request: NextRequest) {
     const requestId = new URL(request.url).searchParams.get("id");
     if (!requestId || !z.string().uuid().safeParse(requestId).success) return NextResponse.json({ error: "Valid support request id is required" }, { status: 400 });
     const input = actionSchema.parse(await request.json());
-    if (input.action === "ACKNOWLEDGE") await service.acknowledge(context, requestId, input.reason);
-    else if (input.action === "CLOSE") await service.close(context, requestId, input.reason);
-    else await service.assign(context, requestId, input);
-    return NextResponse.json({ data: { ok: true } });
+    if (input.action === "ACKNOWLEDGE") {
+      await service.acknowledge(context, requestId, input.reason);
+      return NextResponse.json({ data: { ok: true } });
+    }
+    if (input.action === "CLOSE") {
+      await service.close(context, requestId, input.reason);
+      return NextResponse.json({ data: { ok: true } });
+    }
+    if (input.action === "ASSIGN") {
+      await service.assign(context, requestId, input);
+      return NextResponse.json({ data: { ok: true } });
+    }
+    return NextResponse.json({ data: await service.createLinkedSupportCase(context, requestId, input.reason) }, { status: 201 });
   } catch (error) {
     if (error instanceof PlatformAuthorizationError) return NextResponse.json({ error: "Platform access denied" }, { status: 403 });
     if (error instanceof z.ZodError || error instanceof HelpSupportQueueValidationError) return NextResponse.json({ error: "Support queue action validation failed" }, { status: 400 });
