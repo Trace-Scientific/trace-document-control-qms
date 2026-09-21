@@ -16,6 +16,22 @@ type OverdueSupportSla = {
 export class SupportSlaEscalationService {
   async scan(context: PlatformAuthorizationContext) {
     requirePlatformAuthorization(context, { permission: "platform.support.request" });
+    const result = await this.scanSystem();
+    await db.$executeRaw(Prisma.sql`
+      INSERT INTO "PlatformAuditEvent" (
+        "id","actorIdentityId","actorMembershipId","action","entityType","entityId","reason","metadata"
+      )
+      VALUES (
+        gen_random_uuid(), ${context.platformIdentityId}::uuid, ${context.platformMembershipId}::uuid,
+        'help_support_sla.scan', 'PlatformOperation', gen_random_uuid(),
+        'Support SLA overdue scan',
+        ${JSON.stringify({ source: "manual" })}::jsonb
+      )
+    `);
+    return result;
+  }
+
+  async scanSystem() {
     return db.$transaction(async (tx) => {
       const overdue = await tx.$queryRaw<OverdueSupportSla[]>(Prisma.sql`
         SELECT
@@ -42,18 +58,6 @@ export class SupportSlaEscalationService {
           created += await enqueueEscalation(tx, item, "CLOSURE");
         }
       }
-
-      await tx.$executeRaw(Prisma.sql`
-        INSERT INTO "PlatformAuditEvent" (
-          "id","actorIdentityId","actorMembershipId","action","entityType","entityId","reason","metadata"
-        )
-        VALUES (
-          gen_random_uuid(), ${context.platformIdentityId}::uuid, ${context.platformMembershipId}::uuid,
-          'help_support_sla.scan', 'PlatformOperation', gen_random_uuid(),
-          'Support SLA overdue scan',
-          ${JSON.stringify({ evaluated: overdue.length, notificationsCreated: created })}::jsonb
-        )
-      `);
 
       return { evaluated: overdue.length, notificationsCreated: created };
     });
