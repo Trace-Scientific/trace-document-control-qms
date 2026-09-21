@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import styles from "./help-center.module.css";
 
 type ArticleSummary = { slug: string; title: string; summary: string; categoryName: string; revisionNumber: number; publishedAt: string };
@@ -21,7 +21,7 @@ const contextualSearch: Record<string, { label: string; query: string }> = {
 };
 
 export function HelpCenter() {
-  const [tab, setTab] = useState<"articles" | "manuals">("articles");
+  const [tab, setTab] = useState<"articles" | "manuals" | "support">("articles");
   const [query, setQuery] = useState("");
   const [articles, setArticles] = useState<ArticleSummary[]>([]);
   const [manuals, setManuals] = useState<ManualSummary[]>([]);
@@ -29,6 +29,9 @@ export function HelpCenter() {
   const [manual, setManual] = useState<ManualDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [contextLabel, setContextLabel] = useState<string | null>(null);
+  const [pageContext, setPageContext] = useState("help");
+  const [supportNotice, setSupportNotice] = useState<string | null>(null);
+  const [supportSubmitting, setSupportSubmitting] = useState(false);
 
   async function loadArticles(search = "") {
     setError(null);
@@ -40,7 +43,9 @@ export function HelpCenter() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const context = contextualSearch[params.get("context") ?? ""];
+    const rawContext = params.get("context") ?? "help";
+    const context = contextualSearch[rawContext];
+    setPageContext(context ? rawContext : "help");
     const initialQuery = params.get("query")?.trim() || context?.query || "";
     if (context) setContextLabel(context.label);
     if (initialQuery) setQuery(initialQuery);
@@ -53,6 +58,36 @@ export function HelpCenter() {
       .then((payload) => setManuals(payload.data))
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "User manual releases could not be loaded."));
   }, []);
+
+  async function submitSupportRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSupportSubmitting(true);
+    setSupportNotice(null);
+    setError(null);
+    const form = new FormData(event.currentTarget);
+    const userAgent = navigator.userAgent;
+    const browserFamily = /Edg\//.test(userAgent) ? "Edge" : /Firefox\//.test(userAgent) ? "Firefox" : /Chrome\//.test(userAgent) ? "Chrome" : /Safari\//.test(userAgent) ? "Safari" : "Other";
+    const response = await fetch("/api/help/support-requests", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        subject: String(form.get("subject") ?? ""),
+        description: String(form.get("description") ?? ""),
+        category: String(form.get("category") ?? "GENERAL"),
+        priority: String(form.get("priority") ?? "NORMAL"),
+        pageContext,
+        browserFamily,
+      }),
+    });
+    const body = await response.json().catch(() => null);
+    setSupportSubmitting(false);
+    if (!response.ok) {
+      setError(body?.error || "Support request could not be submitted.");
+      return;
+    }
+    event.currentTarget.reset();
+    setSupportNotice(`Support request ${String(body?.data?.id ?? "").slice(0, 8)} submitted successfully.`);
+  }
 
   async function openArticle(slug: string) {
     setError(null);
@@ -85,6 +120,7 @@ export function HelpCenter() {
       <div className={styles.tabs} role="tablist" aria-label="Help Center content">
         <button className={`${styles.tab} ${tab === "articles" ? styles.active : ""}`} type="button" onClick={() => { setTab("articles"); setManual(null); }}>Help articles</button>
         <button className={`${styles.tab} ${tab === "manuals" ? styles.active : ""}`} type="button" onClick={() => { setTab("manuals"); setArticle(null); }}>Controlled user manual</button>
+        <button className={`${styles.tab} ${tab === "support" ? styles.active : ""}`} type="button" onClick={() => { setTab("support"); setArticle(null); setManual(null); }}>Contact support</button>
       </div>
 
       {error ? <div className={styles.notice} role="alert">{error}</div> : null}
@@ -140,6 +176,23 @@ export function HelpCenter() {
             </article>
           ))}
         </div>
+      ) : null}
+
+      {tab === "support" ? (
+        <section className={styles.detail}>
+          <p className={styles.eyebrow}>SUPPORT REQUEST</p>
+          <h2>Contact Trace QMS support</h2>
+          <p className={styles.muted}>Describe the problem without including passwords, credentials, patient information, controlled document content, or other regulated record data.</p>
+          {supportNotice ? <div className={styles.notice} role="status">{supportNotice}</div> : null}
+          <form className={styles.supportForm} onSubmit={submitSupportRequest}>
+            <label>Category<select name="category" defaultValue="GENERAL"><option value="GENERAL">General</option><option value="ACCESS">Access</option><option value="DOCUMENTS">Documents</option><option value="TRAINING">Training</option><option value="QUALITY">Quality</option><option value="LABORATORY">Laboratory</option><option value="REPORTING">Reporting</option><option value="TECHNICAL">Technical</option></select></label>
+            <label>Priority<select name="priority" defaultValue="NORMAL"><option value="LOW">Low</option><option value="NORMAL">Normal</option><option value="HIGH">High</option></select></label>
+            <label>Subject<input name="subject" required minLength={3} maxLength={200} /></label>
+            <label>Description<textarea name="description" required minLength={10} maxLength={4000} rows={8} /></label>
+            <p className={styles.meta}>Safe diagnostic context included automatically: current QMS workspace and browser family only.</p>
+            <button type="submit" disabled={supportSubmitting}>{supportSubmitting ? "Submitting…" : "Submit support request"}</button>
+          </form>
+        </section>
       ) : null}
 
       {tab === "manuals" && manual ? (
