@@ -12,6 +12,9 @@ test("foundation release is manual, protected, and OIDC-only", () => {
   assert.match(workflow, /id-token: write/);
   assert.match(workflow, /role-to-assume:/);
   assert.match(workflow, /EXPECTED_AWS_ACCOUNT_ID:.*AWS_VALIDATION_ACCOUNT_ID/);
+  assert.match(workflow, /CLOUDFORMATION_EXECUTION_ROLE_ARN:.*AWS_VALIDATION_FOUNDATION_EXECUTION_ROLE_ARN/);
+  assert.match(workflow, /--role-arn "\\$CLOUDFORMATION_EXECUTION_ROLE_ARN"/);
+  assert.match(workflow, /RoleARN --output text\\)" = "\\$CLOUDFORMATION_EXECUTION_ROLE_ARN"/);
   assert.match(workflow, /sts get-caller-identity/);
   assert.doesNotMatch(workflow, /AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY/);
 });
