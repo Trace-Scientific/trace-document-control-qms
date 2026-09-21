@@ -9,7 +9,7 @@ type Detail = { manual: Manual; sections:Array<{id:string;sectionCode:string;tit
 export function PlatformControlledUserManualPanel() {
   const [manuals,setManuals]=useState<Manual[]>([]); const [detail,setDetail]=useState<Detail|null>(null); const [error,setError]=useState<string|null>(null); const [notice,setNotice]=useState<string|null>(null); const [busy,setBusy]=useState(false);
   const assembledDraft=detail?.releases.find((release)=>release.version==="0.1"&&release.status==="DRAFT"&&release.effectiveAt===null&&release.sectionCount===CONTROLLED_USER_MANUAL.sections.length);
-  async function load() { const r=await fetch("/api/platform/help/manuals",{cache:"no-store"}); const p=await r.json(); if(!r.ok) throw new Error(p.error||"Manual inventory could not be loaded"); setManuals(p.data); }
+  async function load() { const r=await fetch("/api/platform/help/manuals",{cache:"no-store"}); const p=await r.json(); if(!r.ok) throw new Error(p.error||"Manual inventory could not be loaded"); const inventory=p.data as Manual[]; setManuals(inventory); const controlled=inventory.find((manual)=>manual.code===CONTROLLED_USER_MANUAL.code); if(controlled) await open(controlled.id); }
   async function open(id:string) { const r=await fetch(`/api/platform/help/manuals/${encodeURIComponent(id)}`,{cache:"no-store"}); const p=await r.json(); if(!r.ok) throw new Error(p.error||"Manual could not be loaded"); setDetail(p.data); }
   async function assemble() {
     const reason=window.prompt("Reason for assembling the reviewed UM-QMS-001 draft release");
@@ -35,7 +35,7 @@ export function PlatformControlledUserManualPanel() {
       <p>Expected baseline: {CONTROLLED_USER_MANUAL.sections.length} controlled sections covering user operation, administration, evidence handling, Help, and support boundaries.</p>
       {error ? <p>{error}</p> : null}
       {notice ? <p role="status">{notice}</p> : null}
-      {assembledDraft ? <p role="status"><strong>Reviewed draft v0.1 is already assembled.</strong> It remains DRAFT, unscheduled, and unpublished.</p> : <button type="button" disabled={busy} onClick={()=>void assemble()}>{busy ? "Assembling…" : "Assemble reviewed draft v0.1"}</button>}
+      {manuals.length===0 ? <button type="button" disabled={busy} onClick={()=>void assemble()}>{busy ? "Assembling…" : "Assemble reviewed draft v0.1"}</button> : assembledDraft ? <p role="status"><strong>Reviewed draft v0.1 is already assembled.</strong> It remains DRAFT, unscheduled, and unpublished.</p> : detail ? <p role="alert">Existing UM-QMS-001 does not match the expected reviewed DRAFT v0.1 baseline. Reconcile its controlled release state before assembly.</p> : <p role="status">Verifying reviewed draft readiness…</p>}
       {manuals.map(m=><button key={m.id} type="button" onClick={()=>void open(m.id).catch(e=>setError(e instanceof Error?e.message:"Manual could not be loaded"))}>{m.code} · {m.name} · {m.sectionCount} sections · {m.releaseCount} releases</button>)}
       {manuals.length===0 ? <p>No controlled manual has been authored yet. Use the governed manual APIs to create {CONTROLLED_USER_MANUAL.code}, its sections, revisions, and draft release before publication.</p> : null}
     </article>
