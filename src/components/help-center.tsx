@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import styles from "./help-center.module.css";
 
 type ArticleSummary = { slug: string; title: string; summary: string; categoryName: string; revisionNumber: number; publishedAt: string };
@@ -59,7 +59,7 @@ export function HelpCenter() {
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "User manual releases could not be loaded."));
   }, []);
 
-  async function submitSupportRequest(event: React.FormEvent<HTMLFormElement>) {
+  async function submitSupportRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSupportSubmitting(true);
     setSupportNotice(null);
