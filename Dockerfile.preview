@@ -27,6 +27,7 @@ COPY --from=builder --chown=qms:qms /app/scripts/bootstrap-admin.mjs ./scripts/b
 COPY --from=builder --chown=qms:qms /app/scripts/run-twilio-delivery-monitoring.mjs ./scripts/run-twilio-delivery-monitoring.mjs
 COPY --from=builder --chown=qms:qms /app/scripts/run-salesforce-cdc-worker.mjs ./scripts/run-salesforce-cdc-worker.mjs
 COPY --from=builder --chown=qms:qms /app/scripts/check-salesforce-cdc-worker-preflight.mjs ./scripts/check-salesforce-cdc-worker-preflight.mjs
+COPY --from=builder --chown=qms:qms /app/scripts/run-support-sla-scan.mjs ./scripts/run-support-sla-scan.mjs
 USER qms
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
