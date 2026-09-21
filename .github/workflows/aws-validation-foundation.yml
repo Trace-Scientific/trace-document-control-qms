@@ -57,6 +57,7 @@ jobs:
     env:
       AWS_REGION: us-west-1
       AWS_ROLE_ARN: ${{ vars.AWS_VALIDATION_FOUNDATION_ROLE_ARN }}
+      CLOUDFORMATION_EXECUTION_ROLE_ARN: ${{ vars.AWS_VALIDATION_FOUNDATION_EXECUTION_ROLE_ARN }}
       EXPECTED_AWS_ACCOUNT_ID: ${{ vars.AWS_VALIDATION_ACCOUNT_ID }}
       STACK_NAME: trace-qms-validation-foundation
     steps:
@@ -82,7 +83,9 @@ jobs:
           git merge-base --is-ancestor "$RELEASE_SHA" origin/main
           test "$AWS_REGION" = us-west-1
           test -n "$AWS_ROLE_ARN"
+          [[ "$CLOUDFORMATION_EXECUTION_ROLE_ARN" =~ ^arn:aws:iam::[0-9]{12}:role/trace-qms-validation-foundation-cfn$ ]]
           [[ "$EXPECTED_AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]
+          test "$CLOUDFORMATION_EXECUTION_ROLE_ARN" = "arn:aws:iam::$EXPECTED_AWS_ACCOUNT_ID:role/trace-qms-validation-foundation-cfn"
           test "$COST_ACKNOWLEDGED" = true
           [[ "$CHANGE_REFERENCE" =~ ^[A-Za-z0-9._:/-]{3,128}$ ]]
           [[ "$COST_REVIEW_REFERENCE" =~ ^[A-Za-z0-9._:/-]{3,128}$ ]]
@@ -118,6 +121,7 @@ jobs:
             --template-file deploy/aws/validation/foundation.yaml \
             --no-execute-changeset \
             --change-set-name "$change_set_name" \
+            --role-arn "$CLOUDFORMATION_EXECUTION_ROLE_ARN" \
             --capabilities CAPABILITY_IAM \
             --parameter-overrides \
               EnvironmentName=trace-qms-validation \
@@ -144,6 +148,7 @@ jobs:
           set -euo pipefail
           describe=(aws cloudformation describe-change-set --stack-name "$STACK_NAME" --change-set-name "$CHANGE_SET_NAME")
           test "$("${describe[@]}" --query Status --output text)" = CREATE_COMPLETE
+          test "$("${describe[@]}" --query RoleARN --output text)" = "$CLOUDFORMATION_EXECUTION_ROLE_ARN"
           change_set_type=$("${describe[@]}" --query ChangeSetType --output text)
           [[ "$change_set_type" =~ ^(CREATE|UPDATE)$ ]]
           planned_parameter() {
