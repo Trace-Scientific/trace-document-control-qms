@@ -23,7 +23,7 @@ type ReportRun = {
     customers?: { total?: number; byStatus?: Record<string, number> };
     subscriptions?: { total?: number; byStatus?: Record<string, number> };
     entitlements?: { activeOverrides?: number };
-    support?: { activeUnexpiredSessions?: number };
+    support?: { activeUnexpiredSessions?: number; customerHelpRequestsByStatus?: Record<string, number>; overdueResponseSla?: number; overdueClosureSla?: number; unassignedActiveRequests?: number };
     sales?: { currentAssignments?: number };
     commissions?: { unpaidApprovedAmount?: string; accrualsByStatus?: Record<string, number> };
     notifications?: { deadLetterCount?: number; retryCount?: number; byStatus?: Record<string, number> };
@@ -202,6 +202,9 @@ export function PlatformReportingPanel() {
           <p>Subscriptions: {result.subscriptions?.total ?? 0}</p>
           <p>Active entitlement overrides: {result.entitlements?.activeOverrides ?? 0}</p>
           <p>Active support sessions: {result.support?.activeUnexpiredSessions ?? 0}</p>
+          <p>Customer Help requests — open: {result.support?.customerHelpRequestsByStatus?.OPEN ?? 0} · acknowledged: {result.support?.customerHelpRequestsByStatus?.ACKNOWLEDGED ?? 0} · closed: {result.support?.customerHelpRequestsByStatus?.CLOSED ?? 0}</p>
+          <p>Support SLA overdue — response: {result.support?.overdueResponseSla ?? 0} · closure: {result.support?.overdueClosureSla ?? 0}</p>
+          <p>Unassigned active support requests: {result.support?.unassignedActiveRequests ?? 0}</p>
           <p>Current sales assignments: {result.sales?.currentAssignments ?? 0}</p>
           <p>Approved unpaid commission amount: {result.commissions?.unpaidApprovedAmount ?? "0.00"}</p>
           <p>Notification retries: {result.notifications?.retryCount ?? 0} · dead letters: {result.notifications?.deadLetterCount ?? 0}</p>
