@@ -293,6 +293,28 @@ export class SubscriptionCatalogService {
     });
   }
 
+  async catalogWorkspace(context: PlatformAuthorizationContext) {
+    requirePlatformAuthorization(context, { permission: "platform.subscription.read" });
+    const [products, features, plans, versions] = await Promise.all([
+      this.listProducts(context),
+      db.$queryRaw<FeatureRecord[]>(Prisma.sql`
+        SELECT "id","productId","key","name","description","status"::text AS "status"
+        FROM "Feature" ORDER BY "key"
+      `),
+      db.$queryRaw<PlanRecord[]>(Prisma.sql`
+        SELECT "id","productId","code","name","description","status"::text AS "status"
+        FROM "Plan" ORDER BY "code"
+      `),
+      db.$queryRaw<PlanVersionRecord[]>(Prisma.sql`
+        SELECT "id","planId","version","status"::text AS "status","effectiveFrom","effectiveTo","activatedAt",
+          "billingCadence"::text AS "billingCadence","currency","baseAmountCents","includedFullUsers",
+          "additionalUserRateCents","storageAllowanceGb","commercialMetadata"
+        FROM "PlanVersion" ORDER BY "planId","version" DESC
+      `)
+    ]);
+    return { products, features, plans, versions };
+  }
+
   async workspace(context: PlatformAuthorizationContext) {
     requirePlatformAuthorization(context, { permission: "platform.subscription.read" });
     const [plans, subscriptions, overrides] = await Promise.all([
