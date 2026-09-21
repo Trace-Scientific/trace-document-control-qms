@@ -8,7 +8,10 @@ Do not apply the foundation change set until every item is approved and recorded
 - [ ] GitHub OIDC trust is restricted to this repository and protected
       environment; no long-lived AWS credentials are configured.
 - [ ] `AWS_VALIDATION_FOUNDATION_ROLE_ARN` is least privilege and scoped to the
-      foundation stack and named validation resources.
+      foundation stack plus `iam:PassRole` for the dedicated CloudFormation execution role.
+- [ ] `AWS_VALIDATION_FOUNDATION_EXECUTION_ROLE_ARN` is the approved
+      `trace-qms-validation-foundation-cfn` role in the validation account, and the
+      workflow records/verifies that exact role on the change set.
 - [ ] `AWS_VALIDATION_ACCOUNT_ID` is the approved 12-digit account and differs
       from production where environment segregation requires it.
 - [ ] AWS cost review includes Multi-AZ PostgreSQL, two NAT gateways, load/data
