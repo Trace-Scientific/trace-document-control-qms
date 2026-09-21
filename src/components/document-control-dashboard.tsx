@@ -219,6 +219,9 @@ function payloadSummary(payload: unknown) {
   if (!payload || typeof payload !== "object")
     return "Quality system notification";
   const p = payload as Record<string, unknown>;
+  if (typeof p.supportRequestId === "string" && typeof p.status === "string") {
+    return `Support request ${String(p.reference ?? p.supportRequestId.slice(0, 8))} · ${p.status === "ACKNOWLEDGED" ? "Acknowledged" : p.status === "CLOSED" ? "Closed" : p.status}`;
+  }
   return typeof p.documentId === "string"
     ? `Document ${p.documentId.slice(0, 8)} · escalation level ${String(p.level ?? 1)}`
     : "Quality system notification";
