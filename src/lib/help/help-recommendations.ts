@@ -6,6 +6,7 @@ export type HelpRecommendation = {
   description: string;
   query: string;
   context: string;
+  articleSlug: string;
 };
 
 type RecommendationDefinition = HelpRecommendation & {
@@ -13,15 +14,15 @@ type RecommendationDefinition = HelpRecommendation & {
 };
 
 const definitions: readonly RecommendationDefinition[] = [
-  { key:"documents", label:"Controlled documents", description:"Create, revise, submit, review, approve, distribute, and acknowledge controlled documents.", query:"controlled document review approval distribution acknowledgement", context:"documents", anyPermission:["document.read"] },
-  { key:"review-queue", label:"Reviews & approvals", description:"Work assigned document reviews and approvals within your authorized scope.", query:"review approval assignment", context:"review-queue", anyPermission:["document.review","document.approve","document.review.manage"] },
-  { key:"records", label:"Records management", description:"Create, retain, archive, and export governed quality records according to your permissions.", query:"records create archive export", context:"records", anyPermission:["record.read"] },
-  { key:"personnel", label:"Personnel", description:"Work with people, credentials, qualifications, and governed personnel evidence.", query:"personnel credentials qualifications", context:"personnel", anyPermission:["personnel.read"] },
-  { key:"training", label:"Training & competency", description:"Review training assignments, completions, competency programs, and assessments.", query:"training competency assignment completion assessment", context:"training", anyPermission:["training.read"] },
-  { key:"quality", label:"Quality events", description:"Create, investigate, CAPA, review, and close quality events within your authorized scope.", query:"quality event investigation CAPA closure", context:"quality", anyPermission:["quality_event.read"] },
-  { key:"equipment", label:"Equipment operations", description:"Review equipment status, qualification, calibration, maintenance, service, and evidence.", query:"equipment qualification calibration maintenance service", context:"laboratory", anyPermission:["equipment.read"] },
-  { key:"reporting", label:"Reporting & analytics", description:"Generate, finalize, and export governed reports according to your permissions.", query:"reporting finalize export", context:"reporting", anyPermission:["report.read"] },
-  { key:"administration", label:"Administration", description:"Configure tenant access, document controls, retention, workflows, and other authorized settings.", query:"administration access configuration workflow retention", context:"administration", anyPermission:["administration.manage"] },
+  { key:"documents", label:"Controlled documents", description:"Create, revise, submit, review, approve, distribute, and acknowledge controlled documents.", query:"controlled document review approval distribution acknowledgement", context:"documents", articleSlug:"controlled-documents", anyPermission:["document.read"] },
+  { key:"review-queue", label:"Reviews & approvals", description:"Work assigned document reviews and approvals within your authorized scope.", query:"review approval assignment", context:"review-queue", articleSlug:"review-queue-approvals", anyPermission:["document.review","document.approve","document.review.manage"] },
+  { key:"records", label:"Records management", description:"Create, retain, archive, and export governed quality records according to your permissions.", query:"records create archive export", context:"records", articleSlug:"records-management", anyPermission:["record.read"] },
+  { key:"personnel", label:"Personnel", description:"Work with people, credentials, qualifications, and governed personnel evidence.", query:"personnel credentials qualifications", context:"personnel", articleSlug:"personnel-credentials-qualifications", anyPermission:["personnel.read"] },
+  { key:"training", label:"Training & competency", description:"Review training assignments, completions, competency programs, and assessments.", query:"training competency assignment completion assessment", context:"training", articleSlug:"training-competency", anyPermission:["training.read"] },
+  { key:"quality", label:"Quality events", description:"Create, investigate, CAPA, review, and close quality events within your authorized scope.", query:"quality event investigation CAPA closure", context:"quality", articleSlug:"quality-events", anyPermission:["quality_event.read"] },
+  { key:"equipment", label:"Equipment operations", description:"Review equipment status, qualification, calibration, maintenance, service, and evidence.", query:"equipment qualification calibration maintenance service", context:"laboratory", articleSlug:"equipment-operations", anyPermission:["equipment.read"] },
+  { key:"reporting", label:"Reporting & analytics", description:"Generate, finalize, and export governed reports according to your permissions.", query:"reporting finalize export", context:"reporting", articleSlug:"governed-reporting", anyPermission:["report.read"] },
+  { key:"administration", label:"Administration", description:"Configure tenant access, document controls, retention, workflows, and other authorized settings.", query:"administration access configuration workflow retention", context:"administration", articleSlug:"tenant-administration", anyPermission:["administration.manage"] },
 ];
 
 function permissionSet(context: AuthorizationContext) {
