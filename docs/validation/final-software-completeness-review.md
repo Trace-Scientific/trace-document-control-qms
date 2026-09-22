@@ -62,6 +62,13 @@ Before the next candidate is promoted to validation execution, the traceability/
 
 This reconciliation should add requirements/UAT only where a post-rc.6 control is material to validation or security evidence. It should not duplicate existing UR/UAT coverage merely because a feature has a platform/commercial presentation.
 
+The repository now carries that reconciliation as:
+
+- `docs/validation/traceability-matrix-post-rc6.md` — `UR-026` through `UR-033`; and
+- `docs/validation/critical-workflow-uat-post-rc6.md` — `UAT-40` through `UAT-57`.
+
+Those documents remain planned validation evidence until executed against a future immutable release-candidate SHA.
+
 ## Railway development boundary
 
 Railway remains the synthetic-data development preview used for continued product review and fine-tuning.
