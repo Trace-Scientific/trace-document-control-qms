@@ -47,30 +47,32 @@ export function HelpCenter() {
   }
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const rawContext = params.get("context") ?? "help";
-    const context = contextualSearch[rawContext];
-    setPageContext(context ? rawContext : "help");
-    const initialQuery = params.get("query")?.trim() || context?.query || "";
-    const directArticle = params.get("article")?.trim() || context?.articleSlug || "";
-    if (context) setContextLabel(context.label);
-    if (initialQuery) setQuery(initialQuery);
-    void loadArticles(initialQuery).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Help articles could not be loaded."));
-    if (directArticle) void openArticle(directArticle).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Contextual Help article could not be loaded."));
-    void fetch(`/api/help/recommendations?context=${encodeURIComponent(context ? rawContext : "help")}`, { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Role-aware Help recommendations could not be loaded.");
-        return response.json() as Promise<{ data: HelpRecommendation[] }>;
-      })
-      .then((payload) => setRecommendations(payload.data))
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Role-aware Help recommendations could not be loaded."));
-    void fetch("/api/help/manuals", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("User manual releases could not be loaded.");
-        return response.json() as Promise<{ data: ManualSummary[] }>;
-      })
-      .then((payload) => setManuals(payload.data))
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "User manual releases could not be loaded."));
+    void Promise.resolve().then(() => {
+      const params = new URLSearchParams(window.location.search);
+      const rawContext = params.get("context") ?? "help";
+      const context = contextualSearch[rawContext];
+      setPageContext(context ? rawContext : "help");
+      const initialQuery = params.get("query")?.trim() || context?.query || "";
+      const directArticle = params.get("article")?.trim() || context?.articleSlug || "";
+      if (context) setContextLabel(context.label);
+      if (initialQuery) setQuery(initialQuery);
+      void loadArticles(initialQuery).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Help articles could not be loaded."));
+      if (directArticle) void openArticle(directArticle).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Contextual Help article could not be loaded."));
+      void fetch(`/api/help/recommendations?context=${encodeURIComponent(context ? rawContext : "help")}`, { cache: "no-store" })
+        .then(async (response) => {
+          if (!response.ok) throw new Error("Role-aware Help recommendations could not be loaded.");
+          return response.json() as Promise<{ data: HelpRecommendation[] }>;
+        })
+        .then((payload) => setRecommendations(payload.data))
+        .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Role-aware Help recommendations could not be loaded."));
+      void fetch("/api/help/manuals", { cache: "no-store" })
+        .then(async (response) => {
+          if (!response.ok) throw new Error("User manual releases could not be loaded.");
+          return response.json() as Promise<{ data: ManualSummary[] }>;
+        })
+        .then((payload) => setManuals(payload.data))
+        .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "User manual releases could not be loaded."));
+    });
   }, []);
 
   async function loadSupportHistory() {
