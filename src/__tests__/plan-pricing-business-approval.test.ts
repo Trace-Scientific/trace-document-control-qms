@@ -21,7 +21,8 @@ describe("plan pricing business approval",()=>{
   });
 
   it("requires explicit approval evidence during activation",()=>{
-    expect(route).toContain("businessApprovalReason");
+    expect(route).toContain("businessApprovalReason: z.string().min(1).max(1000)");
+    expect(route).toContain("businessApprovalReason: input.businessApprovalReason");
     expect(service).toContain("validateReason(input.businessApprovalReason)");
     expect(service).toContain('"businessApprovedAt" = CURRENT_TIMESTAMP');
     expect(service).toContain('"businessApprovedByIdentityId"');

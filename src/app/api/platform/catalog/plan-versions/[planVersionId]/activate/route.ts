@@ -5,7 +5,7 @@ import { SubscriptionCatalogService } from "@/lib/platform/subscriptions";
 import { respondSubscriptionError } from "@/lib/platform/subscription-api";
 
 const service = new SubscriptionCatalogService();
-const schema = z.object({ reason: z.string().max(1000) });
+const schema = z.object({ reason: z.string().min(1).max(1000), businessApprovalReason: z.string().min(1).max(1000) });
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ planVersionId: string }> }) {
   try {
