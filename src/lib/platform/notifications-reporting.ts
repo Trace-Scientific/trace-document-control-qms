@@ -46,8 +46,9 @@ export interface PlatformOperationalReport {
     overdueClosureSla: number;
     unassignedActiveRequests: number;
   };
-  sales: { representativesByStatus: Record<string, number>; currentAssignments: number };
-  commissions: { accrualsByStatus: Record<string, number>; unpaidApprovedAmount: string };
+  sales: { representativesByStatus: Record<string, number>; currentAssignments: number; customersByRepresentative: Record<string, number>; newCustomersLast30Days: number; newCustomersLast90Days: number };
+  commercial: { monthlyRecurringRevenueByCurrency: Record<string, string>; upcomingRenewalsNext90Days: number; cancellations: number; planMix: Record<string, number>; moduleMix: Record<string, number> };
+  commissions: { accrualsByStatus: Record<string, number>; unpaidApprovedAmount: string; accruedAmountByCurrency: Record<string, string>; paidAmountByCurrency: Record<string, string> };
   notifications: { byStatus: Record<string, number>; deadLetterCount: number; retryCount: number };
 }
 
@@ -419,11 +420,84 @@ export class PlatformNotificationReportingService {
         SELECT COUNT(*)::bigint AS "count" FROM "SalesAssignment"
         WHERE "startsAt" <= CURRENT_TIMESTAMP AND ("endsAt" IS NULL OR "endsAt" > CURRENT_TIMESTAMP)
       `);
+      const customersByRepresentativeRows = await tx.$queryRaw<Array<{ representative: string; count: bigint }>>(Prisma.sql`
+        SELECT sr."displayName" AS "representative", COUNT(*)::bigint AS "count"
+        FROM "SalesAssignment" sa
+        INNER JOIN "SalesRepresentative" sr ON sr."id"=sa."salesRepresentativeId"
+        WHERE sa."startsAt" <= CURRENT_TIMESTAMP AND (sa."endsAt" IS NULL OR sa."endsAt" > CURRENT_TIMESTAMP)
+        GROUP BY sr."displayName"
+        ORDER BY sr."displayName"
+      `);
+      const newCustomerRows = await tx.$queryRaw<Array<{ last30: bigint; last90: bigint }>>(Prisma.sql`
+        SELECT
+          COUNT(*) FILTER (WHERE "createdAt" >= CURRENT_TIMESTAMP - INTERVAL '30 days')::bigint AS "last30",
+          COUNT(*) FILTER (WHERE "createdAt" >= CURRENT_TIMESTAMP - INTERVAL '90 days')::bigint AS "last90"
+        FROM "CustomerAccount"
+      `);
+      const recurringRevenueRows = await tx.$queryRaw<Array<{ currency: string; monthlyAmountCents: Prisma.Decimal }>>(Prisma.sql`
+        SELECT pv."currency",
+          SUM(
+            CASE pv."billingCadence"
+              WHEN 'MONTHLY' THEN pv."baseAmountCents"
+              WHEN 'ANNUAL' THEN pv."baseAmountCents" / 12.0
+              ELSE 0
+            END
+          ) AS "monthlyAmountCents"
+        FROM "Subscription" s
+        INNER JOIN "PlanVersion" pv ON pv."id"=s."planVersionId"
+        WHERE s."status"='ACTIVE'
+          AND pv."currency" IS NOT NULL
+          AND pv."baseAmountCents" IS NOT NULL
+          AND pv."billingCadence" IN ('MONTHLY','ANNUAL')
+        GROUP BY pv."currency"
+        ORDER BY pv."currency"
+      `);
+      const renewalRows = await tx.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+        SELECT COUNT(*)::bigint AS "count"
+        FROM "Subscription"
+        WHERE "status"='ACTIVE'
+          AND "endsAt" IS NOT NULL
+          AND "endsAt" > CURRENT_TIMESTAMP
+          AND "endsAt" <= CURRENT_TIMESTAMP + INTERVAL '90 days'
+      `);
+      const cancellationRows = await tx.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+        SELECT COUNT(*)::bigint AS "count" FROM "Subscription" WHERE "status"='CANCELLED'
+      `);
+      const planMixRows = await tx.$queryRaw<Array<{ planName: string; count: bigint }>>(Prisma.sql`
+        SELECT p."name" AS "planName", COUNT(*)::bigint AS "count"
+        FROM "Subscription" s
+        INNER JOIN "PlanVersion" pv ON pv."id"=s."planVersionId"
+        INNER JOIN "Plan" p ON p."id"=pv."planId"
+        WHERE s."status"='ACTIVE'
+        GROUP BY p."name"
+        ORDER BY p."name"
+      `);
+      const moduleMixRows = await tx.$queryRaw<Array<{ featureName: string; count: bigint }>>(Prisma.sql`
+        SELECT f."name" AS "featureName", COUNT(DISTINCT s."id")::bigint AS "count"
+        FROM "Subscription" s
+        INNER JOIN "PlanFeature" pf ON pf."planVersionId"=s."planVersionId" AND pf."enabled"=true
+        INNER JOIN "Feature" f ON f."id"=pf."featureId"
+        WHERE s."status"='ACTIVE'
+        GROUP BY f."name"
+        ORDER BY f."name"
+      `);
       const commissionRows = await tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`
         SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "CommissionAccrual" GROUP BY "status" ORDER BY "status"
       `);
       const approvedAmountRows = await tx.$queryRaw<Array<{ amount: Prisma.Decimal | null }>>(Prisma.sql`
         SELECT SUM("commissionAmount") AS "amount" FROM "CommissionAccrual" WHERE "status" = 'APPROVED'
+      `);
+      const commissionAccruedRows = await tx.$queryRaw<Array<{ currency: string; amount: Prisma.Decimal }>>(Prisma.sql`
+        SELECT "currency", SUM("commissionAmount") AS "amount"
+        FROM "CommissionAccrual"
+        GROUP BY "currency"
+        ORDER BY "currency"
+      `);
+      const commissionPaidRows = await tx.$queryRaw<Array<{ currency: string; amount: Prisma.Decimal }>>(Prisma.sql`
+        SELECT "currency", SUM("totalAmount") AS "amount"
+        FROM "CommissionPayment"
+        GROUP BY "currency"
+        ORDER BY "currency"
       `);
       const notificationRows = await tx.$queryRaw<Array<{ status: string; count: bigint }>>(Prisma.sql`
         SELECT "status"::text AS "status", COUNT(*)::bigint AS "count" FROM "PlatformNotification" GROUP BY "status" ORDER BY "status"
@@ -441,6 +515,12 @@ export class PlatformNotificationReportingService {
       const notificationMap = statusMap(notificationRows);
       const overrideMap = Object.fromEntries(overrideRows.map((row) => [row.decision, Number(row.count)]));
       const approvedAmount = approvedAmountRows[0]?.amount;
+      const customersByRepresentative = Object.fromEntries(customersByRepresentativeRows.map((row) => [row.representative, Number(row.count)]));
+      const monthlyRecurringRevenueByCurrency = Object.fromEntries(recurringRevenueRows.map((row) => [row.currency, (Number(row.monthlyAmountCents) / 100).toFixed(2)]));
+      const planMix = Object.fromEntries(planMixRows.map((row) => [row.planName, Number(row.count)]));
+      const moduleMix = Object.fromEntries(moduleMixRows.map((row) => [row.featureName, Number(row.count)]));
+      const accruedAmountByCurrency = Object.fromEntries(commissionAccruedRows.map((row) => [row.currency, Number(row.amount).toFixed(2)]));
+      const paidAmountByCurrency = Object.fromEntries(commissionPaidRows.map((row) => [row.currency, Number(row.amount).toFixed(2)]));
 
       const result: PlatformOperationalReport = {
         generatedAt: new Date().toISOString(),
@@ -464,10 +544,22 @@ export class PlatformNotificationReportingService {
         sales: {
           representativesByStatus: salesRepMap,
           currentAssignments: Number(salesAssignmentRows[0]?.count ?? 0),
+          customersByRepresentative,
+          newCustomersLast30Days: Number(newCustomerRows[0]?.last30 ?? 0),
+          newCustomersLast90Days: Number(newCustomerRows[0]?.last90 ?? 0),
+        },
+        commercial: {
+          monthlyRecurringRevenueByCurrency,
+          upcomingRenewalsNext90Days: Number(renewalRows[0]?.count ?? 0),
+          cancellations: Number(cancellationRows[0]?.count ?? 0),
+          planMix,
+          moduleMix,
         },
         commissions: {
           accrualsByStatus: commissionMap,
           unpaidApprovedAmount: approvedAmount ? approvedAmount.toFixed(2) : "0.00",
+          accruedAmountByCurrency,
+          paidAmountByCurrency,
         },
         notifications: {
           byStatus: notificationMap,
