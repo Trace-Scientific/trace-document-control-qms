@@ -435,22 +435,22 @@ export class PlatformNotificationReportingService {
         FROM "CustomerAccount"
       `);
       const recurringRevenueRows = await tx.$queryRaw<Array<{ currency: string; monthlyAmountCents: Prisma.Decimal }>>(Prisma.sql`
-        SELECT pv."currency",
+        SELECT COALESCE(s."contractCurrency",pv."currency") AS "currency",
           SUM(
-            CASE pv."billingCadence"
-              WHEN 'MONTHLY' THEN pv."baseAmountCents"
-              WHEN 'ANNUAL' THEN pv."baseAmountCents" / 12.0
+            CASE COALESCE(s."contractBillingCadence",pv."billingCadence")
+              WHEN 'MONTHLY' THEN COALESCE(s."contractBaseAmountCents",pv."baseAmountCents")
+              WHEN 'ANNUAL' THEN COALESCE(s."contractBaseAmountCents",pv."baseAmountCents") / 12.0
               ELSE 0
             END
           ) AS "monthlyAmountCents"
         FROM "Subscription" s
         INNER JOIN "PlanVersion" pv ON pv."id"=s."planVersionId"
         WHERE s."status"='ACTIVE'
-          AND pv."currency" IS NOT NULL
-          AND pv."baseAmountCents" IS NOT NULL
-          AND pv."billingCadence" IN ('MONTHLY','ANNUAL')
-        GROUP BY pv."currency"
-        ORDER BY pv."currency"
+          AND COALESCE(s."contractCurrency",pv."currency") IS NOT NULL
+          AND COALESCE(s."contractBaseAmountCents",pv."baseAmountCents") IS NOT NULL
+          AND COALESCE(s."contractBillingCadence",pv."billingCadence") IN ('MONTHLY','ANNUAL')
+        GROUP BY COALESCE(s."contractCurrency",pv."currency")
+        ORDER BY COALESCE(s."contractCurrency",pv."currency")
       `);
       const renewalRows = await tx.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
         SELECT COUNT(*)::bigint AS "count"

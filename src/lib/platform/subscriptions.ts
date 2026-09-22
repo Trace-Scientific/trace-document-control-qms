@@ -63,6 +63,13 @@ export interface SubscriptionRecord {
   lockVersion: number;
   createdAt: Date;
   updatedAt: Date;
+  contractBillingCadence: BillingCadence | null;
+  contractCurrency: string | null;
+  contractBaseAmountCents: number | null;
+  contractIncludedFullUsers: number | null;
+  contractAdditionalUserRateCents: number | null;
+  contractStorageAllowanceGb: number | null;
+  contractTermsNote: string | null;
 }
 
 export interface EntitlementResolution {
@@ -332,8 +339,17 @@ export class SubscriptionCatalogService {
       `),
       db.$queryRaw<Array<SubscriptionRecord & { customerCode:string; customerName:string; planCode:string; planName:string; planVersion:number }>>(Prisma.sql`
         SELECT s."id",s."customerAccountId",s."planVersionId",s."status"::text AS "status",s."startsAt",s."endsAt",
-          s."lockVersion",s."createdAt",s."updatedAt",ca."accountCode" AS "customerCode",ca."displayName" AS "customerName",
-          p."code" AS "planCode",p."name" AS "planName",pv."version" AS "planVersion"
+          s."lockVersion",s."createdAt",s."updatedAt",s."contractBillingCadence"::text AS "contractBillingCadence",
+          s."contractCurrency",s."contractBaseAmountCents",s."contractIncludedFullUsers",s."contractAdditionalUserRateCents",
+          s."contractStorageAllowanceGb",s."contractTermsNote",
+          ca."accountCode" AS "customerCode",ca."displayName" AS "customerName",
+          p."code" AS "planCode",p."name" AS "planName",pv."version" AS "planVersion",
+          COALESCE(s."contractBillingCadence",pv."billingCadence")::text AS "effectiveBillingCadence",
+          COALESCE(s."contractCurrency",pv."currency") AS "effectiveCurrency",
+          COALESCE(s."contractBaseAmountCents",pv."baseAmountCents") AS "effectiveBaseAmountCents",
+          COALESCE(s."contractIncludedFullUsers",pv."includedFullUsers") AS "effectiveIncludedFullUsers",
+          COALESCE(s."contractAdditionalUserRateCents",pv."additionalUserRateCents") AS "effectiveAdditionalUserRateCents",
+          COALESCE(s."contractStorageAllowanceGb",pv."storageAllowanceGb") AS "effectiveStorageAllowanceGb"
         FROM "Subscription" s
         INNER JOIN "CustomerAccount" ca ON ca."id"=s."customerAccountId"
         INNER JOIN "PlanVersion" pv ON pv."id"=s."planVersionId"
@@ -360,11 +376,25 @@ export class SubscriptionCatalogService {
 
   async createSubscription(
     context: PlatformAuthorizationContext,
-    input: { customerAccountId: string; planVersionId: string; startsAt: Date; endsAt?: Date | null; reason: string },
+    input: {
+      customerAccountId: string;
+      planVersionId: string;
+      startsAt: Date;
+      endsAt?: Date | null;
+      contractBillingCadence?: BillingCadence | null;
+      contractCurrency?: string | null;
+      contractBaseAmountCents?: number | null;
+      contractIncludedFullUsers?: number | null;
+      contractAdditionalUserRateCents?: number | null;
+      contractStorageAllowanceGb?: number | null;
+      contractTermsNote?: string | null;
+      reason: string;
+    },
   ): Promise<SubscriptionRecord> {
     requirePlatformAuthorization(context, { permission: "platform.subscription.manage" });
     validateReason(input.reason);
     validateWindow(input.startsAt, input.endsAt ?? null);
+    validateContractedTerms(input);
 
     return db.$transaction(async (tx) => {
       const eligible = await tx.$queryRaw<{ ok: boolean }[]>(Prisma.sql`
@@ -379,14 +409,50 @@ export class SubscriptionCatalogService {
       if (eligible.length !== 1) throw new SubscriptionValidationError("Customer and plan version must both be active");
 
       const rows = await tx.$queryRaw<SubscriptionRecord[]>(Prisma.sql`
-        INSERT INTO "Subscription" ("id", "customerAccountId", "planVersionId", "startsAt", "endsAt")
-        VALUES (gen_random_uuid(), ${input.customerAccountId}::uuid, ${input.planVersionId}::uuid, ${input.startsAt}, ${input.endsAt ?? null})
-        RETURNING "id", "customerAccountId", "planVersionId", "status"::text AS "status", "startsAt", "endsAt", "lockVersion", "createdAt", "updatedAt"
+        INSERT INTO "Subscription" (
+          "id", "customerAccountId", "planVersionId", "startsAt", "endsAt",
+          "contractBillingCadence", "contractCurrency", "contractBaseAmountCents",
+          "contractIncludedFullUsers", "contractAdditionalUserRateCents", "contractStorageAllowanceGb", "contractTermsNote"
+        )
+        VALUES (
+          gen_random_uuid(), ${input.customerAccountId}::uuid, ${input.planVersionId}::uuid, ${input.startsAt}, ${input.endsAt ?? null},
+          ${input.contractBillingCadence ?? null}::"BillingCadence",
+          ${input.contractCurrency?.trim().toUpperCase() || null},
+          ${input.contractBaseAmountCents ?? null},
+          ${input.contractIncludedFullUsers ?? null},
+          ${input.contractAdditionalUserRateCents ?? null},
+          ${input.contractStorageAllowanceGb ?? null},
+          ${input.contractTermsNote?.trim() || null}
+        )
+        RETURNING "id", "customerAccountId", "planVersionId", "status"::text AS "status",
+          "startsAt", "endsAt", "lockVersion", "createdAt", "updatedAt",
+          "contractBillingCadence"::text AS "contractBillingCadence", "contractCurrency", "contractBaseAmountCents",
+          "contractIncludedFullUsers", "contractAdditionalUserRateCents", "contractStorageAllowanceGb", "contractTermsNote"
       `);
-      await insertSubscriptionChange(tx, context, rows[0], null, input.reason, { operation: "CREATE" });
+      await insertSubscriptionChange(tx, context, rows[0], null, input.reason, {
+        operation: "CREATE",
+        contractedTerms: {
+          billingCadence: input.contractBillingCadence ?? null,
+          currency: input.contractCurrency?.trim().toUpperCase() || null,
+          baseAmountCents: input.contractBaseAmountCents ?? null,
+          includedFullUsers: input.contractIncludedFullUsers ?? null,
+          additionalUserRateCents: input.contractAdditionalUserRateCents ?? null,
+          storageAllowanceGb: input.contractStorageAllowanceGb ?? null,
+          note: input.contractTermsNote?.trim() || null,
+        },
+      });
       await writePlatformAudit(tx, context, "subscription.created", "Subscription", rows[0].id, input.reason, {
         customerAccountId: rows[0].customerAccountId,
         planVersionId: rows[0].planVersionId,
+        contractedTerms: {
+          billingCadence: rows[0].contractBillingCadence,
+          currency: rows[0].contractCurrency,
+          baseAmountCents: rows[0].contractBaseAmountCents,
+          includedFullUsers: rows[0].contractIncludedFullUsers,
+          additionalUserRateCents: rows[0].contractAdditionalUserRateCents,
+          storageAllowanceGb: rows[0].contractStorageAllowanceGb,
+          note: rows[0].contractTermsNote,
+        },
       });
       return rows[0];
     });
@@ -703,5 +769,32 @@ function validateCommercialTerms(input: {
     ["Storage allowance", input.storageAllowanceGb ?? 0],
   ] as const) {
     if (!Number.isInteger(value) || value < 0) throw new SubscriptionValidationError(`${label} must be a non-negative integer`);
+  }
+}
+
+function validateContractedTerms(input: {
+  contractBillingCadence?: BillingCadence | null;
+  contractCurrency?: string | null;
+  contractBaseAmountCents?: number | null;
+  contractIncludedFullUsers?: number | null;
+  contractAdditionalUserRateCents?: number | null;
+  contractStorageAllowanceGb?: number | null;
+  contractTermsNote?: string | null;
+}): void {
+  if (input.contractCurrency != null && !/^[A-Z]{3}$/.test(input.contractCurrency.trim().toUpperCase())) {
+    throw new SubscriptionValidationError("Contract currency must be a 3-letter ISO code");
+  }
+  for (const [label, value] of [
+    ["Contract base amount", input.contractBaseAmountCents],
+    ["Contract included full users", input.contractIncludedFullUsers],
+    ["Contract additional user rate", input.contractAdditionalUserRateCents],
+    ["Contract storage allowance", input.contractStorageAllowanceGb],
+  ] as const) {
+    if (value != null && (!Number.isInteger(value) || value < 0)) {
+      throw new SubscriptionValidationError(`${label} must be a non-negative integer`);
+    }
+  }
+  if (input.contractTermsNote != null && input.contractTermsNote.trim().length > 1000) {
+    throw new SubscriptionValidationError("Contract terms note must be 1000 characters or fewer");
   }
 }
