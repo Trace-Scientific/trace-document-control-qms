@@ -40,7 +40,7 @@ export function PlatformPricingAnalysisPanel({canManage}:{canManage:boolean}){
     setAnalysis(p.data.analysis);setCompetitors(p.data.competitors);
   }
 
-  useEffect(()=>{void load().catch(e=>setError(e instanceof Error?e.message:"Commercial pricing analysis could not be loaded."));},[]);
+  useEffect(()=>{void Promise.resolve().then(()=>load()).catch(e=>setError(e instanceof Error?e.message:"Commercial pricing analysis could not be loaded."));},[]);
 
   async function setCosts(item:Analysis){
     const current=item.cost;
