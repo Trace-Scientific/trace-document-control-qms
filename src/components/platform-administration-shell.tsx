@@ -10,6 +10,7 @@ import { PlatformIntegrationsPanel } from "./platform-integrations-panel";
 import { PlatformSupportIntakePanel } from "./platform-support-intake-panel";
 import { PlatformSubscriptionsPanel } from "./platform-subscriptions-panel";
 import { PlatformSalesPanel } from "./platform-sales-panel";
+import { PlatformCommissionsPanel } from "./platform-commissions-panel";
 import styles from "./platform-administration-shell.module.css";
 
 type PlatformContextPayload = { platformIdentityId: string; platformMembershipId: string; permissions: PlatformPermissionKey[] };
@@ -82,7 +83,7 @@ function SectionContent({ section, permissions, customers, customerError }: { se
   if (section.id === "support") return <PlatformSupportIntakePanel />;
   if (section.id === "subscriptions") return <PlatformSubscriptionsPanel customers={customers ?? []} canManage={permissions.includes("platform.subscription.manage")} canManageEntitlements={permissions.includes("platform.entitlement.manage")} />;
   if (section.id === "sales") return <PlatformSalesPanel customers={customers ?? []} canManage={permissions.includes("platform.sales.manage")} />;
-  if (section.id === "commissions") return <div className={styles.grid}><article className={styles.card}><h3>Versioned commission rules</h3><p>Draft plan versions and rules become immutable historical configuration when activated.</p></article><article className={styles.card}><h3>Governed lifecycle</h3><p>Accruals progress PENDING → EARNED → APPROVED → PAID, with separate append-only adjustments, reversals, and payment evidence.</p></article></div>;
+  if (section.id === "commissions") return <PlatformCommissionsPanel canManage={permissions.includes("platform.commission.manage")} />;
   if (section.id === "help") return <><div className={styles.grid}><article className={styles.card}><h3>Help Center</h3><p>Published operational articles are searchable by authenticated QMS users. Draft and archived content remain unavailable from the user-facing read API.</p><a className={styles.cardLink} href="/help">Open Help Center</a></article><PlatformReviewedHelpBaselinePanel /></div><PlatformControlledUserManualPanel /></>;
   if (section.id === "notifications") return <PlatformNotificationsPanel canRead={permissions.includes("platform.notification.read")} canManage={permissions.includes("platform.notification.manage")} />;
   if (section.id === "reporting") return <PlatformReportingPanel />;

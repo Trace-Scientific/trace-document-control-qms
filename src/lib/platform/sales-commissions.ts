@@ -160,6 +160,34 @@ export class SalesCommissionService {
     });
   }
 
+  async commissionWorkspace(context: PlatformAuthorizationContext) {
+    requirePlatformAuthorization(context, { permission: "platform.commission.read" });
+    const [plans, versions, rules, assignments, accruals] = await Promise.all([
+      db.$queryRaw<Array<{id:string;code:string;name:string;status:string;createdAt:Date;updatedAt:Date}>>(Prisma.sql`
+        SELECT "id","code","name","status"::text AS "status","createdAt","updatedAt"
+        FROM "CommissionPlan" ORDER BY "code"
+      `),
+      db.$queryRaw<Array<{id:string;commissionPlanId:string;version:number;status:string;effectiveFrom:Date;effectiveTo:Date|null;activatedAt:Date|null}>>(Prisma.sql`
+        SELECT "id","commissionPlanId","version","status"::text AS "status","effectiveFrom","effectiveTo","activatedAt"
+        FROM "CommissionPlanVersion" ORDER BY "commissionPlanId","version" DESC
+      `),
+      db.$queryRaw<Array<{id:string;commissionPlanVersionId:string;ruleCode:string;ruleType:CommissionRuleType;rate:Prisma.Decimal|null;fixedAmount:Prisma.Decimal|null;currency:string;description:string}>>(Prisma.sql`
+        SELECT "id","commissionPlanVersionId","ruleCode","ruleType"::text AS "ruleType","rate","fixedAmount","currency","description"
+        FROM "CommissionRule" ORDER BY "commissionPlanVersionId","ruleCode"
+      `),
+      db.$queryRaw<Array<{id:string;salesRepresentativeId:string;salesRepresentativeName:string;customerAccountId:string;customerName:string;startsAt:Date;endsAt:Date|null}>>(Prisma.sql`
+        SELECT sa."id",sa."salesRepresentativeId",sr."displayName" AS "salesRepresentativeName",
+          sa."customerAccountId",ca."displayName" AS "customerName",sa."startsAt",sa."endsAt"
+        FROM "SalesAssignment" sa
+        INNER JOIN "SalesRepresentative" sr ON sr."id"=sa."salesRepresentativeId"
+        INNER JOIN "CustomerAccount" ca ON ca."id"=sa."customerAccountId"
+        ORDER BY sa."startsAt" DESC
+      `),
+      this.listAccruals(context),
+    ]);
+    return { plans, versions, rules, assignments, accruals };
+  }
+
   async createCommissionPlan(
     context: PlatformAuthorizationContext,
     input: { code: string; name: string; reason: string },
