@@ -5,8 +5,8 @@
   padding: 20px;
   background: #fff;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  box-shadow: 0 1px 3px rgba(16, 35, 63, 0.04);
+  border-radius: var(--panel-radius);
+  box-shadow: var(--panel-shadow);
 }
 
 .workspace-section + .workspace-section {
@@ -32,8 +32,8 @@
 .section-heading h2,
 .workspace-heading h2 {
   margin: 0;
-  color: #1b2940;
-  font: 500 18px Georgia, "Times New Roman", serif;
+  color: var(--heading);
+  font: 500 18px var(--heading-font);
   line-height: 1.3;
 }
 
@@ -118,8 +118,8 @@
   align-items: end;
   padding: 16px;
   border: 1px solid #e1e6ee;
-  border-radius: 9px;
-  background: #f8fafc;
+  border-radius: var(--panel-radius);
+  background: var(--surface-subtle);
 }
 
 .admin-form > label {
@@ -254,8 +254,8 @@
 .equipment-register-style {
   padding: 16px;
   border: 1px solid #e1e6ee;
-  border-radius: 9px;
-  background: #f8fafc;
+  border-radius: var(--panel-radius);
+  background: var(--surface-subtle);
 }
 
 .equipment-register-style > h3 {
@@ -323,7 +323,7 @@
 
 .reporting-workspace .reporting-admin-form {
   margin-top: 0;
-  background: #f8fafc;
+  background: var(--surface-subtle);
 }
 
 .reporting-workspace .reporting-admin-form > h3,

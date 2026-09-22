@@ -5,6 +5,15 @@
   --muted: #667085;
   --line: #e6e9ef;
   --background: #f5f7fa;
+  --surface: #ffffff;
+  --surface-subtle: #f8fafc;
+  --surface-accent: #eef5fb;
+  --heading: #1b2940;
+  --border: #e6e9ef;
+  --heading-font: Georgia, "Times New Roman", serif;
+  --panel-radius: 9px;
+  --control-radius: 7px;
+  --panel-shadow: 0 1px 3px rgba(16, 35, 63, 0.03);
 }
 * {
   box-sizing: border-box;
