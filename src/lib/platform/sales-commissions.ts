@@ -73,6 +73,21 @@ export class SalesCommissionService {
     `);
   }
 
+  async salesWorkspace(context: PlatformAuthorizationContext) {
+    requirePlatformAuthorization(context, { permission: "platform.sales.read" });
+    const [representatives, assignments, identities] = await Promise.all([
+      this.listRepresentatives(context),
+      this.listAssignments(context),
+      db.$queryRaw<Array<{id:string;email:string;status:string}>>(Prisma.sql`
+        SELECT "id","email","status"::text AS "status"
+        FROM "PlatformIdentity"
+        WHERE "status"='ACTIVE'
+        ORDER BY "email"
+      `)
+    ]);
+    return { representatives, assignments, identities };
+  }
+
   async createRepresentative(
     context: PlatformAuthorizationContext,
     input: { platformIdentityId: string; displayName: string; reason: string },
