@@ -58,7 +58,7 @@ fail if an unresolved token remains.
 | `IMAGE_URI` | Approved ECR repository |
 | `IMAGE_DIGEST` | Recorded `sha256:` image digest |
 | `APP_BASE_URL` | Approved validation HTTPS origin |
-| `APP_RELEASE_VERSION` | `0.1.0-rc.7` |
+| `APP_RELEASE_VERSION` | `0.1.0-rc.8` |
 | `APP_RELEASE_SHA` | Full approved Git commit SHA |
 | `DATABASE_URL_SECRET_ARN` | Secrets Manager identifier |
 | `CRON_SECRET_ARN` | Secrets Manager identifier |
