@@ -12,6 +12,7 @@ import { PlatformSubscriptionsPanel } from "./platform-subscriptions-panel";
 import { PlatformSalesPanel } from "./platform-sales-panel";
 import { PlatformCommissionsPanel } from "./platform-commissions-panel";
 import { PlatformCustomersPanel, type CommercialCustomerAccount } from "./platform-customers-panel";
+import { PlatformAuditPanel } from "./platform-audit-panel";
 import styles from "./platform-administration-shell.module.css";
 
 type PlatformContextPayload = { platformIdentityId: string; platformMembershipId: string; permissions: PlatformPermissionKey[] };
@@ -98,7 +99,7 @@ function SectionContent({ section, permissions, customers, customerError, reload
   if (section.id === "reporting") return <PlatformReportingPanel />;
   if (section.id === "health") return <PlatformSystemHealthPanel />;
   if (section.id === "integrations") return <PlatformIntegrationsPanel />;
-  if (section.id === "audit") return <article className={styles.card}><h3>Immutable platform audit</h3><p>The append-only platform audit foundation is active. A dedicated audit browser will be added without exposing tenant-regulated content as an unrestricted cross-tenant report.</p></article>;
+  if (section.id === "audit") return <PlatformAuditPanel />;
   if (section.id === "security") return <article className={styles.card}><h3>Platform security foundation</h3><p>Platform identities, memberships, roles, permissions, and deny-by-default authorization are active and remain independent from tenant security administration.</p></article>;
   return null;
 }
