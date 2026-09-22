@@ -1,4 +1,5 @@
 import { SupportAccessBanner } from "@/components/support-access-banner";
+import { SupportAccessOperations } from "@/components/support-access-operations";
 
 export default function SupportAccessPage() {
   return (
@@ -13,6 +14,7 @@ export default function SupportAccessPage() {
           Electronic signatures, tenant approvals, legal-hold release, and tenant security administration remain customer-only actions and are not available through controlled support access.
         </p>
       </section>
+      <div style={{ marginTop: 24 }}><SupportAccessOperations /></div>
     </main>
   );
 }
