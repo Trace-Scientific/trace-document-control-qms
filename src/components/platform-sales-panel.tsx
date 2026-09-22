@@ -12,6 +12,7 @@ export function PlatformSalesPanel({customers,canManage}:{customers:Customer[];c
   const [representatives,setRepresentatives]=useState<Representative[]>([]);
   const [assignments,setAssignments]=useState<Assignment[]>([]);
   const [identities,setIdentities]=useState<Identity[]>([]);
+  const [scope,setScope]=useState<"ADMIN"|"SELF">("SELF");
   const [error,setError]=useState<string|null>(null);
   const [notice,setNotice]=useState<string|null>(null);
   const [busy,setBusy]=useState(false);
@@ -23,6 +24,7 @@ export function PlatformSalesPanel({customers,canManage}:{customers:Customer[];c
     setRepresentatives(p.data.representatives);
     setAssignments(p.data.assignments);
     setIdentities(p.data.identities);
+    setScope(p.data.scope);
   }
 
   useEffect(()=>{void load().catch(e=>setError(e instanceof Error?e.message:"Sales workspace could not be loaded."));},[]);
@@ -74,6 +76,7 @@ export function PlatformSalesPanel({customers,canManage}:{customers:Customer[];c
     <article className={styles.card}>
       <h3>Sales representatives</h3>
       <p>Trace-side sales representative profiles are linked to active platform identities only. Sales ownership does not grant tenant QMS access.</p>
+      <p>{scope==="ADMIN"?"Administrative sales scope: all representatives and customer assignments are visible.":"Sales representative scope: only your linked representative profile and assigned customer accounts are visible."}</p>
       {canManage?<button type="button" disabled={busy} onClick={()=>void createRepresentative()}>Create sales representative</button>:null}
       {representatives.length===0?<p>No sales representatives configured.</p>:representatives.map(item=><p key={item.id}><strong>{item.displayName}</strong> · {item.status}</p>)}
     </article>
