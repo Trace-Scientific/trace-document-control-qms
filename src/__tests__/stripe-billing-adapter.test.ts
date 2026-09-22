@@ -10,7 +10,7 @@ describe("Stripe billing adapter governance", () => {
 
   it("registers Stripe only through the reviewed platform integration runtime", () => {
     expect(runtime).toContain("new StripeBillingAdapter()");
-    expect(runtime).toContain("EnvironmentPlatformCredentialResolver");
+    expect(runtime).toContain("GovernedPlatformCredentialResolver");
   });
 
   it("keeps provider credentials outside application data", () => {
@@ -42,7 +42,7 @@ describe("Stripe billing adapter governance", () => {
   });
 
   it("derives an inbound idempotency key from the raw body if the provider sends no Trace key", () => {
-    expect(inbound).toContain('`sha256:${createHash("sha256").update(rawBody, "utf8").digest("hex")}`');
+    expect(inbound).toContain('`sha256:${createHash("sha256").update(rawBodyBytes).digest("hex")}`');
   });
 
   it("does not grant Stripe tenant or platform authorization authority", () => {
