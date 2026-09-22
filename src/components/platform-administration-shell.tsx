@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PlatformControlledUserManualPanel } from "./platform-controlled-user-manual-panel";
 import { PlatformReviewedHelpBaselinePanel } from "./platform-reviewed-help-baseline-panel";
@@ -70,18 +71,18 @@ export function PlatformAdministrationShell() {
   useEffect(() => {
     if (!context || !["customers", "subscriptions", "sales"].includes(activeSection) || customers !== null || customerError) return;
     let cancelled = false;
-    void reloadCustomers().catch((error: unknown) => {
+    void Promise.resolve().then(() => reloadCustomers()).catch((error: unknown) => {
       if (!cancelled) setCustomerError(error instanceof Error ? error.message : "Customer accounts could not be loaded.");
     });
     return () => { cancelled = true; };
   }, [activeSection, context, customerError, customers, reloadCustomers]);
 
-  if (contextError) return <main className={styles.main}><div className={styles.error} role="alert"><strong>Platform Administration unavailable.</strong><p>{contextError}</p><a className={styles.cardLink} href="/">Return to tenant QMS</a></div></main>;
+  if (contextError) return <main className={styles.main}><div className={styles.error} role="alert"><strong>Platform Administration unavailable.</strong><p>{contextError}</p><Link className={styles.cardLink} href="/">Return to tenant QMS</Link></div></main>;
   if (!context) return <main className={styles.main}><div className={styles.notice}>Loading platform authorization…</div></main>;
   const active = visibleSections.find((section) => section.id === activeSection) ?? visibleSections[0];
 
   return <div className={styles.shell}>
-    <header className={styles.header}><div className={styles.brandBlock}><p className={styles.eyebrow}>TRACE SCIENTIFIC CONTROL PLANE</p><h1>Platform Administration</h1><p className={styles.contextNote}>Platform authority is separate from tenant QMS roles and permissions.</p></div><a className={styles.returnLink} href="/">Open tenant QMS</a></header>
+    <header className={styles.header}><div className={styles.brandBlock}><p className={styles.eyebrow}>TRACE SCIENTIFIC CONTROL PLANE</p><h1>Platform Administration</h1><p className={styles.contextNote}>Platform authority is separate from tenant QMS roles and permissions.</p></div><Link className={styles.returnLink} href="/">Open tenant QMS</Link></header>
     <div className={styles.body}><nav className={styles.nav} aria-label="Platform Administration"><ul className={styles.navList}>{visibleSections.map((section) => <li key={section.id}><button type="button" className={`${styles.navButton} ${active?.id === section.id ? styles.navButtonActive : ""}`} onClick={() => setActiveSection(section.id)}>{section.label}</button></li>)}</ul></nav>
       <main className={styles.main}>{active ? <><div className={styles.sectionHeader}><div><p className={styles.eyebrow}>PLATFORM WORKSPACE</p><h2>{active.label}</h2><p className={styles.contextNote}>{active.description}</p></div><PhaseBadge phase={active.phase} /></div><SectionContent section={active} permissions={context.permissions} customers={customers} customerError={customerError} reloadCustomers={reloadCustomers} /></> : null}</main>
     </div>
