@@ -27,7 +27,7 @@ export function PlatformSalesPanel({customers,canManage}:{customers:Customer[];c
     setScope(p.data.scope);
   }
 
-  useEffect(()=>{void load().catch(e=>setError(e instanceof Error?e.message:"Sales workspace could not be loaded."));},[]);
+  useEffect(()=>{void Promise.resolve().then(()=>load()).catch(e=>setError(e instanceof Error?e.message:"Sales workspace could not be loaded."));},[]);
 
   async function createRepresentative(){
     if(!identities.length){setError("No active platform identity is available.");return;}
