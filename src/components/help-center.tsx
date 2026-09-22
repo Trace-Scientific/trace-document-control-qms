@@ -8,18 +8,18 @@ type ArticleDetail = ArticleSummary & { body: string; changeSummary: string };
 type ManualSummary = { manualCode: string; manualName: string; version: string; effectiveAt: string; releaseNotes: string; publishedAt: string; releaseApplicability: unknown };
 type ManualDetail = ManualSummary & { sections: { sectionCode: string; title: string; revisionNumber: number; body: string; changeSummary: string; displayOrder: number }[] };
 type SupportHistoryItem = { id: string; subject: string; category: string; priority: string; status: "OPEN" | "ACKNOWLEDGED" | "CLOSED"; submittedAt: string; acknowledgedAt: string | null; closedAt: string | null };
-type HelpRecommendation = { key:string; label:string; description:string; query:string; context:string };
+type HelpRecommendation = { key:string; label:string; description:string; query:string; context:string; articleSlug:string };
 
-const contextualSearch: Record<string, { label: string; query: string }> = {
-  documents: { label: "Documents", query: "controlled document" },
-  "review-queue": { label: "Review queue", query: "review approval" },
-  administration: { label: "Administration", query: "administration" },
-  records: { label: "Records", query: "records" },
-  personnel: { label: "Personnel", query: "personnel" },
-  training: { label: "Training & competency", query: "training competency" },
-  quality: { label: "Quality", query: "quality event CAPA" },
-  laboratory: { label: "Laboratory operations", query: "laboratory equipment validation calibration" },
-  reporting: { label: "Reporting & analytics", query: "reporting export" },
+const contextualSearch: Record<string, { label: string; query: string; articleSlug: string }> = {
+  documents: { label: "Documents", query: "controlled document", articleSlug: "controlled-documents" },
+  "review-queue": { label: "Review queue", query: "review approval", articleSlug: "review-queue-approvals" },
+  administration: { label: "Administration", query: "administration", articleSlug: "tenant-administration" },
+  records: { label: "Records", query: "records", articleSlug: "records-management" },
+  personnel: { label: "Personnel", query: "personnel", articleSlug: "personnel-credentials-qualifications" },
+  training: { label: "Training & competency", query: "training competency", articleSlug: "training-competency" },
+  quality: { label: "Quality", query: "quality event CAPA", articleSlug: "quality-events" },
+  laboratory: { label: "Laboratory operations", query: "laboratory equipment validation calibration", articleSlug: "equipment-operations" },
+  reporting: { label: "Reporting & analytics", query: "reporting export", articleSlug: "governed-reporting" },
 };
 
 export function HelpCenter() {
@@ -51,9 +51,11 @@ export function HelpCenter() {
     const context = contextualSearch[rawContext];
     setPageContext(context ? rawContext : "help");
     const initialQuery = params.get("query")?.trim() || context?.query || "";
+    const directArticle = params.get("article")?.trim() || context?.articleSlug || "";
     if (context) setContextLabel(context.label);
     if (initialQuery) setQuery(initialQuery);
     void loadArticles(initialQuery).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Help articles could not be loaded."));
+    if (directArticle) void openArticle(directArticle).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Contextual Help article could not be loaded."));
     void fetch(`/api/help/recommendations?context=${encodeURIComponent(context ? rawContext : "help")}`, { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error("Role-aware Help recommendations could not be loaded.");
@@ -157,7 +159,7 @@ export function HelpCenter() {
               </div>
               <div className={styles.recommendationGrid}>
                 {recommendations.map((item) => (
-                  <button key={item.key} type="button" className={styles.recommendationCard} onClick={() => { setQuery(item.query); void loadArticles(item.query).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Search failed.")); }}>
+                  <button key={item.key} type="button" className={styles.recommendationCard} onClick={() => { setQuery(item.query); void openArticle(item.articleSlug).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Contextual Help article could not be loaded.")); }}>
                     <strong>{item.label}</strong>
                     <span>{item.description}</span>
                   </button>
