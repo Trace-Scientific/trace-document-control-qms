@@ -27,7 +27,7 @@ export function PlatformIntegrationsPanel() {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void Promise.resolve().then(() => load()); }, [load]);
 
   async function createConnection(formData: FormData) {
     setBusy(true); setError(null);
