@@ -64,7 +64,7 @@ export interface SupportSessionContext {
   capabilities: SupportCapabilityKey[];
 }
 
-interface CaseRow extends SupportCaseRecord {}
+type CaseRow = SupportCaseRecord;
 interface RequestRow {
   id: string;
   caseId: string;
