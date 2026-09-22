@@ -8,6 +8,7 @@ type Customer={id:string;accountCode:string;displayName:string;legalName:string;
 type Plan={planVersionId:string;planId:string;planCode:string;planName:string;version:number;billingCadence:"MONTHLY"|"ANNUAL"|"CUSTOM"|null;currency:string|null;baseAmountCents:number|null;includedFullUsers:number|null;additionalUserRateCents:number|null;storageAllowanceGb:number|null};
 type Subscription={id:string;customerAccountId:string;planVersionId:string;status:"PENDING"|"ACTIVE"|"SUSPENDED"|"CANCELLED"|"EXPIRED";startsAt:string;endsAt:string|null;lockVersion:number;customerCode:string;customerName:string;planCode:string;planName:string;planVersion:number};
 type Override={id:string;customerAccountId:string;customerCode:string;customerName:string;featureKey:string;featureName:string;decision:"ENABLE"|"DISABLE";effectiveFrom:string;effectiveTo:string|null;reason:string;createdAt:string};
+type ActiveFeature={id:string;key:string;name:string;productId:string};
 
 function money(currency:string|null,cents:number|null){
   if(!currency||cents===null) return "Not set";
@@ -21,10 +22,11 @@ function nextStatuses(status:Subscription["status"]):Subscription["status"][]{
   return [];
 }
 
-export function PlatformSubscriptionsPanel({customers,canManage}:{customers:Customer[];canManage:boolean}){
+export function PlatformSubscriptionsPanel({customers,canManage,canManageEntitlements}:{customers:Customer[];canManage:boolean;canManageEntitlements:boolean}){
   const [plans,setPlans]=useState<Plan[]>([]);
   const [subscriptions,setSubscriptions]=useState<Subscription[]>([]);
   const [overrides,setOverrides]=useState<Override[]>([]);
+  const [activeFeatures,setActiveFeatures]=useState<ActiveFeature[]>([]);
   const [error,setError]=useState<string|null>(null);
   const [notice,setNotice]=useState<string|null>(null);
   const [busy,setBusy]=useState(false);
@@ -33,7 +35,7 @@ export function PlatformSubscriptionsPanel({customers,canManage}:{customers:Cust
     const r=await fetch("/api/platform/subscriptions/workspace",{cache:"no-store"});
     const p=await r.json().catch(()=>null);
     if(!r.ok) throw new Error(p?.error||"Subscriptions workspace could not be loaded.");
-    setPlans(p.data.plans); setSubscriptions(p.data.subscriptions); setOverrides(p.data.overrides);
+    setPlans(p.data.plans); setSubscriptions(p.data.subscriptions); setOverrides(p.data.overrides); setActiveFeatures(p.data.activeFeatures);
   }
 
   useEffect(()=>{void load().catch(e=>setError(e instanceof Error?e.message:"Subscriptions workspace could not be loaded."));},[]);
@@ -73,6 +75,37 @@ export function PlatformSubscriptionsPanel({customers,canManage}:{customers:Cust
     finally{setBusy(false);}
   }
 
+  async function createOverride(){
+    const eligible=customers.filter(c=>c.status==="ACTIVE"&&c.organizationId);
+    if(!eligible.length){setError("No active tenant-linked customer is available.");return;}
+    if(!activeFeatures.length){setError("No active feature/module is available.");return;}
+    const customerId=window.prompt("Customer account ID",eligible[0].id); if(!customerId) return;
+    const featureId=window.prompt("Active feature/module ID",activeFeatures[0].id); if(!featureId) return;
+    const decision=(window.prompt("Override decision: ENABLE or DISABLE","ENABLE")||"").toUpperCase();
+    if(decision!=="ENABLE"&&decision!=="DISABLE"){setError("Decision must be ENABLE or DISABLE.");return;}
+    const reason=window.prompt("Reason for this entitlement override"); if(!reason?.trim()) return;
+    setBusy(true);setError(null);setNotice(null);
+    try{
+      const r=await fetch("/api/platform/entitlements/overrides",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({customerAccountId:customerId,featureId,decision,effectiveFrom:new Date().toISOString(),reason})});
+      const p=await r.json().catch(()=>null); if(!r.ok) throw new Error(p?.error||"Entitlement override could not be created.");
+      setNotice("Effective-dated entitlement override created. Tenant RBAC was not changed.");
+      await load();
+    }catch(e){setError(e instanceof Error?e.message:"Entitlement override could not be created.");}
+    finally{setBusy(false);}
+  }
+
+  async function revokeOverride(item:Override){
+    const reason=window.prompt("Reason for revoking this entitlement override"); if(!reason?.trim()) return;
+    setBusy(true);setError(null);setNotice(null);
+    try{
+      const r=await fetch("/api/platform/entitlements/overrides/"+encodeURIComponent(item.id)+"/revoke",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({reason})});
+      const p=await r.json().catch(()=>null); if(!r.ok) throw new Error(p?.error||"Entitlement override could not be revoked.");
+      setNotice("Entitlement override revoked with audit evidence preserved.");
+      await load();
+    }catch(e){setError(e instanceof Error?e.message:"Entitlement override could not be revoked.");}
+    finally{setBusy(false);}
+  }
+
   return <div className={styles.grid}>
     <PlatformCatalogAdministrationPanel canManage={canManage} />
     <article className={styles.card}>
@@ -98,9 +131,11 @@ export function PlatformSubscriptionsPanel({customers,canManage}:{customers:Cust
     <article className={styles.card}>
       <h3>Active entitlement overrides</h3>
       <p>Overrides are effective-dated commercial feature decisions. They do not create tenant permissions.</p>
+      {canManageEntitlements?<button type="button" disabled={busy} onClick={()=>void createOverride()}>Create entitlement override</button>:null}
       {overrides.length===0?<p>No active entitlement overrides.</p>:overrides.map(item=><div key={item.id}>
         <strong>{item.customerName} · {item.featureName}</strong>
         <p>{item.decision} · effective {new Date(item.effectiveFrom).toLocaleDateString()}</p>
+        {canManageEntitlements?<button type="button" disabled={busy} onClick={()=>void revokeOverride(item)}>Revoke override</button>:null}
       </div>)}
     </article>
 
