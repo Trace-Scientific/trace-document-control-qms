@@ -6,7 +6,7 @@ import { PlatformCatalogAdministrationPanel } from "./platform-catalog-administr
 
 type Customer={id:string;accountCode:string;displayName:string;legalName:string;status:string;organizationId:string|null};
 type Plan={planVersionId:string;planId:string;planCode:string;planName:string;version:number;billingCadence:"MONTHLY"|"ANNUAL"|"CUSTOM"|null;currency:string|null;baseAmountCents:number|null;includedFullUsers:number|null;additionalUserRateCents:number|null;storageAllowanceGb:number|null};
-type Subscription={id:string;customerAccountId:string;planVersionId:string;status:"PENDING"|"ACTIVE"|"SUSPENDED"|"CANCELLED"|"EXPIRED";startsAt:string;endsAt:string|null;lockVersion:number;customerCode:string;customerName:string;planCode:string;planName:string;planVersion:number};
+type Subscription={id:string;customerAccountId:string;planVersionId:string;status:"PENDING"|"ACTIVE"|"SUSPENDED"|"CANCELLED"|"EXPIRED";startsAt:string;endsAt:string|null;lockVersion:number;customerCode:string;customerName:string;planCode:string;planName:string;planVersion:number;contractBillingCadence:"MONTHLY"|"ANNUAL"|"CUSTOM"|null;contractCurrency:string|null;contractBaseAmountCents:number|null;contractIncludedFullUsers:number|null;contractAdditionalUserRateCents:number|null;contractStorageAllowanceGb:number|null;contractTermsNote:string|null;effectiveBillingCadence:"MONTHLY"|"ANNUAL"|"CUSTOM"|null;effectiveCurrency:string|null;effectiveBaseAmountCents:number|null;effectiveIncludedFullUsers:number|null;effectiveAdditionalUserRateCents:number|null;effectiveStorageAllowanceGb:number|null};
 type Override={id:string;customerAccountId:string;customerCode:string;customerName:string;featureKey:string;featureName:string;decision:"ENABLE"|"DISABLE";effectiveFrom:string;effectiveTo:string|null;reason:string;createdAt:string};
 type ActiveFeature={id:string;key:string;name:string;productId:string};
 
@@ -52,7 +52,24 @@ export function PlatformSubscriptionsPanel({customers,canManage,canManageEntitle
     if(!reason?.trim()) return;
     setBusy(true);setError(null);setNotice(null);
     try{
-      const r=await fetch("/api/platform/subscriptions",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({customerAccountId:customerId,planVersionId,startsAt:new Date().toISOString(),reason})});
+      const plan=plans.find(p=>p.planVersionId===planVersionId);
+      const custom=window.confirm("Use customer-specific contracted terms instead of inheriting all terms from the selected plan version?");
+      let contracted:Record<string,unknown>={};
+      if(custom){
+        const cadence=(window.prompt("Contract billing cadence: MONTHLY, ANNUAL, or CUSTOM",plan?.billingCadence??"MONTHLY")||"").toUpperCase();
+        if(!["MONTHLY","ANNUAL","CUSTOM"].includes(cadence)){setError("Contract billing cadence is invalid.");setBusy(false);return;}
+        const currency=(window.prompt("Contract currency",plan?.currency??"USD")||"").toUpperCase();
+        if(!/^[A-Z]{3}$/.test(currency)){setError("Contract currency must be a 3-letter code.");setBusy(false);return;}
+        const baseRaw=window.prompt("Contract base amount in cents",String(plan?.baseAmountCents??0)); if(baseRaw===null){setBusy(false);return;}
+        const usersRaw=window.prompt("Contract included full users",String(plan?.includedFullUsers??0)); if(usersRaw===null){setBusy(false);return;}
+        const addRaw=window.prompt("Contract additional user rate in cents (optional)",plan?.additionalUserRateCents==null?"":String(plan.additionalUserRateCents)); if(addRaw===null){setBusy(false);return;}
+        const storageRaw=window.prompt("Contract storage allowance GB (optional)",plan?.storageAllowanceGb==null?"":String(plan.storageAllowanceGb)); if(storageRaw===null){setBusy(false);return;}
+        const note=window.prompt("Contract / grandfathering note (optional)","");
+        const base=Number(baseRaw),users=Number(usersRaw),add=addRaw.trim()===""?null:Number(addRaw),storage=storageRaw.trim()===""?null:Number(storageRaw);
+        if(!Number.isInteger(base)||base<0||!Number.isInteger(users)||users<0||(add!==null&&(!Number.isInteger(add)||add<0))||(storage!==null&&(!Number.isInteger(storage)||storage<0))){setError("Contract amounts and allowances must be non-negative integers.");setBusy(false);return;}
+        contracted={contractBillingCadence:cadence,contractCurrency:currency,contractBaseAmountCents:base,contractIncludedFullUsers:users,contractAdditionalUserRateCents:add,contractStorageAllowanceGb:storage,contractTermsNote:note?.trim()||null};
+      }
+      const r=await fetch("/api/platform/subscriptions",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({customerAccountId:customerId,planVersionId,startsAt:new Date().toISOString(),...contracted,reason})});
       const p=await r.json().catch(()=>null);
       if(!r.ok) throw new Error(p?.error||"Subscription could not be created.");
       setNotice("Subscription created in PENDING state. Activate it only after commercial review.");
@@ -124,6 +141,8 @@ export function PlatformSubscriptionsPanel({customers,canManage,canManageEntitle
       {subscriptions.length===0?<p>No subscriptions are configured.</p>:subscriptions.map(item=><div key={item.id}>
         <strong>{item.customerName} · {item.planName} v{item.planVersion}</strong>
         <p>{item.status} · starts {new Date(item.startsAt).toLocaleDateString()}</p>
+        <p>Effective terms: {item.effectiveBillingCadence??"Cadence not set"} · {money(item.effectiveCurrency,item.effectiveBaseAmountCents)} · {item.effectiveIncludedFullUsers??0} included full users</p>
+        <p>{item.contractBaseAmountCents!==null||item.contractBillingCadence!==null||item.contractCurrency!==null?"Customer-specific contracted / grandfathered terms":"Inherits immutable plan-version terms"}{item.contractTermsNote?" · "+item.contractTermsNote:""}</p>
         {canManage?nextStatuses(item.status).map(status=><button key={status} type="button" disabled={busy} onClick={()=>void transition(item,status)}>{status}</button>):null}
       </div>)}
     </article>
