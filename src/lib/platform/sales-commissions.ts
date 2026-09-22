@@ -67,25 +67,32 @@ async function audit(
 export class SalesCommissionService {
   async listRepresentatives(context: PlatformAuthorizationContext) {
     requirePlatformAuthorization(context, { permission: "platform.sales.read" });
+    const canManage = context.grants.includes("platform.sales.manage");
     return db.$queryRaw(Prisma.sql`
       SELECT sr."id", sr."platformIdentityId", sr."displayName", sr."status"::text AS "status", sr."createdAt", sr."updatedAt"
-      FROM "SalesRepresentative" sr ORDER BY sr."displayName"
+      FROM "SalesRepresentative" sr
+      WHERE (${canManage} OR sr."platformIdentityId"=${context.platformIdentityId}::uuid)
+      ORDER BY sr."displayName"
     `);
   }
 
   async salesWorkspace(context: PlatformAuthorizationContext) {
     requirePlatformAuthorization(context, { permission: "platform.sales.read" });
+    const canManage = context.grants.includes("platform.sales.manage");
     const [representatives, assignments, identities] = await Promise.all([
       this.listRepresentatives(context),
       this.listAssignments(context),
-      db.$queryRaw<Array<{id:string;email:string;status:string}>>(Prisma.sql`
-        SELECT "id","email","status"::text AS "status"
-        FROM "PlatformIdentity"
-        WHERE "status"='ACTIVE'
-        ORDER BY "email"
-      `)
+      canManage
+        ? db.$queryRaw<Array<{id:string;email:string;status:string}>>(Prisma.sql`
+            SELECT pi."id",u."email",pi."status"::text AS "status"
+            FROM "PlatformIdentity" pi
+            INNER JOIN "User" u ON u."id"=pi."sourceUserId"
+            WHERE pi."status"='ACTIVE'
+            ORDER BY lower(u."email")
+          `)
+        : Promise.resolve([] as Array<{id:string;email:string;status:string}>)
     ]);
-    return { representatives, assignments, identities };
+    return { representatives, assignments, identities, scope: canManage ? "ADMIN" : "SELF" };
   }
 
   async createRepresentative(
@@ -114,12 +121,14 @@ export class SalesCommissionService {
 
   async listAssignments(context: PlatformAuthorizationContext) {
     requirePlatformAuthorization(context, { permission: "platform.sales.read" });
+    const canManage = context.grants.includes("platform.sales.manage");
     return db.$queryRaw(Prisma.sql`
       SELECT sa."id", sa."salesRepresentativeId", sr."displayName" AS "salesRepresentativeName",
              sa."customerAccountId", ca."displayName" AS "customerName", sa."startsAt", sa."endsAt", sa."createdAt"
       FROM "SalesAssignment" sa
       INNER JOIN "SalesRepresentative" sr ON sr."id" = sa."salesRepresentativeId"
       INNER JOIN "CustomerAccount" ca ON ca."id" = sa."customerAccountId"
+      WHERE (${canManage} OR sr."platformIdentityId"=${context.platformIdentityId}::uuid)
       ORDER BY sa."startsAt" DESC
     `);
   }
