@@ -32,7 +32,7 @@ describe("Twilio preview scheduler readiness", () => {
     expect(runbook).toContain("Restart Policy");
     expect(runbook).toContain("Never");
     expect(runbook).toContain("PLATFORM_SCHEDULER_CONFIGURED=true");
-    expect(runbook).toContain("only after");
+    expect(runbook).toContain("Only after");
   });
 
   it("keeps the preview synthetic-only and out of validation evidence", () => {
