@@ -12,6 +12,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const context = await authenticatePlatformRequest(request);
     const planVersionId = z.string().uuid().parse((await params).planVersionId);
     const input = schema.parse(await request.json());
-    return NextResponse.json({ data: await service.activatePlanVersion(context, { planVersionId, reason: input.reason }) });
+    return NextResponse.json({ data: await service.activatePlanVersion(context, { planVersionId, reason: input.reason, businessApprovalReason: input.businessApprovalReason }) });
   } catch (error) { return respondSubscriptionError(error); }
 }

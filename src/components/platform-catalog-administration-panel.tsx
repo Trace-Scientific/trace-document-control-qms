@@ -6,7 +6,7 @@ import styles from "./platform-administration-shell.module.css";
 type Product={id:string;code:string;name:string;description:string|null;status:"DRAFT"|"ACTIVE"|"RETIRED"};
 type Feature={id:string;productId:string;key:string;name:string;description:string|null;status:"DRAFT"|"ACTIVE"|"RETIRED"};
 type Plan={id:string;productId:string;code:string;name:string;description:string|null;status:"DRAFT"|"ACTIVE"|"RETIRED"};
-type Version={id:string;planId:string;version:number;status:"DRAFT"|"ACTIVE"|"RETIRED";effectiveFrom:string|null;effectiveTo:string|null;activatedAt:string|null;billingCadence:"MONTHLY"|"ANNUAL"|"CUSTOM"|null;currency:string|null;baseAmountCents:number|null;includedFullUsers:number|null;additionalUserRateCents:number|null;storageAllowanceGb:number|null};
+type Version={id:string;planId:string;version:number;status:"DRAFT"|"ACTIVE"|"RETIRED";effectiveFrom:string|null;effectiveTo:string|null;activatedAt:string|null;billingCadence:"MONTHLY"|"ANNUAL"|"CUSTOM"|null;currency:string|null;baseAmountCents:number|null;includedFullUsers:number|null;additionalUserRateCents:number|null;storageAllowanceGb:number|null;businessApprovedAt:string|null;businessApprovedByIdentityId:string|null;businessApprovedByMembershipId:string|null;businessApprovalReason:string|null};
 
 export function PlatformCatalogAdministrationPanel({canManage}:{canManage:boolean}){
   const [products,setProducts]=useState<Product[]>([]);
@@ -95,8 +95,9 @@ export function PlatformCatalogAdministrationPanel({canManage}:{canManage:boolea
   }
   async function activate(version:Version){
     if(!window.confirm("Activate this plan version? Activated plan versions and their feature matrix become immutable.")) return;
+    const businessApprovalReason=window.prompt("Business approval basis for this pricing/package version"); if(!businessApprovalReason?.trim()) return;
     const reason=window.prompt("Reason for activating plan version"); if(!reason?.trim()) return;
-    await post("/api/platform/catalog/plan-versions/"+encodeURIComponent(version.id)+"/activate",{reason},"Plan version activated and made immutable.");
+    await post("/api/platform/catalog/plan-versions/"+encodeURIComponent(version.id)+"/activate",{reason,businessApprovalReason},"Plan pricing/package version business-approved, activated, and made immutable.");
   }
 
   return <article className={styles.card}>
@@ -112,7 +113,7 @@ export function PlatformCatalogAdministrationPanel({canManage}:{canManage:boolea
       <strong>{plan.name} · {plan.code} · {plan.status}</strong>
       {canManage?<button type="button" disabled={busy} onClick={()=>void createVersion(plan)}>New draft version</button>:null}
       {versions.filter(v=>v.planId===plan.id).map(version=><div key={version.id}>
-        <p>v{version.version} · {version.status} · {version.billingCadence??"terms incomplete"} · {version.currency??""} {version.baseAmountCents!==null?(version.baseAmountCents/100).toFixed(2):""}</p>
+        <p>v{version.version} · {version.status} · {version.billingCadence??"terms incomplete"} · {version.currency??""} {version.baseAmountCents!==null?(version.baseAmountCents/100).toFixed(2):""}</p>\n        {version.businessApprovedAt?<p>Business-approved {new Date(version.businessApprovedAt).toLocaleString()} · {version.businessApprovalReason}</p>:<p>Business approval not yet recorded.</p>}
         {canManage&&version.status==="DRAFT"?<>
           <button type="button" disabled={busy} onClick={()=>void configure(version)}>Set commercial terms</button>
           <button type="button" disabled={busy} onClick={()=>void setFeature(version)}>Set feature/module</button>
