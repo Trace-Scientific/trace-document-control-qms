@@ -135,8 +135,8 @@ describe("Salesforce Pub/Sub discovery boundary", () => {
   });
 
   it("does not expose or compose a Subscribe stream in this slice", async () => {
-    const module = await import("@/lib/platform/salesforce-pubsub-discovery");
-    expect("SalesforcePubSubSubscriber" in module).toBe(false);
+    const discoveryModule = await import("@/lib/platform/salesforce-pubsub-discovery");
+    expect("SalesforcePubSubSubscriber" in discoveryModule).toBe(false);
     expect("subscribe" in SalesforcePubSubDiscoveryService.prototype).toBe(false);
     expect(runtime).not.toContain("SalesforcePubSubDiscoveryService");
     expect(runtime).not.toContain("salesforce-pubsub-discovery");
