@@ -77,7 +77,7 @@ export function PlatformControlledUserManualPanel() {
     finally { setBusy(false); }
   }
 
-  useEffect(()=>{void load().catch(e=>setError(e instanceof Error?e.message:"Manual inventory could not be loaded"));},[]);
+  useEffect(()=>{void Promise.resolve().then(()=>load()).catch(e=>setError(e instanceof Error?e.message:"Manual inventory could not be loaded"));},[]);
 
   return <div className={styles.grid}>
     <article className={styles.card}>
