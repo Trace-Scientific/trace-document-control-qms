@@ -3,6 +3,9 @@ import { authenticatePlatformRequest } from "./authenticated-request";
 import {
   SUPPORT_SESSION_COOKIE,
   SupportAccessService,
+  requireSupportCapability,
+  requireSupportTargetOrganization,
+  type SupportCapabilityKey,
   type SupportSessionContext,
 } from "./support-access";
 import type { PlatformAuthorizationContext } from "./authorization";
@@ -21,4 +24,15 @@ export async function authenticateSupportTenantRequest(
   const rawToken = request.cookies.get(SUPPORT_SESSION_COOKIE)?.value;
   const support = await service.authenticateSession(platform, rawToken);
   return { platform, support };
+}
+
+export async function authenticateSupportTenantRequestForOrganization(
+  request: NextRequest,
+  organizationId: string,
+  capability: SupportCapabilityKey,
+): Promise<AuthenticatedSupportRequest> {
+  const authenticated = await authenticateSupportTenantRequest(request);
+  requireSupportTargetOrganization(authenticated.support, organizationId);
+  requireSupportCapability(authenticated.support, capability);
+  return authenticated;
 }

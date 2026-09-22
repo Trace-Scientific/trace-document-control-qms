@@ -477,6 +477,15 @@ export function requireSupportCapability(context: SupportSessionContext, capabil
   if (!context.capabilities.includes(capability)) throw new SupportCapabilityDeniedError(capability);
 }
 
+export function requireSupportTargetOrganization(
+  context: SupportSessionContext,
+  organizationId: string,
+): void {
+  if (context.targetOrganizationId !== organizationId) {
+    throw new SupportTargetOrganizationDeniedError();
+  }
+}
+
 export function requireSupportActionAllowed(action: string): void {
   if ((CUSTOMER_ONLY_SUPPORT_ACTIONS as readonly string[]).includes(action)) {
     throw new SupportCustomerOnlyActionError(action);
@@ -630,6 +639,12 @@ export class SupportCapabilityDeniedError extends Error {
   constructor(capability: string) {
     super(`Support capability denied: ${capability}`);
     this.name = "SupportCapabilityDeniedError";
+  }
+}
+export class SupportTargetOrganizationDeniedError extends Error {
+  constructor() {
+    super("Support session is not authorized for the requested tenant organization");
+    this.name = "SupportTargetOrganizationDeniedError";
   }
 }
 export class SupportCustomerOnlyActionError extends Error {

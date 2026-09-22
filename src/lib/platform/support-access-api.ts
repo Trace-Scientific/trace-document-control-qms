@@ -9,6 +9,7 @@ import {
   SupportCapabilityDeniedError,
   SupportCustomerOnlyActionError,
   SupportSessionRequiredError,
+  SupportTargetOrganizationDeniedError,
 } from "./support-access";
 
 export function respondSupportAccessError(error: unknown): NextResponse {
@@ -18,7 +19,7 @@ export function respondSupportAccessError(error: unknown): NextResponse {
   if (error instanceof SupportSessionRequiredError) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
-  if (error instanceof PlatformAuthorizationError || error instanceof SupportCapabilityDeniedError || error instanceof SupportCustomerOnlyActionError) {
+  if (error instanceof PlatformAuthorizationError || error instanceof SupportCapabilityDeniedError || error instanceof SupportCustomerOnlyActionError || error instanceof SupportTargetOrganizationDeniedError) {
     return NextResponse.json({ error: "Support access denied" }, { status: 403 });
   }
   if (error instanceof z.ZodError) {
