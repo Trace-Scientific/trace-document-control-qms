@@ -21,8 +21,8 @@ describe("support SLA escalation and reporting", () => {
 
   it("deduplicates response and closure overdue alerts", () => {
     expect(escalation).toContain("help-support-sla:");
-    expect(escalation).toContain(":response:overdue");
-    expect(escalation).toContain(":closure:overdue");
+    expect(escalation).toContain("milestone.toLowerCase()");
+    expect(escalation).toContain(":overdue`");
     expect(escalation).toContain('ON CONFLICT ("dedupeKey")');
   });
 
