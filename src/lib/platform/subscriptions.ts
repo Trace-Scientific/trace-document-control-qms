@@ -317,7 +317,7 @@ export class SubscriptionCatalogService {
 
   async workspace(context: PlatformAuthorizationContext) {
     requirePlatformAuthorization(context, { permission: "platform.subscription.read" });
-    const [plans, subscriptions, overrides] = await Promise.all([
+    const [plans, subscriptions, overrides, activeFeatures] = await Promise.all([
       db.$queryRaw<Array<{
         planVersionId: string; planId: string; planCode: string; planName: string; version: number;
         billingCadence: BillingCadence | null; currency: string | null; baseAmountCents: number | null;
@@ -348,9 +348,14 @@ export class SubscriptionCatalogService {
         INNER JOIN "Feature" f ON f."id"=eo."featureId"
         WHERE eo."revokedAt" IS NULL
         ORDER BY ca."displayName",f."key",eo."createdAt" DESC
+      `),
+      db.$queryRaw<Array<{id:string;key:string;name:string;productId:string}>>(Prisma.sql`
+        SELECT "id","key","name","productId" FROM "Feature"
+        WHERE "status"='ACTIVE'
+        ORDER BY "key"
       `)
     ]);
-    return { plans, subscriptions, overrides };
+    return { plans, subscriptions, overrides, activeFeatures };
   }
 
   async createSubscription(
