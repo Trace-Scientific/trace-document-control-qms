@@ -16,7 +16,7 @@ describe("sales ownership administration workspace",()=>{
 
   it("returns only active platform identities for representative linkage",()=>{
     expect(service).toContain('FROM "PlatformIdentity"');
-    expect(service).toContain('WHERE "status"=\'ACTIVE\'');
+    expect(service).toContain('WHERE pi."status"=\'ACTIVE\'');
   });
 
   it("uses existing governed representative and assignment APIs",()=>{
