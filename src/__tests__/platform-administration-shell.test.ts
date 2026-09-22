@@ -51,12 +51,13 @@ describe("platform administration shell", () => {
     expect(tenantPage).not.toContain("PlatformAdministrationShell");
   });
 
-  it("surfaces later platform domains as planned rather than implementing them early", () => {
+  it("surfaces governed platform domains with explicit implementation phases", () => {
     expect(platformShell).toContain('label: "Sales"');
     expect(platformShell).toContain('label: "Commissions"');
     expect(platformShell).toContain('label: "Help & User Manual"');
     expect(platformShell).toContain('label: "System health"');
     expect(platformShell).toContain('label: "Integrations"');
-    expect(platformShell).toContain('phase: "planned"');
+    expect(platformShell).toContain('phase: "foundation"');
+    expect(platformShell).toContain('phase: "available"');
   });
 });
