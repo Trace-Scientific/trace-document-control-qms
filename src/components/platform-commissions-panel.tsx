@@ -25,7 +25,7 @@ export function PlatformCommissionsPanel({canManage}:{canManage:boolean}){
     if(!r.ok) throw new Error(p?.error||"Commission workspace could not be loaded.");
     setPlans(p.data.plans);setVersions(p.data.versions);setRules(p.data.rules);setAssignments(p.data.assignments);setAccruals(p.data.accruals);
   }
-  useEffect(()=>{void load().catch(e=>setError(e instanceof Error?e.message:"Commission workspace could not be loaded."));},[]);
+  useEffect(()=>{void Promise.resolve().then(()=>load()).catch(e=>setError(e instanceof Error?e.message:"Commission workspace could not be loaded."));},[]);
 
   async function post(url:string,body:Record<string,unknown>,success:string){
     setBusy(true);setError(null);setNotice(null);

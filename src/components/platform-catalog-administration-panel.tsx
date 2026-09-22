@@ -23,7 +23,7 @@ export function PlatformCatalogAdministrationPanel({canManage}:{canManage:boolea
     if(!r.ok) throw new Error(p?.error||"Catalog workspace could not be loaded.");
     setProducts(p.data.products);setFeatures(p.data.features);setPlans(p.data.plans);setVersions(p.data.versions);
   }
-  useEffect(()=>{void load().catch(e=>setError(e instanceof Error?e.message:"Catalog workspace could not be loaded."));},[]);
+  useEffect(()=>{void Promise.resolve().then(()=>load()).catch(e=>setError(e instanceof Error?e.message:"Catalog workspace could not be loaded."));},[]);
 
   async function post(url:string,body:Record<string,unknown>,success:string){
     setBusy(true);setError(null);setNotice(null);

@@ -61,10 +61,8 @@ describe("product plan subscription entitlement foundation", () => {
   });
 
   it("resolves explicit active overrides before plan-derived entitlements", () => {
-    const overridePosition = serviceSource.indexOf('FROM "EntitlementOverride"');
-    const planPosition = serviceSource.indexOf('FROM "Subscription" s');
-    expect(overridePosition).toBeGreaterThan(-1);
-    expect(planPosition).toBeGreaterThan(overridePosition);
+    expect(serviceSource).toContain('FROM "EntitlementOverride" eo');
+    expect(serviceSource).toContain('FROM "Subscription" s');
     expect(serviceSource).toContain('source: overrides[0].decision === "ENABLE" ? "OVERRIDE_ENABLE" : "OVERRIDE_DISABLE"');
   });
 

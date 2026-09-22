@@ -25,15 +25,15 @@ The closure review for issues #231–#234 was performed after PR #333 merged to 
 
 ## Release-candidate reconciliation required
 
-The repository still identifies `0.1.0-rc.6` as the current candidate.
+The repository package identity is currently `0.1.0-rc.7`.
 
-The authoritative rc.6 application candidate remains:
+The authoritative rc.7 application candidate is:
 
-`ae98a440b22e3b5bfc96f2e14672c31c8bb342bd`
+`83c4eaa110e3313f942dcd0f326b018fe53b6c89`
 
-Current main is materially later than rc.6 and includes deployment-control, manual/help, platform administration, commercial administration, subscription/pricing, support-access, security-isolation, and acceptance-evidence changes.
+Fresh exact-SHA Security evidence succeeded for rc.7, but exact-SHA CI could not execute because the CI workflow was rejected before job creation by an invalid YAML plain-scalar command. That workflow-admission defect is documented in `docs/validation/rc7-ci-admission-failure.md`.
 
-Therefore **rc.6 must remain historical and must not be relabeled as the candidate for the current application state**.
+Therefore **rc.7 must remain historical and must not be relabeled or rewritten as validation-ready**. The CI correction and any subsequent reconciliation changes materially advance main beyond the immutable rc.7 SHA.
 
 Before validation-environment execution, designate a new release candidate from the then-current controlled main and reconcile all release-identity surfaces together.
 
@@ -50,7 +50,7 @@ The existing validation package already contains:
 - release approval record template;
 - Tier 1 recovery architecture and recovery exercise controls.
 
-Before the next candidate is promoted to validation execution, the traceability/UAT package must be reconciled for material post-rc.6 controls, especially:
+The traceability/UAT package has been reconciled for material post-rc.6 controls, including:
 
 1. controlled User Manual/Help publication and release-specific PDF snapshot behavior;
 2. platform identity/RBAC and least-privilege administration;
@@ -75,7 +75,7 @@ Railway remains the synthetic-data development preview used for continued produc
 
 Railway deployment or UI review is not AWS validation qualification and must not be cited as regulated production-release evidence.
 
-Before designating the next release candidate, perform a final Railway smoke/UI review of the current main build if the deployment pipeline is intentionally being used for that purpose.
+The final Railway smoke/UI review was completed before rc.7 designation. Any later candidate must still receive exact-candidate CI/Security evidence and any additional environment verification required by its change scope.
 
 ## AWS validation boundary
 
@@ -110,11 +110,11 @@ Automated CI success does not replace quality, security, service-owner, or requi
 
 ## Next controlled sequence
 
-1. Merge this completeness review after CI/Security verification.
-2. Reconcile validation traceability and UAT for material post-rc.6 controls.
-3. Perform final Railway synthetic-data smoke/UI review against the resulting controlled main.
-4. Designate a new immutable release candidate; do not mutate rc.6.
-5. Run fresh CI/Security for the exact new candidate SHA.
+1. Merge the CI-admission correction and stale-test reconciliation after CI/Security verification.
+2. Preserve rc.7 as immutable historical evidence; do not mutate or relabel it.
+3. Designate a new immutable release candidate from the resulting controlled main.
+4. Run fresh CI/Security for the exact new candidate SHA.
+5. Review the candidate evidence package and unresolved deviations.
 6. Stop at the AWS cost gate before any APPLY.
 7. After explicit cost approval, execute protected AWS validation foundation/service qualification.
 8. Execute applicable UAT/recovery evidence and disposition deviations/residual risks.

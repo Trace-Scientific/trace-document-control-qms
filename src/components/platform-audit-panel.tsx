@@ -44,7 +44,7 @@ export function PlatformAuditPanel(){
     finally{setBusy(false);}
   }
 
-  useEffect(()=>{void load(true);},[]);
+  useEffect(()=>{void Promise.resolve().then(()=>load(true));},[]);
 
   function clear(){
     setAction("");setEntityType("");setActorIdentityId("");setFrom("");setTo("");

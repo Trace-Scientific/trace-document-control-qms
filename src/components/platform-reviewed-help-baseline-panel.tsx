@@ -33,7 +33,7 @@ export function PlatformReviewedHelpBaselinePanel(){
     finally{setBusy(null);}
   }
 
-  useEffect(()=>{void load().catch(e=>setError(e instanceof Error?e.message:"Reviewed Help baseline could not be loaded"));},[]);
+  useEffect(()=>{void Promise.resolve().then(()=>load()).catch(e=>setError(e instanceof Error?e.message:"Reviewed Help baseline could not be loaded"));},[]);
   const assembled=rows.length>0&&rows.every(r=>r.status!=="MISSING");
   const published=rows.length>0&&rows.every(r=>r.published);
   return <article className={styles.card}>

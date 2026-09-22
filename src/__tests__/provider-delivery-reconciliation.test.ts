@@ -43,7 +43,9 @@ describe("provider delivery reconciliation hardening", () => {
   });
 
   it("exposes reconciliation evidence and degrades health while unresolved", () => {
-    expect(operations).toContain('"providerRequestId","providerObjectId","providerOutcome","reconciliationReason","reconciledAt"');
+    expect(operations).toContain('"providerRequestId","providerObjectId","providerOutcome"');
+    expect(operations).toContain('"reconciliationReason"');
+    expect(operations).toContain('"reconciledAt"');
     expect(health).toContain("reconciliationRequired");
     expect(health).toContain('"status"=\'RECONCILIATION_REQUIRED\'');
   });

@@ -54,10 +54,11 @@ describe("Salesforce CDC durable event receipt foundation", () => {
     expect(controller).toContain("EVENT_RECEIPT_PERSIST_FAILED");
   });
 
-  it("does not add Avro decoding, CRM normalization, or runtime activation", () => {
+  it("keeps durable receipt separation while allowing governed subscriber flow control", () => {
     expect(service).not.toContain("avro");
     expect(service).not.toContain("PlatformIntegrationNormalizedEvent");
-    expect(controller).not.toContain("requestMore(");
+    expect(controller).toContain("requestMore(");
+    expect(controller).toContain("FLOW_CONTROL_FAILED");
     expect(runtime).not.toContain("SalesforceCdcSubscriberController");
     expect(runtime).not.toContain("salesforce-cdc-event-receipt");
   });

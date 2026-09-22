@@ -60,7 +60,7 @@ describe("help center and controlled user manual", () => {
   });
 
   it("surfaces help content in the control plane without pulling later platform domains forward", () => {
-    expect(shell).toContain('label: "Help content"');
+    expect(shell).toContain('label: "Help & User Manual"');
     expect(shell).toContain('platform.help.manage');
     expect(shell).toContain('phase: "foundation"');
   });

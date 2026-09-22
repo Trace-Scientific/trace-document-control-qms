@@ -39,7 +39,7 @@ export function PlatformSubscriptionsPanel({customers,canManage,canManageEntitle
     setPlans(p.data.plans); setSubscriptions(p.data.subscriptions); setOverrides(p.data.overrides); setActiveFeatures(p.data.activeFeatures);
   }
 
-  useEffect(()=>{void load().catch(e=>setError(e instanceof Error?e.message:"Subscriptions workspace could not be loaded."));},[]);
+  useEffect(()=>{void Promise.resolve().then(()=>load()).catch(e=>setError(e instanceof Error?e.message:"Subscriptions workspace could not be loaded."));},[]);
 
   async function createSubscription(){
     const eligible=customers.filter(c=>c.status==="ACTIVE"&&c.organizationId);

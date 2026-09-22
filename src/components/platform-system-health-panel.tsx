@@ -44,8 +44,10 @@ export function PlatformSystemHealthPanel() {
 
   useEffect(() => {
     let cancelled = false;
-    setError(null);
-    void fetch("/api/platform/health", { cache: "no-store" })
+    void Promise.resolve().then(() => {
+      setError(null);
+      return fetch("/api/platform/health", { cache: "no-store" });
+    })
       .then(async (response) => {
         if (!response.ok) throw new Error("System health could not be loaded.");
         return response.json() as Promise<{ data: Snapshot }>;

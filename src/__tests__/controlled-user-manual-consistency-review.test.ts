@@ -30,6 +30,6 @@ describe("UM-QMS-001 consistency-reviewed draft set", () => {
     expect(allText).toContain("A newly uploaded file is not automatically an approved or effective controlled document");
     expect(allText).toContain("Training completion and competency qualification are related but distinct records");
     expect(allText).toContain("Submitting a support request does not grant Trace access to your tenant");
-    expect(allText).toContain("A notification does not by itself grant permission");
+    expect(allText).toContain("It does not by itself grant permission");
   });
 });

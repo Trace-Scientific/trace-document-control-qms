@@ -26,7 +26,7 @@ export function PlatformSecurityPanel(){
     setPrincipals(p.data.principals);setRoles(p.data.roles);setPermissions(p.data.permissions);
     setRolePermissions(p.data.rolePermissions);setAssignments(p.data.assignments);
   }
-  useEffect(()=>{void load().catch(e=>setError(e instanceof Error?e.message:"Platform security workspace could not be loaded."));},[]);
+  useEffect(()=>{void Promise.resolve().then(()=>load()).catch(e=>setError(e instanceof Error?e.message:"Platform security workspace could not be loaded."));},[]);
 
   const customRoles=useMemo(()=>roles.filter(r=>!r.systemRole),[roles]);
 

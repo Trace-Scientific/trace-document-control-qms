@@ -12,9 +12,9 @@ describe("final software completeness review",()=>{
   });
 
   it("preserves rc.6 as historical when main has materially advanced",()=>{
-    expect(pkg.version).toBe("0.1.0-rc.6");
-    expect(review).toContain("ae98a440b22e3b5bfc96f2e14672c31c8bb342bd");
-    expect(review).toContain("rc.6 must remain historical");
+    expect(pkg.version).toBe("0.1.0-rc.7");
+    expect(review).toContain("83c4eaa110e3313f942dcd0f326b018fe53b6c89");
+    expect(review).toContain("rc.7 must remain historical");
     expect(review).toContain("designate a new release candidate");
   });
 
