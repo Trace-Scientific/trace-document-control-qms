@@ -41,7 +41,7 @@ export function PlatformSupportIntakePanel() {
   }
 
   useEffect(() => {
-    void Promise.all([load(), loadOwners()]).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Support intake queue could not be loaded."));
+    void Promise.resolve().then(() => Promise.all([load(), loadOwners()])).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Support intake queue could not be loaded."));
   }, []);
 
   async function post(item: Intake, body: Record<string, unknown>) {
