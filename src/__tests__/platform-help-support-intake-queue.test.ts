@@ -21,7 +21,8 @@ describe("Trace-side Help support intake queue", () => {
   });
 
   it("supports only acknowledge and close transitions", () => {
-    expect(route).toContain('z.enum(["ACKNOWLEDGE","CLOSE"])');
+    expect(route).toContain('z.literal("ACKNOWLEDGE")');
+    expect(route).toContain('z.literal("CLOSE")');
     expect(service).toContain('"status" = \'ACKNOWLEDGED\'');
     expect(service).toContain('"status" = \'CLOSED\'');
     expect(service).not.toContain("REOPEN");
