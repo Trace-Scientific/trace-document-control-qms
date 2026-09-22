@@ -29,7 +29,7 @@ export function SupportAccessOperations(){
     }
   }
 
-  useEffect(()=>{void load().catch(e=>setError(e instanceof Error?e.message:"Controlled support workspace could not be loaded."));},[]);
+  useEffect(()=>{void Promise.resolve().then(()=>load()).catch(e=>setError(e instanceof Error?e.message:"Controlled support workspace could not be loaded."));},[]);
 
   async function requestAccess(item:CaseItem){
     const durationRaw=window.prompt("Support-session duration in minutes (5-240)","60"); if(durationRaw===null) return;
