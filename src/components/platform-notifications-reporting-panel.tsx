@@ -24,8 +24,9 @@ type ReportRun = {
     subscriptions?: { total?: number; byStatus?: Record<string, number> };
     entitlements?: { activeOverrides?: number };
     support?: { activeUnexpiredSessions?: number; customerHelpRequestsByStatus?: Record<string, number>; overdueResponseSla?: number; overdueClosureSla?: number; unassignedActiveRequests?: number };
-    sales?: { currentAssignments?: number };
-    commissions?: { unpaidApprovedAmount?: string; accrualsByStatus?: Record<string, number> };
+    sales?: { currentAssignments?: number; customersByRepresentative?: Record<string, number>; newCustomersLast30Days?: number; newCustomersLast90Days?: number };
+    commercial?: { monthlyRecurringRevenueByCurrency?: Record<string,string>; upcomingRenewalsNext90Days?: number; cancellations?: number; planMix?: Record<string,number>; moduleMix?: Record<string,number> };
+    commissions?: { unpaidApprovedAmount?: string; accrualsByStatus?: Record<string, number>; accruedAmountByCurrency?: Record<string,string>; paidAmountByCurrency?: Record<string,string> };
     notifications?: { deadLetterCount?: number; retryCount?: number; byStatus?: Record<string, number> };
   };
 };
@@ -206,6 +207,14 @@ export function PlatformReportingPanel() {
           <p>Support SLA overdue — response: {result.support?.overdueResponseSla ?? 0} · closure: {result.support?.overdueClosureSla ?? 0}</p>
           <p>Unassigned active support requests: {result.support?.unassignedActiveRequests ?? 0}</p>
           <p>Current sales assignments: {result.sales?.currentAssignments ?? 0}</p>
+          <p>New customers — last 30 days: {result.sales?.newCustomersLast30Days ?? 0} · last 90 days: {result.sales?.newCustomersLast90Days ?? 0}</p>
+          <p>Customers by salesperson: {Object.entries(result.sales?.customersByRepresentative ?? {}).map(([name,count]) => name+" "+count).join(" · ") || "None"}</p>
+          <p>Monthly recurring revenue: {Object.entries(result.commercial?.monthlyRecurringRevenueByCurrency ?? {}).map(([currency,amount]) => currency+" "+amount).join(" · ") || "0.00"}</p>
+          <p>Upcoming renewals (next 90 days): {result.commercial?.upcomingRenewalsNext90Days ?? 0} · cancellations: {result.commercial?.cancellations ?? 0}</p>
+          <p>Plan mix: {Object.entries(result.commercial?.planMix ?? {}).map(([name,count]) => name+" "+count).join(" · ") || "None"}</p>
+          <p>Module mix: {Object.entries(result.commercial?.moduleMix ?? {}).map(([name,count]) => name+" "+count).join(" · ") || "None"}</p>
+          <p>Commission accrued: {Object.entries(result.commissions?.accruedAmountByCurrency ?? {}).map(([currency,amount]) => currency+" "+amount).join(" · ") || "0.00"}</p>
+          <p>Commission paid: {Object.entries(result.commissions?.paidAmountByCurrency ?? {}).map(([currency,amount]) => currency+" "+amount).join(" · ") || "0.00"}</p>
           <p>Approved unpaid commission amount: {result.commissions?.unpaidApprovedAmount ?? "0.00"}</p>
           <p>Notification retries: {result.notifications?.retryCount ?? 0} · dead letters: {result.notifications?.deadLetterCount ?? 0}</p>
         </article>
