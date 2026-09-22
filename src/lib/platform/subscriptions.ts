@@ -51,6 +51,10 @@ export interface PlanVersionRecord {
   additionalUserRateCents: number | null;
   storageAllowanceGb: number | null;
   commercialMetadata: unknown;
+  businessApprovedAt: Date | null;
+  businessApprovedByIdentityId: string | null;
+  businessApprovedByMembershipId: string | null;
+  businessApprovalReason: string | null;
 }
 
 export interface SubscriptionRecord {
@@ -277,24 +281,37 @@ export class SubscriptionCatalogService {
 
   async activatePlanVersion(
     context: PlatformAuthorizationContext,
-    input: { planVersionId: string; reason: string },
+    input: { planVersionId: string; reason: string; businessApprovalReason: string },
   ): Promise<PlanVersionRecord> {
     requirePlatformAuthorization(context, { permission: "platform.subscription.manage" });
     validateReason(input.reason);
+    validateReason(input.businessApprovalReason);
 
     return db.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<PlanVersionRecord[]>(Prisma.sql`
         UPDATE "PlanVersion"
-        SET "status" = 'ACTIVE', "activatedAt" = CURRENT_TIMESTAMP
+        SET "status" = 'ACTIVE', "activatedAt" = CURRENT_TIMESTAMP,
+            "businessApprovedAt" = CURRENT_TIMESTAMP,
+            "businessApprovedByIdentityId" = ${context.platformIdentityId}::uuid,
+            "businessApprovedByMembershipId" = ${context.platformMembershipId}::uuid,
+            "businessApprovalReason" = ${input.businessApprovalReason.trim()}
         WHERE "id" = ${input.planVersionId}::uuid AND "status" = 'DRAFT'
-        RETURNING "id", "planId", "version", "status"::text AS "status", "effectiveFrom", "effectiveTo", "activatedAt"
+          AND "billingCadence" IS NOT NULL AND "currency" IS NOT NULL AND "baseAmountCents" IS NOT NULL
+        RETURNING "id", "planId", "version", "status"::text AS "status", "effectiveFrom", "effectiveTo", "activatedAt",
+          "billingCadence"::text AS "billingCadence","currency","baseAmountCents","includedFullUsers",
+          "additionalUserRateCents","storageAllowanceGb","commercialMetadata",
+          "businessApprovedAt","businessApprovedByIdentityId","businessApprovedByMembershipId","businessApprovalReason"
       `);
-      if (rows.length !== 1) throw new SubscriptionValidationError("Only a draft plan version can be activated");
+      if (rows.length !== 1) throw new SubscriptionValidationError("Only a commercially complete draft plan version can be business-approved and activated");
       await tx.$executeRaw(Prisma.sql`UPDATE "Plan" SET "status" = 'ACTIVE', "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ${rows[0].planId}::uuid AND "status" = 'DRAFT'`);
       await tx.$executeRaw(Prisma.sql`UPDATE "Product" p SET "status" = 'ACTIVE', "updatedAt" = CURRENT_TIMESTAMP FROM "Plan" pl WHERE pl."id" = ${rows[0].planId}::uuid AND pl."productId" = p."id" AND p."status" = 'DRAFT'`);
       await writePlatformAudit(tx, context, "catalog.plan_version.activated", "PlanVersion", rows[0].id, input.reason, {
         planId: rows[0].planId,
         version: rows[0].version,
+        businessApprovedAt: rows[0].businessApprovedAt?.toISOString() ?? null,
+        businessApprovedByIdentityId: rows[0].businessApprovedByIdentityId,
+        businessApprovedByMembershipId: rows[0].businessApprovedByMembershipId,
+        businessApprovalReason: rows[0].businessApprovalReason,
       });
       return rows[0];
     });
@@ -315,7 +332,8 @@ export class SubscriptionCatalogService {
       db.$queryRaw<PlanVersionRecord[]>(Prisma.sql`
         SELECT "id","planId","version","status"::text AS "status","effectiveFrom","effectiveTo","activatedAt",
           "billingCadence"::text AS "billingCadence","currency","baseAmountCents","includedFullUsers",
-          "additionalUserRateCents","storageAllowanceGb","commercialMetadata"
+          "additionalUserRateCents","storageAllowanceGb","commercialMetadata",
+          "businessApprovedAt","businessApprovedByIdentityId","businessApprovedByMembershipId","businessApprovalReason"
         FROM "PlanVersion" ORDER BY "planId","version" DESC
       `)
     ]);
