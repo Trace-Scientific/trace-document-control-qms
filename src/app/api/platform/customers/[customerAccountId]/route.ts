@@ -12,6 +12,11 @@ const updateSchema = z.object({
   displayName: z.string().min(1).max(300).optional(),
   organizationId: z.string().uuid().nullable().optional(),
   commercialMetadata: metadataSchema.optional(),
+  leadSource: z.string().max(300).nullable().optional(),
+  contractAt: z.string().datetime().transform((value) => new Date(value)).nullable().optional(),
+  renewalAt: z.string().datetime().transform((value) => new Date(value)).nullable().optional(),
+  onboardingAmountCents: z.number().int().nonnegative().nullable().optional(),
+  discountBasisPoints: z.number().int().min(0).max(10000).nullable().optional(),
   expectedLockVersion: z.number().int().nonnegative(),
   reason: z.string().min(1).max(1000),
 }).refine(
@@ -20,7 +25,12 @@ const updateSchema = z.object({
     value.legalName !== undefined ||
     value.displayName !== undefined ||
     value.organizationId !== undefined ||
-    value.commercialMetadata !== undefined,
+    value.commercialMetadata !== undefined ||
+    value.leadSource !== undefined ||
+    value.contractAt !== undefined ||
+    value.renewalAt !== undefined ||
+    value.onboardingAmountCents !== undefined ||
+    value.discountBasisPoints !== undefined,
   { message: "At least one customer account field must be changed" },
 );
 
