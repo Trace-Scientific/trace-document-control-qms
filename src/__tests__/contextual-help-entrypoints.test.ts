@@ -40,7 +40,7 @@ describe("contextual Help Center entrypoints", () => {
       "laboratory",
       "reporting",
     ]) {
-      expect(help).toContain(`"${context}":`);
+      expect(help).toMatch(new RegExp(`(?:^|\\n)\\s*(?:"${context}"|${context})\\s*:`));
     }
     expect(help).toContain("new URLSearchParams(window.location.search)");
     expect(help).toContain("contextualSearch");
