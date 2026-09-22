@@ -32,9 +32,9 @@ describe("QuickBooks accounting adapter governance", () => {
 
   it("verifies the Intuit webhook signature before parsing changes", () => {
     expect(qbo).toContain('input.headers.get("intuit-signature")');
-    expect(qbo).toContain('createHmac("sha256", verifierToken).update(rawBody, "utf8").digest("base64")');
+    expect(qbo).toContain('createHmac("sha256", verifierToken).update(rawBodyBytes).digest("base64")');
     expect(qbo).toContain("timingSafeEqual");
-    expect(qbo.indexOf("verifySignature(input.rawBody")).toBeLessThan(qbo.indexOf("normalizeWebhook(input.rawBody"));
+    expect(qbo.indexOf("verifySignature(input.rawBodyBytes")).toBeLessThan(qbo.indexOf("normalizeWebhook(input.rawBody"));
   });
 
   it("bounds webhook entities and requires configured realm identity", () => {
