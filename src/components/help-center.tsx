@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import styles from "./help-center.module.css";
 
@@ -136,7 +137,7 @@ export function HelpCenter() {
           <p className={styles.muted}>Search published operational guidance or open a controlled user-manual release.</p>
           {contextLabel ? <p className={styles.context}>Showing guidance for: <strong>{contextLabel}</strong></p> : null}
         </div>
-        <a className={styles.back} href="/">Return to QMS</a>
+        <Link className={styles.back} href="/">Return to QMS</Link>
       </header>
 
       <div className={styles.tabs} role="tablist" aria-label="Help Center content">
