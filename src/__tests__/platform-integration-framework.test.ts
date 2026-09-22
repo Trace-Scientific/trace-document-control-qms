@@ -31,7 +31,8 @@ describe("platform integration framework", () => {
   it("requires a registered adapter before a connection can activate", () => {
     expect(framework).toContain('toStatus === "ACTIVE"');
     expect(framework).toContain("Adapter is not registered in this release");
-    expect(runtime).toContain("new PlatformIntegrationRegistry([])");
+    expect(runtime).toContain("new PlatformIntegrationRegistry([");
+    expect(runtime).toContain("GovernedPlatformCredentialResolver");
   });
 
   it("uses durable idempotent outbound delivery with bounded retry and dead letter", () => {
@@ -54,7 +55,9 @@ describe("platform integration framework", () => {
   it("preserves normalized event history and does not expose provider authority", () => {
     expect(migration).toContain('PlatformIntegrationNormalizedEvent_no_update_delete');
     expect(framework).not.toMatch(/stripe|salesforce|quickbooks|office ally|twilio|sendgrid/i);
-    expect(runtime).not.toMatch(/stripe|salesforce|quickbooks|office ally|twilio|sendgrid/i);
+    expect(runtime).toContain("new StripeBillingAdapter()");
+    expect(runtime).toContain("new QuickBooksAccountingAdapter()");
+    expect(runtime).toContain("new TwilioSmsAdapter()");
   });
 
   it("reports real framework state through sanitized platform health", () => {
