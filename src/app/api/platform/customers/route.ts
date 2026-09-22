@@ -12,6 +12,11 @@ const createSchema = z.object({
   displayName: z.string().min(1).max(300),
   organizationId: z.string().uuid().nullable().optional(),
   commercialMetadata: metadataSchema.optional(),
+  leadSource: z.string().max(300).nullable().optional(),
+  contractAt: z.string().datetime().transform((value) => new Date(value)).nullable().optional(),
+  renewalAt: z.string().datetime().transform((value) => new Date(value)).nullable().optional(),
+  onboardingAmountCents: z.number().int().nonnegative().nullable().optional(),
+  discountBasisPoints: z.number().int().min(0).max(10000).nullable().optional(),
   reason: z.string().min(1).max(1000),
 });
 

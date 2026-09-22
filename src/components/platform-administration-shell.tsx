@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PlatformControlledUserManualPanel } from "./platform-controlled-user-manual-panel";
 import { PlatformReviewedHelpBaselinePanel } from "./platform-reviewed-help-baseline-panel";
 import type { PlatformPermissionKey } from "@/lib/platform/permissions";
@@ -11,10 +11,11 @@ import { PlatformSupportIntakePanel } from "./platform-support-intake-panel";
 import { PlatformSubscriptionsPanel } from "./platform-subscriptions-panel";
 import { PlatformSalesPanel } from "./platform-sales-panel";
 import { PlatformCommissionsPanel } from "./platform-commissions-panel";
+import { PlatformCustomersPanel, type CommercialCustomerAccount } from "./platform-customers-panel";
 import styles from "./platform-administration-shell.module.css";
 
 type PlatformContextPayload = { platformIdentityId: string; platformMembershipId: string; permissions: PlatformPermissionKey[] };
-type CustomerAccount = { id: string; accountCode: string; displayName: string; legalName: string; status: string; organizationId: string | null };
+type CustomerAccount = CommercialCustomerAccount;
 type SectionId = "overview" | "customers" | "subscriptions" | "support" | "sales" | "commissions" | "help" | "notifications" | "reporting" | "audit" | "health" | "integrations" | "security";
 type SectionDefinition = { id: SectionId; label: string; description: string; anyPermission?: PlatformPermissionKey[]; phase: "available" | "foundation" | "planned" };
 
@@ -55,15 +56,23 @@ export function PlatformAdministrationShell() {
 
   const visibleSections = useMemo(() => (context ? sections.filter((section) => canSee(section, context.permissions)) : []), [context]);
 
+  const reloadCustomers = useCallback(async () => {
+    if (!context) return;
+    setCustomerError(null);
+    const response = await fetch("/api/platform/customers", { cache: "no-store" });
+    if (!response.ok) throw new Error("Customer accounts could not be loaded.");
+    const payload = await response.json() as { data: CustomerAccount[] };
+    setCustomers(payload.data);
+  }, [context]);
+
   useEffect(() => {
-    if (!context || activeSection !== "customers" || customers !== null || customerError) return;
+    if (!context || !["customers", "subscriptions", "sales"].includes(activeSection) || customers !== null || customerError) return;
     let cancelled = false;
-    void fetch("/api/platform/customers", { cache: "no-store" }).then(async (response) => {
-      if (!response.ok) throw new Error("Customer accounts could not be loaded.");
-      return response.json() as Promise<{ data: CustomerAccount[] }>;
-    }).then((payload) => { if (!cancelled) setCustomers(payload.data); }).catch((error: unknown) => { if (!cancelled) setCustomerError(error instanceof Error ? error.message : "Customer accounts could not be loaded."); });
+    void reloadCustomers().catch((error: unknown) => {
+      if (!cancelled) setCustomerError(error instanceof Error ? error.message : "Customer accounts could not be loaded.");
+    });
     return () => { cancelled = true; };
-  }, [activeSection, context, customerError, customers]);
+  }, [activeSection, context, customerError, customers, reloadCustomers]);
 
   if (contextError) return <main className={styles.main}><div className={styles.error} role="alert"><strong>Platform Administration unavailable.</strong><p>{contextError}</p><a className={styles.cardLink} href="/">Return to tenant QMS</a></div></main>;
   if (!context) return <main className={styles.main}><div className={styles.notice}>Loading platform authorization…</div></main>;
@@ -72,14 +81,14 @@ export function PlatformAdministrationShell() {
   return <div className={styles.shell}>
     <header className={styles.header}><div className={styles.brandBlock}><p className={styles.eyebrow}>TRACE SCIENTIFIC CONTROL PLANE</p><h1>Platform Administration</h1><p className={styles.contextNote}>Platform authority is separate from tenant QMS roles and permissions.</p></div><a className={styles.returnLink} href="/">Open tenant QMS</a></header>
     <div className={styles.body}><nav className={styles.nav} aria-label="Platform Administration"><ul className={styles.navList}>{visibleSections.map((section) => <li key={section.id}><button type="button" className={`${styles.navButton} ${active?.id === section.id ? styles.navButtonActive : ""}`} onClick={() => setActiveSection(section.id)}>{section.label}</button></li>)}</ul></nav>
-      <main className={styles.main}>{active ? <><div className={styles.sectionHeader}><div><p className={styles.eyebrow}>PLATFORM WORKSPACE</p><h2>{active.label}</h2><p className={styles.contextNote}>{active.description}</p></div><PhaseBadge phase={active.phase} /></div><SectionContent section={active} permissions={context.permissions} customers={customers} customerError={customerError} /></> : null}</main>
+      <main className={styles.main}>{active ? <><div className={styles.sectionHeader}><div><p className={styles.eyebrow}>PLATFORM WORKSPACE</p><h2>{active.label}</h2><p className={styles.contextNote}>{active.description}</p></div><PhaseBadge phase={active.phase} /></div><SectionContent section={active} permissions={context.permissions} customers={customers} customerError={customerError} reloadCustomers={reloadCustomers} /></> : null}</main>
     </div>
   </div>;
 }
 
-function SectionContent({ section, permissions, customers, customerError }: { section: SectionDefinition; permissions: PlatformPermissionKey[]; customers: CustomerAccount[] | null; customerError: string | null }) {
+function SectionContent({ section, permissions, customers, customerError, reloadCustomers }: { section: SectionDefinition; permissions: PlatformPermissionKey[]; customers: CustomerAccount[] | null; customerError: string | null; reloadCustomers: () => Promise<void> }) {
   if (section.id === "overview") { const enabled = sections.filter((item) => canSee(item, permissions) && item.id !== "overview"); return <div className={styles.grid}>{enabled.map((item) => <article className={styles.card} key={item.id}><h3>{item.label}</h3><p>{item.description}</p><PhaseBadge phase={item.phase} /></article>)}</div>; }
-  if (section.id === "customers") { if (customerError) return <div className={styles.error}>{customerError}</div>; if (!customers) return <div className={styles.notice}>Loading customer accounts…</div>; if (customers.length === 0) return <div className={styles.notice}>No customer accounts are configured.</div>; return <div className={styles.grid}>{customers.map((customer) => <article className={styles.card} key={customer.id}><h3>{customer.displayName}</h3><p>{customer.accountCode} · {customer.status}</p><p>{customer.organizationId ? "Tenant organization linked" : "Prospect / no tenant linked"}</p></article>)}</div>; }
+  if (section.id === "customers") { if (customerError) return <div className={styles.error}>{customerError}</div>; if (!customers) return <div className={styles.notice}>Loading customer accounts…</div>; return <PlatformCustomersPanel customers={customers} canManage={permissions.includes("platform.organization.manage")} onReload={reloadCustomers} />; }
   if (section.id === "support") return <PlatformSupportIntakePanel />;
   if (section.id === "subscriptions") return <PlatformSubscriptionsPanel customers={customers ?? []} canManage={permissions.includes("platform.subscription.manage")} canManageEntitlements={permissions.includes("platform.entitlement.manage")} />;
   if (section.id === "sales") return <PlatformSalesPanel customers={customers ?? []} canManage={permissions.includes("platform.sales.manage")} />;

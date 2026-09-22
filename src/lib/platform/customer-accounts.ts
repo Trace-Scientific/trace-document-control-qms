@@ -23,6 +23,11 @@ export interface CustomerAccount {
   displayName: string;
   status: CustomerAccountStatus;
   commercialMetadata: Record<string, unknown>;
+  leadSource: string | null;
+  contractAt: Date | null;
+  renewalAt: Date | null;
+  onboardingAmountCents: number | null;
+  discountBasisPoints: number | null;
   lockVersion: number;
   createdAt: Date;
   updatedAt: Date;
@@ -34,6 +39,11 @@ export interface CreateCustomerAccountInput {
   displayName: string;
   organizationId?: string | null;
   commercialMetadata?: Record<string, unknown>;
+  leadSource?: string | null;
+  contractAt?: Date | null;
+  renewalAt?: Date | null;
+  onboardingAmountCents?: number | null;
+  discountBasisPoints?: number | null;
   reason: string;
 }
 
@@ -44,6 +54,11 @@ export interface UpdateCustomerAccountInput {
   displayName?: string;
   organizationId?: string | null;
   commercialMetadata?: Record<string, unknown>;
+  leadSource?: string | null;
+  contractAt?: Date | null;
+  renewalAt?: Date | null;
+  onboardingAmountCents?: number | null;
+  discountBasisPoints?: number | null;
   expectedLockVersion: number;
   reason: string;
 }
@@ -63,6 +78,11 @@ interface CustomerAccountRow {
   displayName: string;
   status: CustomerAccountStatus;
   commercialMetadata: unknown;
+  leadSource: string | null;
+  contractAt: Date | null;
+  renewalAt: Date | null;
+  onboardingAmountCents: number | null;
+  discountBasisPoints: number | null;
   lockVersion: number;
   createdAt: Date;
   updatedAt: Date;
@@ -82,7 +102,7 @@ export class CustomerAccountService {
     const rows = await db.$queryRaw<CustomerAccountRow[]>(Prisma.sql`
       SELECT
         "id", "organizationId", "accountCode", "legalName", "displayName",
-        "status"::text AS "status", "commercialMetadata", "lockVersion", "createdAt", "updatedAt"
+        "status"::text AS "status", "commercialMetadata", "leadSource", "contractAt", "renewalAt", "onboardingAmountCents", "discountBasisPoints", "lockVersion", "createdAt", "updatedAt"
       FROM "CustomerAccount"
       ORDER BY "displayName", "id"
     `);
@@ -94,7 +114,7 @@ export class CustomerAccountService {
     const rows = await db.$queryRaw<CustomerAccountRow[]>(Prisma.sql`
       SELECT
         "id", "organizationId", "accountCode", "legalName", "displayName",
-        "status"::text AS "status", "commercialMetadata", "lockVersion", "createdAt", "updatedAt"
+        "status"::text AS "status", "commercialMetadata", "leadSource", "contractAt", "renewalAt", "onboardingAmountCents", "discountBasisPoints", "lockVersion", "createdAt", "updatedAt"
       FROM "CustomerAccount"
       WHERE "id" = ${customerAccountId}::uuid
       LIMIT 1
@@ -112,6 +132,7 @@ export class CustomerAccountService {
     validateText(input.accountCode, "Account code", 120);
     validateText(input.legalName, "Legal name", 300);
     validateText(input.displayName, "Display name", 300);
+    validateCommercialProfile(input);
 
     const created = await db.$transaction(async (tx) => {
       if (input.organizationId) await ensureOrganizationAvailable(tx, input.organizationId, null);
@@ -120,15 +141,15 @@ export class CustomerAccountService {
       const rows = await tx.$queryRaw<CustomerAccountRow[]>(Prisma.sql`
         INSERT INTO "CustomerAccount" (
           "id", "organizationId", "accountCode", "legalName", "displayName",
-          "status", "commercialMetadata", "updatedAt"
+          "status", "commercialMetadata", "leadSource", "contractAt", "renewalAt", "onboardingAmountCents", "discountBasisPoints", "updatedAt"
         ) VALUES (
           gen_random_uuid(), ${input.organizationId ?? null}::uuid, ${input.accountCode.trim()},
           ${input.legalName.trim()}, ${input.displayName.trim()}, 'PROSPECT',
-          ${JSON.stringify(input.commercialMetadata ?? {})}::jsonb, CURRENT_TIMESTAMP
+          ${JSON.stringify(input.commercialMetadata ?? {})}::jsonb, ${input.leadSource?.trim() || null}, ${input.contractAt ?? null}, ${input.renewalAt ?? null}, ${input.onboardingAmountCents ?? null}, ${input.discountBasisPoints ?? null}, CURRENT_TIMESTAMP
         )
         RETURNING
           "id", "organizationId", "accountCode", "legalName", "displayName",
-          "status"::text AS "status", "commercialMetadata", "lockVersion", "createdAt", "updatedAt"
+          "status"::text AS "status", "commercialMetadata", "leadSource", "contractAt", "renewalAt", "onboardingAmountCents", "discountBasisPoints", "lockVersion", "createdAt", "updatedAt"
       `);
       const row = rows[0];
 
@@ -163,12 +184,18 @@ export class CustomerAccountService {
     if (input.accountCode !== undefined) validateText(input.accountCode, "Account code", 120);
     if (input.legalName !== undefined) validateText(input.legalName, "Legal name", 300);
     if (input.displayName !== undefined) validateText(input.displayName, "Display name", 300);
+    validateCommercialProfile(input);
     if (
       input.accountCode === undefined &&
       input.legalName === undefined &&
       input.displayName === undefined &&
       input.organizationId === undefined &&
-      input.commercialMetadata === undefined
+      input.commercialMetadata === undefined &&
+      input.leadSource === undefined &&
+      input.contractAt === undefined &&
+      input.renewalAt === undefined &&
+      input.onboardingAmountCents === undefined &&
+      input.discountBasisPoints === undefined
     ) {
       throw new CustomerAccountValidationError("At least one customer account field must be changed");
     }
@@ -194,6 +221,12 @@ export class CustomerAccountService {
       const nextMetadata = input.commercialMetadata === undefined
         ? asMetadata(existing.commercialMetadata)
         : input.commercialMetadata;
+      const nextLeadSource = input.leadSource === undefined ? existing.leadSource : input.leadSource?.trim() || null;
+      const nextContractAt = input.contractAt === undefined ? existing.contractAt : input.contractAt;
+      const nextRenewalAt = input.renewalAt === undefined ? existing.renewalAt : input.renewalAt;
+      const nextOnboardingAmountCents = input.onboardingAmountCents === undefined ? existing.onboardingAmountCents : input.onboardingAmountCents;
+      const nextDiscountBasisPoints = input.discountBasisPoints === undefined ? existing.discountBasisPoints : input.discountBasisPoints;
+      validateCommercialProfile({ leadSource: nextLeadSource, contractAt: nextContractAt, renewalAt: nextRenewalAt, onboardingAmountCents: nextOnboardingAmountCents, discountBasisPoints: nextDiscountBasisPoints });
 
       if (nextOrganizationId && nextOrganizationId !== existing.organizationId) {
         await ensureOrganizationAvailable(tx, nextOrganizationId, existing.id);
@@ -210,12 +243,17 @@ export class CustomerAccountService {
           "legalName" = ${nextLegalName},
           "displayName" = ${nextDisplayName},
           "commercialMetadata" = ${JSON.stringify(nextMetadata)}::jsonb,
+          "leadSource" = ${nextLeadSource},
+          "contractAt" = ${nextContractAt},
+          "renewalAt" = ${nextRenewalAt},
+          "onboardingAmountCents" = ${nextOnboardingAmountCents},
+          "discountBasisPoints" = ${nextDiscountBasisPoints},
           "lockVersion" = "lockVersion" + 1,
           "updatedAt" = CURRENT_TIMESTAMP
         WHERE "id" = ${existing.id}::uuid AND "lockVersion" = ${input.expectedLockVersion}
         RETURNING
           "id", "organizationId", "accountCode", "legalName", "displayName",
-          "status"::text AS "status", "commercialMetadata", "lockVersion", "createdAt", "updatedAt"
+          "status"::text AS "status", "commercialMetadata", "leadSource", "contractAt", "renewalAt", "onboardingAmountCents", "discountBasisPoints", "lockVersion", "createdAt", "updatedAt"
       `);
       if (rows.length !== 1) throw new CustomerAccountConflictError();
 
@@ -261,7 +299,7 @@ export class CustomerAccountService {
         WHERE "id" = ${existing.id}::uuid AND "lockVersion" = ${input.expectedLockVersion}
         RETURNING
           "id", "organizationId", "accountCode", "legalName", "displayName",
-          "status"::text AS "status", "commercialMetadata", "lockVersion", "createdAt", "updatedAt"
+          "status"::text AS "status", "commercialMetadata", "leadSource", "contractAt", "renewalAt", "onboardingAmountCents", "discountBasisPoints", "lockVersion", "createdAt", "updatedAt"
       `);
       if (rows.length !== 1) throw new CustomerAccountConflictError();
 
@@ -425,5 +463,31 @@ export class CustomerAccountTransitionError extends Error {
   constructor(fromStatus: CustomerAccountStatus, toStatus: CustomerAccountStatus) {
     super(`Customer account cannot transition from ${fromStatus} to ${toStatus}`);
     this.name = "CustomerAccountTransitionError";
+  }
+}
+function validateCommercialProfile(input: {
+  leadSource?: string | null;
+  contractAt?: Date | null;
+  renewalAt?: Date | null;
+  onboardingAmountCents?: number | null;
+  discountBasisPoints?: number | null;
+}): void {
+  if (input.leadSource != null && input.leadSource.trim().length > 300) {
+    throw new CustomerAccountValidationError("Lead/source must be 300 characters or fewer");
+  }
+  if (input.contractAt && Number.isNaN(input.contractAt.getTime())) {
+    throw new CustomerAccountValidationError("Contract date is invalid");
+  }
+  if (input.renewalAt && Number.isNaN(input.renewalAt.getTime())) {
+    throw new CustomerAccountValidationError("Renewal date is invalid");
+  }
+  if (input.contractAt && input.renewalAt && input.renewalAt <= input.contractAt) {
+    throw new CustomerAccountValidationError("Renewal date must be after contract date");
+  }
+  if (input.onboardingAmountCents != null && (!Number.isInteger(input.onboardingAmountCents) || input.onboardingAmountCents < 0)) {
+    throw new CustomerAccountValidationError("Onboarding amount must be a non-negative integer");
+  }
+  if (input.discountBasisPoints != null && (!Number.isInteger(input.discountBasisPoints) || input.discountBasisPoints < 0 || input.discountBasisPoints > 10000)) {
+    throw new CustomerAccountValidationError("Discount basis points must be between 0 and 10000");
   }
 }
