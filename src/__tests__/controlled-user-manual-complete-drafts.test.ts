@@ -17,7 +17,7 @@ describe("UM-QMS-001 complete launch draft set", () => {
     expect(text).toContain("Training completion and competency qualification are related but distinct records");
     expect(text).toContain("A newly uploaded evidence file enters a pending scan state");
     expect(text).toContain("Uploading a file does not automatically attach it to a record");
-    expect(text).toContain("A notification does not by itself grant permission");
+    expect(text).toContain("It does not by itself grant permission");
   });
 
   it("preserves controlled-support separation in the glossary", () => {
