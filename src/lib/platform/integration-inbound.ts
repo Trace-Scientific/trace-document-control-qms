@@ -8,6 +8,7 @@ import {
   type PlatformIntegrationWebhookEvidence,
 } from "./integration-framework";
 import { platformCredentialResolver, platformIntegrationRegistry } from "./integration-runtime";
+import { recordVerifiedStripeBillingObservation } from "./billing-provider-linkage";
 
 function requireIdempotency(value: string) {
   const normalized = value.trim();
@@ -339,6 +340,7 @@ export async function receivePlatformIntegrationWebhook(input: PlatformIntegrati
       await applyVerifiedTwilioStatusCallback(tx, { connectionId: connection.id, receiptId, normalized });
       await applyVerifiedSendGridStatusCallback(tx, { connectionId: connection.id, receiptId, normalized });
       await applyVerifiedZendeskTicketCallback(tx, { connectionId: connection.id, receiptId, normalized });
+      await recordVerifiedStripeBillingObservation(tx, { connectionId: connection.id, receiptId, providerEventId: normalized.providerEventId ?? null, eventType: normalized.eventType, payload: normalized.payload });
     });
     return { duplicate: false, receiptId };
   } catch {
