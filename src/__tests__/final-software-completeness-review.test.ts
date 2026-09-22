@@ -11,8 +11,8 @@ describe("final software completeness review",()=>{
     expect(review).toContain("does not claim certification, regulatory compliance, validation approval");
   });
 
-  it("preserves rc.7 as historical while rc.8 is the active candidate",()=>{
-    expect(pkg.version).toBe("0.1.0-rc.8");
+  it("preserves rc.8 as historical while rc.9 is the active candidate",()=>{
+    expect(pkg.version).toBe("0.1.0-rc.9");
     expect(review).toContain("83c4eaa110e3313f942dcd0f326b018fe53b6c89");
     expect(review).toContain("rc.7 must remain historical");
     expect(review).toContain("designate a new release candidate");

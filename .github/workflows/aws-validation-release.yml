@@ -15,7 +15,7 @@ on:
       release_version:
         description: Release version in package.json
         required: true
-        default: 0.1.0-rc.8
+        default: 0.1.0-rc.9
         type: string
       change_reference:
         description: Controlled change or approval record
