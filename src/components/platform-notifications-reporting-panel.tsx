@@ -67,7 +67,7 @@ export function PlatformNotificationsPanel({ canRead, canManage }: { canRead: bo
   }, [canManage, canRead]);
 
   useEffect(() => {
-    void load();
+    void Promise.resolve().then(() => load());
   }, [load]);
 
   const counts = useMemo(
