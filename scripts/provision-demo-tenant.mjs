@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { validateDemoManifest } from "./demo-tenant-manifest.mjs";
 
 export const DEMO_CODE = "trace-demo-lab";
 export const DEMO_NAME = "Trace Scientific Demo Laboratory (SYNTHETIC)";
@@ -35,7 +36,8 @@ export async function inspectDemoTenant(db) {
 }
 
 export async function provisionDemoTenant(db, { apply }) {
-  const plan = await inspectDemoTenant(db);
+  const manifest = validateDemoManifest();
+  const plan = { ...(await inspectDemoTenant(db)), manifest };
   if (!apply) return { ...plan, applied: false };
   // Unique loginCode constraint prevents racing another provisioner.
   const created = await db.organization.create({
