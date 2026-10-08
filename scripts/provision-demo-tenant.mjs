@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { pathToFileURL } from "node:url";
 import { validateDemoManifest } from "./demo-tenant-manifest.mjs";
 
 export const DEMO_CODE = "trace-demo-lab";
@@ -65,7 +66,7 @@ async function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
     console.error(error.message);
     process.exitCode = 1;
