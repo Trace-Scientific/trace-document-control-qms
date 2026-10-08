@@ -30,6 +30,7 @@ export async function inspectDemoTenant(db) {
     mode: "create-only",
     loginCode: DEMO_CODE,
     displayName: DEMO_NAME,
+    lifecycle: "inactive-until-explicit-activation",
     existingOrganizationChanges: 0,
     usersCreated: 0,
     documentsCreated: 0,
