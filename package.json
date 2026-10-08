@@ -31,7 +31,9 @@
     "test:platform-admin-bootstrap": "node --test scripts/platform-admin-bootstrap.node-test.mjs",
     "demo:preflight": "node scripts/provision-demo-tenant.mjs --dry-run",
     "demo:provision": "node scripts/provision-demo-tenant.mjs --apply --confirm=CREATE-SYNTHETIC-DEMO-TENANT",
-    "test:demo": "node --test scripts/demo-tenant-manifest.node-test.mjs scripts/provision-demo-tenant.node-test.mjs scripts/populate-demo-drafts.node-test.mjs scripts/configure-demo-organization.node-test.mjs"
+    "test:demo": "node --test scripts/demo-tenant-manifest.node-test.mjs scripts/provision-demo-tenant.node-test.mjs scripts/populate-demo-drafts.node-test.mjs scripts/configure-demo-organization.node-test.mjs scripts/activate-demo-tenant.node-test.mjs",
+    "demo:activate:preflight": "node scripts/activate-demo-tenant.mjs --dry-run",
+    "demo:activate": "node scripts/activate-demo-tenant.mjs --apply --confirm=ACTIVATE-SYNTHETIC-DEMO-TENANT"
   },
   "dependencies": {
     "@prisma/client": "6.12.0",
