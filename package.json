@@ -28,11 +28,16 @@
     "salesforce:cdc:preflight": "node scripts/check-salesforce-cdc-worker-preflight.mjs",
     "support:sla:scan": "node scripts/run-support-sla-scan.mjs",
     "platform-admin:bootstrap": "node scripts/bootstrap-platform-admin.mjs",
-    "test:platform-admin-bootstrap": "node --test scripts/platform-admin-bootstrap.node-test.mjs"
+    "test:platform-admin-bootstrap": "node --test scripts/platform-admin-bootstrap.node-test.mjs",
+    "demo:preflight": "node scripts/provision-demo-tenant.mjs --dry-run",
+    "demo:provision": "node scripts/provision-demo-tenant.mjs --apply --confirm=CREATE-SYNTHETIC-DEMO-TENANT",
+    "test:demo": "node --test scripts/demo-tenant-manifest.node-test.mjs scripts/provision-demo-tenant.node-test.mjs scripts/populate-demo-drafts.node-test.mjs scripts/configure-demo-organization.node-test.mjs scripts/activate-demo-tenant.node-test.mjs",
+    "demo:activate:preflight": "node scripts/activate-demo-tenant.mjs --dry-run",
+    "demo:activate": "node scripts/activate-demo-tenant.mjs --apply --confirm=ACTIVATE-SYNTHETIC-DEMO-TENANT"
   },
   "dependencies": {
     "@prisma/client": "6.12.0",
-    "next": "16.3.4",
+    "next": "16.4.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "zod": "^4.0.0"
@@ -42,9 +47,13 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "eslint": "^9.34.0",
-    "eslint-config-next": "16.3.4",
+    "eslint-config-next": "16.4.0",
     "prisma": "6.12.0",
     "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "vitest": "5.0.3"
+  },
+  "overrides": {
+    "fast-glob": "3.3.3",
+    "braces": "npm:@dieub/braces-depth-guard@3.0.3-pn.3"
   }
 }
