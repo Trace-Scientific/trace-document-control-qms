@@ -1,13 +1,33 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEMO_CODE, parseDemoArgs, provisionDemoTenant } from "./provision-demo-tenant.mjs";
+import {
+  DEMO_CODE,
+  parseDemoArgs,
+  provisionDemoTenant,
+} from "./provision-demo-tenant.mjs";
+
+process.env.DATABASE_URL =
+  "postgresql://trace_qms_test:local_integration_test_only@127.0.0.1:5433/trace_qms_integration_test?schema=public";
+
+const approvedDatabaseIdentity = async () => [
+  {
+    database_name: "trace_qms_integration_test",
+    database_user: "trace_qms_test",
+  },
+];
 
 test("dry-run is the default and does not write", async () => {
   let writes = 0;
-  const db = { organization: {
-    findUnique: async () => null,
-    create: async () => { writes++; throw new Error("Unexpected write"); },
-  }};
+  const db = {
+    $queryRaw: approvedDatabaseIdentity,
+    organization: {
+      findUnique: async () => null,
+      create: async () => {
+        writes++;
+        throw new Error("Unexpected write");
+      },
+    },
+  };
   const result = await provisionDemoTenant(db, parseDemoArgs([]));
   assert.equal(result.applied, false);
   assert.equal(writes, 0);
@@ -15,16 +35,27 @@ test("dry-run is the default and does not write", async () => {
 
 test("apply requires exact confirmation", () => {
   assert.throws(() => parseDemoArgs(["--apply"]), /confirmation/);
-  assert.throws(() => parseDemoArgs(["--apply", "--confirm=wrong"]), /invalid argument/);
+  assert.throws(
+    () => parseDemoArgs(["--apply", "--confirm=wrong"]),
+    /invalid argument/,
+  );
 });
 
 test("collision fails closed with no mutation", async () => {
   let writes = 0;
-  const db = { organization: {
-    findUnique: async () => ({ id: "existing", loginCode: DEMO_CODE }),
-    create: async () => { writes++; },
-  }};
-  await assert.rejects(() => provisionDemoTenant(db, { apply: true }), /already in use/);
+  const db = {
+    $queryRaw: approvedDatabaseIdentity,
+    organization: {
+      findUnique: async () => ({ id: "existing", loginCode: DEMO_CODE }),
+      create: async () => {
+        writes++;
+      },
+    },
+  };
+  await assert.rejects(
+    () => provisionDemoTenant(db, { apply: true }),
+    /already in use/,
+  );
   assert.equal(writes, 0);
 });
 
@@ -34,6 +65,7 @@ test("explicit apply creates an inactive tenant with an audit event", async () =
   let auditWrites = 0;
 
   const db = {
+    $queryRaw: approvedDatabaseIdentity,
     organization: {
       findUnique: async () => null,
     },
@@ -45,7 +77,11 @@ test("explicit apply creates an inactive tenant with an audit event", async () =
             organizationWrites++;
             assert.equal(data.loginCode, DEMO_CODE);
             assert.equal(data.active, false);
-            assert.deepEqual(select, { id: true, loginCode: true, active: true });
+            assert.deepEqual(select, {
+              id: true,
+              loginCode: true,
+              active: true,
+            });
             return { id: "new-demo", loginCode: DEMO_CODE, active: false };
           },
         },
@@ -85,6 +121,7 @@ test("audit failure prevents the simulated transaction from committing", async (
   let rolledBack = false;
 
   const db = {
+    $queryRaw: approvedDatabaseIdentity,
     organization: {
       findUnique: async () => null,
     },
@@ -133,4 +170,62 @@ test("audit failure prevents the simulated transaction from committing", async (
   assert.equal(auditWrites, 1);
   assert.equal(rolledBack, true);
   assert.equal(committedOrganization, null);
+});
+
+test("unapproved database identity prevents provisioning", async () => {
+  let organizationReads = 0;
+  let transactions = 0;
+
+  const db = {
+    $queryRaw: async () => [
+      {
+        database_name: "production_database",
+        database_user: "production_user",
+      },
+    ],
+    organization: {
+      findUnique: async () => {
+        organizationReads++;
+        throw new Error("Organization lookup must not execute");
+      },
+    },
+    $transaction: async () => {
+      transactions++;
+      throw new Error("Transaction must not execute");
+    },
+  };
+
+  await assert.rejects(
+    () => provisionDemoTenant(db, { apply: true }),
+    /connected PostgreSQL database identity is not approved/,
+  );
+
+  assert.equal(organizationReads, 0);
+  assert.equal(transactions, 0);
+});
+
+test("unapproved database URL prevents all database access", async () => {
+  const originalUrl = process.env.DATABASE_URL;
+  let queries = 0;
+
+  const db = {
+    $queryRaw: async () => {
+      queries++;
+      throw new Error("Database must not be accessed");
+    },
+  };
+
+  try {
+    process.env.DATABASE_URL =
+      "postgresql://example:example@production.example.com:5432/production";
+
+    await assert.rejects(
+      () => provisionDemoTenant(db, { apply: true }),
+      /connection is not the approved isolated integration-test database/,
+    );
+
+    assert.equal(queries, 0);
+  } finally {
+    process.env.DATABASE_URL = originalUrl;
+  }
 });
