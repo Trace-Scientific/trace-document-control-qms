@@ -1,10 +1,15 @@
 import { PrismaClient } from "@prisma/client";
 import { pathToFileURL } from "node:url";
 import { validateDemoManifest } from "./demo-tenant-manifest.mjs";
+import {
+  assertDemoTestDatabase,
+  assertDemoTestDatabaseIdentity,
+} from "./demo-database-safety.mjs";
 
 export const DEMO_CODE = "trace-demo-lab";
 export const DEMO_NAME = "Trace Scientific Demo Laboratory (SYNTHETIC)";
-export const DEMO_LEGAL_NAME = "Trace Scientific Demonstration Laboratory - Fictional";
+export const DEMO_LEGAL_NAME =
+  "Trace Scientific Demonstration Laboratory - Fictional";
 const CONFIRMATION = "CREATE-SYNTHETIC-DEMO-TENANT";
 
 export function parseDemoArgs(args) {
@@ -12,7 +17,12 @@ export function parseDemoArgs(args) {
   const dryRun = args.includes("--dry-run");
   const confirm = args.find((arg) => arg.startsWith("--confirm="));
   if (apply && dryRun) throw new Error("Choose either --apply or --dry-run");
-  if (args.some((arg) => !["--apply", "--dry-run", `--confirm=${CONFIRMATION}`].includes(arg))) {
+  if (
+    args.some(
+      (arg) =>
+        !["--apply", "--dry-run", `--confirm=${CONFIRMATION}`].includes(arg),
+    )
+  ) {
     throw new Error("Unknown or invalid argument");
   }
   if (apply && confirm !== `--confirm=${CONFIRMATION}`) {
@@ -22,9 +32,13 @@ export function parseDemoArgs(args) {
 }
 
 export async function inspectDemoTenant(db) {
-  const existing = await db.organization.findUnique({ where: { loginCode: DEMO_CODE } });
+  const existing = await db.organization.findUnique({
+    where: { loginCode: DEMO_CODE },
+  });
   if (existing) {
-    throw new Error("Demo login code is already in use; refuse to modify an existing organization");
+    throw new Error(
+      "Demo login code is already in use; refuse to modify an existing organization",
+    );
   }
   return {
     mode: "create-only",
@@ -38,6 +52,8 @@ export async function inspectDemoTenant(db) {
 }
 
 export async function provisionDemoTenant(db, { apply }) {
+  assertDemoTestDatabase(process.env.DATABASE_URL);
+  await assertDemoTestDatabaseIdentity(db);
   const manifest = validateDemoManifest();
   const plan = { ...(await inspectDemoTenant(db)), manifest };
   if (!apply) return { ...plan, applied: false };
@@ -78,7 +94,7 @@ export async function provisionDemoTenant(db, { apply }) {
 
 async function main() {
   const options = parseDemoArgs(process.argv.slice(2));
-  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
+  assertDemoTestDatabase(process.env.DATABASE_URL);
   const db = new PrismaClient();
   try {
     const result = await provisionDemoTenant(db, options);
@@ -88,7 +104,10 @@ async function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   main().catch((error) => {
     console.error(error.message);
     process.exitCode = 1;

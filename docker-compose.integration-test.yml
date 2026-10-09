@@ -1,0 +1,24 @@
+services:
+  postgres-integration-test:
+    image: postgres:17-alpine
+    container_name: trace-qms-integration-postgres
+    environment:
+      POSTGRES_USER: trace_qms_test
+      POSTGRES_PASSWORD: local_integration_test_only
+      POSTGRES_DB: trace_qms_integration_test
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - integration_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U trace_qms_test -d trace_qms_integration_test",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  integration_postgres_data:
