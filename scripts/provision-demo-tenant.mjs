@@ -42,15 +42,36 @@ export async function provisionDemoTenant(db, { apply }) {
   const plan = { ...(await inspectDemoTenant(db)), manifest };
   if (!apply) return { ...plan, applied: false };
   // Unique loginCode constraint prevents racing another provisioner.
-  const created = await db.organization.create({
-    data: {
-      loginCode: DEMO_CODE,
-      legalName: DEMO_LEGAL_NAME,
-      displayName: DEMO_NAME,
-      timezone: "America/Los_Angeles",
-      active: false,
-    },
-    select: { id: true, loginCode: true, active: true },
+  // Organization creation and its audit record must succeed or fail together.
+  const created = await db.$transaction(async (tx) => {
+    const organization = await tx.organization.create({
+      data: {
+        loginCode: DEMO_CODE,
+        legalName: DEMO_LEGAL_NAME,
+        displayName: DEMO_NAME,
+        timezone: "America/Los_Angeles",
+        active: false,
+      },
+      select: { id: true, loginCode: true, active: true },
+    });
+
+    await tx.auditEvent.create({
+      data: {
+        organizationId: organization.id,
+        action: "DEMO_TENANT_PROVISIONED",
+        entityType: "Organization",
+        entityId: organization.id,
+        reason: "Synthetic demonstration environment provisioning",
+        metadata: {
+          synthetic: true,
+          loginCode: DEMO_CODE,
+          provisioningVersion: 1,
+          initialStatus: "INACTIVE",
+        },
+      },
+    });
+
+    return organization;
   });
   return { ...plan, applied: true, organization: created };
 }
