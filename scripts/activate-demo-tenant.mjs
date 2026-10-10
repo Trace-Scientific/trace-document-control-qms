@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { pathToFileURL } from "node:url";
+import { assertDemoTestDatabase, assertDemoTestDatabaseIdentity } from "./demo-database-safety.mjs";
 
 export const DEMO_CODE = "trace-demo-lab";
 export const CONFIRM = "ACTIVATE-SYNTHETIC-DEMO-TENANT";
@@ -11,6 +12,8 @@ export function parseActivationArgs(args) {
 }
 
 export async function activateDemoTenant(db, { apply = false } = {}) {
+  assertDemoTestDatabase(process.env.DATABASE_URL);
+  await assertDemoTestDatabaseIdentity(db);
   const org = await db.organization.findUnique({
     where: { loginCode: DEMO_CODE },
     select: { id: true, loginCode: true, legalName: true, displayName: true, active: true },
@@ -28,17 +31,36 @@ export async function activateDemoTenant(db, { apply = false } = {}) {
   }
   if (org.active) throw new Error("Refusing activation: demo tenant is already active");
   if (!apply) return { applied: false, organizationId: org.id, loginCode: DEMO_CODE };
-  const changed = await db.organization.updateMany({
-    where: { id: org.id, loginCode: DEMO_CODE, active: false },
-    data: { active: true },
-  });
-  if (changed.count !== 1) throw new Error("Activation failed: tenant state changed");
+  await db.$transaction(async (tx) => {
+    const lockedOrg = await tx.organization.findUnique({
+      where: { id: org.id },
+      select: { id: true, loginCode: true, legalName: true, displayName: true, active: true },
+    });
+    if (!lockedOrg || lockedOrg.loginCode !== DEMO_CODE || lockedOrg.legalName !== "Trace Scientific Demonstration Laboratory - Fictional" || lockedOrg.displayName !== "Trace Scientific Demo Laboratory (SYNTHETIC)" || lockedOrg.active) throw new Error("Activation failed: tenant state changed");
+    const [transactionUsers, transactionCredentials] = await Promise.all([tx.user.count({ where: { organizationId: org.id } }), tx.credential.count({ where: { organizationId: org.id } })]);
+    if (transactionUsers !== 0 || transactionCredentials !== 0) throw new Error("Refusing activation: demo tenant is not empty");
+    const changed = await tx.organization.updateMany({
+      where: {
+        id: org.id,
+        loginCode: DEMO_CODE,
+        legalName: "Trace Scientific Demonstration Laboratory - Fictional",
+        displayName: "Trace Scientific Demo Laboratory (SYNTHETIC)",
+        active: false,
+      },
+      data: { active: true },
+    });
+    if (changed.count !== 1) {
+      throw new Error("Activation failed: tenant state changed");
+    }
+    await tx.auditEvent.create({ data: { organizationId: org.id, action: "DEMO_TENANT_ACTIVATED", entityType: "Organization", entityId: org.id, reason: "Explicitly confirmed synthetic demo tenant activation", metadata: { loginCode: DEMO_CODE, synthetic: true } } });
+  }, { isolationLevel: "Serializable" });
   return { applied: true, organizationId: org.id, loginCode: DEMO_CODE };
 }
 
 async function main() {
   const args = parseActivationArgs(process.argv.slice(2));
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
+  assertDemoTestDatabase(process.env.DATABASE_URL);
   const db = new PrismaClient();
   try {
     console.log(JSON.stringify(await activateDemoTenant(db, args), null, 2));
