@@ -39,11 +39,19 @@ export async function activateDemoTenant(db, { apply = false } = {}) {
     if (!lockedOrg || lockedOrg.loginCode !== DEMO_CODE || lockedOrg.legalName !== "Trace Scientific Demonstration Laboratory - Fictional" || lockedOrg.displayName !== "Trace Scientific Demo Laboratory (SYNTHETIC)" || lockedOrg.active) throw new Error("Activation failed: tenant state changed");
     const [transactionUsers, transactionCredentials] = await Promise.all([tx.user.count({ where: { organizationId: org.id } }), tx.credential.count({ where: { organizationId: org.id } })]);
     if (transactionUsers !== 0 || transactionCredentials !== 0) throw new Error("Refusing activation: demo tenant is not empty");
-  const changed = await tx.organization.updateMany({
-    where: { id: org.id, loginCode: DEMO_CODE, legalName: "Trace Scientific Demonstration Laboratory - Fictional", displayName: "Trace Scientific Demo Laboratory (SYNTHETIC)", active: false },
-    data: { active: true },
-  });
-  if (changed.count !== 1) throw new Error("Activation failed: tenant state changed");
+    const changed = await tx.organization.updateMany({
+      where: {
+        id: org.id,
+        loginCode: DEMO_CODE,
+        legalName: "Trace Scientific Demonstration Laboratory - Fictional",
+        displayName: "Trace Scientific Demo Laboratory (SYNTHETIC)",
+        active: false,
+      },
+      data: { active: true },
+    });
+    if (changed.count !== 1) {
+      throw new Error("Activation failed: tenant state changed");
+    }
     await tx.auditEvent.create({ data: { organizationId: org.id, action: "DEMO_TENANT_ACTIVATED", entityType: "Organization", entityId: org.id, reason: "Explicitly confirmed synthetic demo tenant activation", metadata: { loginCode: DEMO_CODE, synthetic: true } } });
   }, { isolationLevel: "Serializable" });
   return { applied: true, organizationId: org.id, loginCode: DEMO_CODE };
