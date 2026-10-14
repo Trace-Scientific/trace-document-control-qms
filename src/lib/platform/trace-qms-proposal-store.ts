@@ -36,6 +36,28 @@ export class TraceQmsProposalStore {
       FROM "TraceQmsCommercialProposal" ORDER BY "createdAt" DESC LIMIT 100
     `);
   }
+  /** Read-only revision-ordered event history, scoped to platform sales readers. */
+  async history(context: PlatformAuthorizationContext, proposalId: string) {
+    requirePlatformAuthorization(context, { permission: "platform.sales.read" });
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(proposalId)) {
+      throw new RangeError("Invalid proposal ID.");
+    }
+    const proposals = await db.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id" FROM "TraceQmsCommercialProposal" WHERE "id" = ${proposalId}::uuid
+    `);
+    if (!proposals.length) return null;
+    return db.$queryRaw<Array<{
+      revision: number; action: string; fromStatus: string; toStatus: string;
+      actorIdentityId: string; reason: string; occurredAt: Date;
+    }>>(Prisma.sql`
+      SELECT "revision", "action", "fromStatus", "toStatus",
+             "actorIdentityId", "reason", "occurredAt"
+      FROM "TraceQmsCommercialProposalEvent"
+      WHERE "proposalId" = ${proposalId}::uuid
+      ORDER BY "revision" ASC
+    `);
+  }
+
   /** Atomic revision-checked transition. Commercial approval requires a separate authorized identity. */
   async transition(
     context: PlatformAuthorizationContext,
