@@ -70,6 +70,17 @@ export function TraceQmsQuotePanel() {
     } catch (error) { setSaveMessage(error instanceof Error ? error.message : "Unable to save draft proposal."); }
     finally { setSaving(false); }
   }
+  const [historyId, setHistoryId] = useState<string | null>(null);
+  const [history, setHistory] = useState<Array<{revision:number;action:string;fromStatus:string;toStatus:string;actorIdentityId:string;reason:string;occurredAt:string}>>([]);
+  async function viewHistory(proposalId: string) {
+    setSaveMessage(""); setHistoryId(null); setHistory([]);
+    try {
+      const response = await fetch("/api/platform/commercial-proposals/history?proposalId=" + encodeURIComponent(proposalId), { cache: "no-store" });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || "Unable to retrieve history.");
+      setHistory(payload.data); setHistoryId(proposalId);
+    } catch (error) { setSaveMessage(error instanceof Error ? error.message : "Unable to retrieve history."); }
+  }
   const [transitioning, setTransitioning] = useState<string | null>(null);
   async function transitionSaved(item: {id:string;revision:number}, action: "SUBMIT" | "APPROVE" | "REJECT") {
     const reason = window.prompt("Reason for " + action.toLowerCase() + " (required)");
@@ -150,6 +161,10 @@ export function TraceQmsQuotePanel() {
       {saveMessage?<p role="status">{saveMessage}</p>:null}
       {savedProposals.length>0?<ul>{savedProposals.map(item=><li key={item.id}>
         <strong>{item.customerName}</strong> · {item.status} · revision {item.revision} · {item.priceVersion}
+        <button type="button" onClick={()=>void viewHistory(item.id)}>View approval history</button>
+        {historyId===item.id?<div><p>Recorded approval events:</p>{history.length===0?<p>No transitions recorded.</p>:<ol>{history.map(event=><li key={event.revision}>
+          Revision {event.revision}: {event.fromStatus} → {event.toStatus} ({event.action}) · {new Date(event.occurredAt).toLocaleString()} · Actor ID: {event.actorIdentityId} · Reason: {event.reason}
+        </li>)}</ol>}</div>:null}
         {item.status==="DRAFT"?<button type="button" disabled={transitioning!==null} onClick={()=>void transitionSaved(item,"SUBMIT")}>Submit for approval</button>:null}
         {item.status==="SUBMITTED"?<>
           <button type="button" disabled={transitioning!==null} onClick={()=>void transitionSaved(item,"APPROVE")}>Approve</button>
