@@ -66,7 +66,7 @@ export function calculateTraceQmsQuote(input: TraceQmsQuoteInput): TraceQmsQuote
     throw new RangeError("Package users and modules are fixed; use a custom quote for variations.");
   }
   const modules = pkg ? [...pkg.modules] : [...(input.modules ?? [])];
-  if (new Set(modules).size !== modules.length || modules.some(m => !(m in TRACE_QMS_MODULES) || m === "document_control")) {
+  if (new Set(modules).size !== modules.length || modules.some(m => !(m in TRACE_QMS_MODULES))) {
     throw new RangeError("Modules must be unique, valid optional modules.");
   }
   const tier = TRACE_QMS_USER_TIERS.find(t => input.users <= t.max);
