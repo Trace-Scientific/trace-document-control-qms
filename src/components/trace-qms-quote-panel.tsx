@@ -36,6 +36,9 @@ export function TraceQmsQuotePanel() {
   const [foundingDiscountPercent, setFoundingDiscountPercent] = useState(0);
   const [preparedBy, setPreparedBy] = useState("");
   const [approvalConfirmed, setApprovalConfirmed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [savedProposals, setSavedProposals] = useState<Array<{id:string;customerName:string;status:string;priceVersion:string}>>([]);
   const quote = useMemo(() => {
     try {
       return { value: calculateTraceQmsProposal({
@@ -48,6 +51,34 @@ export function TraceQmsQuotePanel() {
       return { value: null, error: error instanceof Error ? error.message : "Invalid quote." };
     }
   }, [packageCode, users, modules, additionalSites, annualPrepay, customerName, foundingDiscountPercent]);
+  async function saveDraft() {
+    if (!quote.value || !customerName.trim()) return;
+    setSaving(true); setSaveMessage("");
+    try {
+      const input = {
+        customerName: customerName.trim(), foundingDiscountPercent,
+        users: packageCode === "essential" ? 10 : packageCode === "professional" ? 25 : packageCode === "enterprise" ? 50 : users,
+        ...(packageCode === "custom" ? { modules } : { package: packageCode }),
+        additionalSites, annualPrepay,
+      };
+      const response = await fetch("/api/platform/commercial-proposals", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || "Unable to save draft proposal.");
+      setSaveMessage("Draft quotation saved. Proposal ID: " + payload.data.id);
+    } catch (error) { setSaveMessage(error instanceof Error ? error.message : "Unable to save draft proposal."); }
+    finally { setSaving(false); }
+  }
+  async function loadSaved() {
+    setSaveMessage("");
+    try {
+      const response = await fetch("/api/platform/commercial-proposals", { cache: "no-store" });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || "Unable to load saved proposals.");
+      setSavedProposals(payload.data);
+    } catch (error) { setSaveMessage(error instanceof Error ? error.message : "Unable to load saved proposals."); }
+  }
   return <article style={{border:"1px solid var(--border, #d1d5db)",borderRadius:12,padding:20}}>
     <h3>Trace QMS subscription quote preview</h3>
     <p>Internal estimate · Pricing {TRACE_QMS_PRICE_VERSION} · USD. Does not create a customer subscription or authorize access.</p>
@@ -96,6 +127,10 @@ export function TraceQmsQuotePanel() {
       {quote.value.quote.setupCents!==null?<p>One-time onboarding (not included above): {money(quote.value.quote.setupCents)}</p>:<p>Onboarding, migration, and custom integrations: separately quoted.</p>}
       {quote.value.estimatedFirstYearCents!==null?<p>Estimated first year including onboarding: {money(quote.value.estimatedFirstYearCents)}</p>:null}
       {quote.value.requiresCommercialApproval?<label style={{display:"flex",gap:8,alignItems:"center"}}><input type="checkbox" checked={approvalConfirmed} onChange={e=>setApprovalConfirmed(e.target.checked)}/> I confirm the founding-customer discount has received commercial approval.</label>:null}
+      <button type="button" disabled={saving || !customerName.trim()} onClick={()=>void saveDraft()}>{saving ? "Saving…" : "Save draft quotation"}</button>
+      <button type="button" onClick={()=>void loadSaved()}>View saved quotations</button>
+      {saveMessage?<p role="status">{saveMessage}</p>:null}
+      {savedProposals.length>0?<ul>{savedProposals.map(item=><li key={item.id}>{item.customerName} · {item.status} · {item.priceVersion} · {item.id}</li>)}</ul>:null}
       <button type="button" disabled={!customerName.trim() || !preparedBy.trim() || (quote.value.requiresCommercialApproval && !approvalConfirmed)} onClick={()=>window.print()}>Print / save customer quotation as PDF</button>
       <p>Prepared for: {quote.value.customerName} · Prepared by: {preparedBy || "Not specified"} · Pricing version: {TRACE_QMS_PRICE_VERSION}</p>
       <p>Quotation preview only; subject to final commercial approval and execution of a separate agreement. No subscription is activated by this document.</p>
