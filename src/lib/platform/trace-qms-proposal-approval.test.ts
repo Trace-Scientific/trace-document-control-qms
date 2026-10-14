@@ -30,4 +30,26 @@ describe("proposal approval state machine", () => {
     expect(() => transitionProposal(draft(), "SUBMIT", "sales", "", timestamp)).toThrow();
     expect(() => transitionProposal(draft(), "SUBMIT", "sales", "Review", "not-a-date")).toThrow();
   });
+  it("rejects duplicate submission, invalid rejection and terminal-state changes", () => {
+    const submitted = transitionProposal(draft(), "SUBMIT", "sales", "Review", timestamp);
+    expect(() => transitionProposal(submitted, "SUBMIT", "sales", "Again", timestamp)).toThrow();
+    expect(() => transitionProposal(draft(), "REJECT", "manager", "Not reviewed", timestamp)).toThrow();
+    const rejected = transitionProposal(submitted, "REJECT", "manager", "Not approved", timestamp);
+    expect(rejected.status).toBe("REJECTED");
+    expect(rejected.revision).toBe(2);
+    expect(rejected.events[1]).toMatchObject({ action: "REJECT", from: "SUBMITTED", to: "REJECTED" });
+    expect(() => transitionProposal(rejected, "APPROVE", "manager", "Override", timestamp)).toThrow();
+    expect(() => transitionProposal(rejected, "SUBMIT", "sales", "Retry", timestamp)).toThrow();
+  });
+  it("preserves the original draft and records an attributable event", () => {
+    const original = draft();
+    const submitted = transitionProposal(original, "SUBMIT", "sales", "Review", timestamp);
+    expect(original.status).toBe("DRAFT");
+    expect(original.revision).toBe(0);
+    expect(original.events).toHaveLength(0);
+    expect(submitted.events).toEqual([{
+      action: "SUBMIT", actorId: "sales", reason: "Review", at: timestamp,
+      from: "DRAFT", to: "SUBMITTED",
+    }]);
+  });
 });
