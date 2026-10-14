@@ -53,6 +53,14 @@ jobs:
             /tmp/trace-qms.dump
           DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trace_qms_restore \
             npx prisma db execute --file prisma/tests/integrity.sql --schema prisma/schema.prisma
+      - name: Verify commercial proposal transactions in isolated PostgreSQL
+        run: |
+          docker exec ${{ job.services.postgres.id }} createdb -U postgres trace_qms_integration_test
+          TRACE_QMS_INTEGRATION_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trace_qms_integration_test \
+            DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trace_qms_integration_test \
+            npx prisma migrate deploy
+          TRACE_QMS_INTEGRATION_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trace_qms_integration_test \
+            node --test scripts/trace-qms-proposal-postgres.integration.node-test.mjs
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
