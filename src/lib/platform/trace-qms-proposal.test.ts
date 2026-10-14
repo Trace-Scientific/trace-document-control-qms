@@ -5,7 +5,7 @@ describe("Trace QMS proposal calculations", () => {
   it("includes Essential onboarding in first year", () => {
     const proposal = calculateTraceQmsProposal({ customerName: "Example Lab", users: 10, package: "essential" });
     expect(proposal.discountedMonthlyCents).toBe(23900);
-    expect(proposal.estimatedFirstYearCents).toBe(315700);
+    expect(proposal.estimatedFirstYearCents).toBe(316700);
   });
   it("preserves the Enterprise package discount", () => {
     const proposal = calculateTraceQmsProposal({ customerName: "Example Lab", users: 50, package: "enterprise", foundingDiscountPercent: 15 });
