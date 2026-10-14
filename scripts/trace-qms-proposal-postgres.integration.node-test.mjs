@@ -68,9 +68,16 @@ if (!url) {
         WHERE "proposalId" = ${id}::uuid ORDER BY "revision"
       `);
       assert.deepEqual(events.map(x => [x.revision, x.action]), [[1, "SUBMIT"], [2, "APPROVE"]]);
+      await assert.rejects(db.$executeRaw(Prisma.sql`
+        UPDATE "TraceQmsCommercialProposalEvent" SET "reason" = 'tampered'
+        WHERE "proposalId" = ${id}::uuid
+      `), /append-only/);
+      await assert.rejects(db.$executeRaw(Prisma.sql`
+        DELETE FROM "TraceQmsCommercialProposalEvent" WHERE "proposalId" = ${id}::uuid
+      `), /append-only/);
     } finally {
-      await db.$executeRaw(Prisma.sql`DELETE FROM "TraceQmsCommercialProposalEvent" WHERE "proposalId" = ${id}::uuid`);
-      await db.$executeRaw(Prisma.sql`DELETE FROM "TraceQmsCommercialProposal" WHERE "id" = ${id}::uuid`);
+      // Intentionally retain synthetic rows in this disposable test database:
+      // production-style approval events must not be deletable, even by test cleanup.
     }
   });
   test.after(async () => { await db.$disconnect(); });
