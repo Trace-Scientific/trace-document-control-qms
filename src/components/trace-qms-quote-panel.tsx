@@ -38,7 +38,7 @@ export function TraceQmsQuotePanel() {
   const [approvalConfirmed, setApprovalConfirmed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
-  const [savedProposals, setSavedProposals] = useState<Array<{id:string;customerName:string;status:string;priceVersion:string}>>([]);
+  const [savedProposals, setSavedProposals] = useState<Array<{id:string;customerName:string;status:string;priceVersion:string;revision:number}>>([]);
   const quote = useMemo(() => {
     try {
       return { value: calculateTraceQmsProposal({
@@ -70,8 +70,26 @@ export function TraceQmsQuotePanel() {
     } catch (error) { setSaveMessage(error instanceof Error ? error.message : "Unable to save draft proposal."); }
     finally { setSaving(false); }
   }
-  async function loadSaved() {
-    setSaveMessage("");
+  const [transitioning, setTransitioning] = useState<string | null>(null);
+  async function transitionSaved(item: {id:string;revision:number}, action: "SUBMIT" | "APPROVE" | "REJECT") {
+    const reason = window.prompt("Reason for " + action.toLowerCase() + " (required)");
+    if (!reason?.trim()) return;
+    setTransitioning(item.id); setSaveMessage("");
+    try {
+      const response = await fetch("/api/platform/commercial-proposals/transition", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ proposalId: item.id, expectedRevision: item.revision, action, reason: reason.trim() }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || "Proposal transition failed.");
+      setSaveMessage("Proposal " + action.toLowerCase() + " completed.");
+      await loadSaved(true);
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "Proposal transition failed.");
+    } finally { setTransitioning(null); }
+  }
+  async function loadSaved(preserveMessage = false) {
+    if (!preserveMessage) setSaveMessage("");
     try {
       const response = await fetch("/api/platform/commercial-proposals", { cache: "no-store" });
       const payload = await response.json().catch(() => null);
@@ -130,7 +148,14 @@ export function TraceQmsQuotePanel() {
       <button type="button" disabled={saving || !customerName.trim()} onClick={()=>void saveDraft()}>{saving ? "Saving…" : "Save draft quotation"}</button>
       <button type="button" onClick={()=>void loadSaved()}>View saved quotations</button>
       {saveMessage?<p role="status">{saveMessage}</p>:null}
-      {savedProposals.length>0?<ul>{savedProposals.map(item=><li key={item.id}>{item.customerName} · {item.status} · {item.priceVersion} · {item.id}</li>)}</ul>:null}
+      {savedProposals.length>0?<ul>{savedProposals.map(item=><li key={item.id}>
+        <strong>{item.customerName}</strong> · {item.status} · revision {item.revision} · {item.priceVersion}
+        {item.status==="DRAFT"?<button type="button" disabled={transitioning!==null} onClick={()=>void transitionSaved(item,"SUBMIT")}>Submit for approval</button>:null}
+        {item.status==="SUBMITTED"?<>
+          <button type="button" disabled={transitioning!==null} onClick={()=>void transitionSaved(item,"APPROVE")}>Approve</button>
+          <button type="button" disabled={transitioning!==null} onClick={()=>void transitionSaved(item,"REJECT")}>Reject</button>
+        </>:null}
+      </li>)}</ul>:null}
       <button type="button" disabled={!customerName.trim() || !preparedBy.trim() || (quote.value.requiresCommercialApproval && !approvalConfirmed)} onClick={()=>window.print()}>Print / save customer quotation as PDF</button>
       <p>Prepared for: {quote.value.customerName} · Prepared by: {preparedBy || "Not specified"} · Pricing version: {TRACE_QMS_PRICE_VERSION}</p>
       <p>Quotation preview only; subject to final commercial approval and execution of a separate agreement. No subscription is activated by this document.</p>
