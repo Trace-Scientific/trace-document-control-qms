@@ -51,6 +51,7 @@ export interface TraceQmsQuote {
   annualContractCents: number;
   setupCents: number | null;
   annualPrepay: boolean;
+  packageDiscountCents: number;
 }
 export function calculateTraceQmsQuote(input: TraceQmsQuoteInput): TraceQmsQuote {
   if (!Number.isSafeInteger(input.users) || input.users < 1 || input.users > 500) {
@@ -74,7 +75,10 @@ export function calculateTraceQmsQuote(input: TraceQmsQuoteInput): TraceQmsQuote
   const optionalModulesCents = modules.reduce<number>((sum, module) => sum + TRACE_QMS_MODULES[module], 0);
   const usersCents = input.users * tier.cents;
   const additionalSitesCents = additionalSites * 9900;
-  const monthlySubtotalCents = TRACE_QMS_MODULES.document_control + optionalModulesCents + usersCents + additionalSitesCents;
+  const listSubtotalCents = TRACE_QMS_MODULES.document_control + optionalModulesCents + usersCents + additionalSitesCents;
+  // Preserve the approved Enterprise bundle price ($872) without changing module list prices.
+  const packageDiscountCents = input.package === "enterprise" ? 5000 : 0;
+  const monthlySubtotalCents = listSubtotalCents - packageDiscountCents;
   const annualPrepay = input.annualPrepay === true;
   const annualContractCents = annualPrepay ? monthlySubtotalCents * 12 * 9 / 10 : monthlySubtotalCents * 12;
   return {
@@ -91,5 +95,6 @@ export function calculateTraceQmsQuote(input: TraceQmsQuoteInput): TraceQmsQuote
     annualContractCents,
     setupCents: pkg ? pkg.setupCents : null,
     annualPrepay,
+    packageDiscountCents,
   };
 }
