@@ -732,3 +732,37 @@ model PlatformSalesforceCdcNormalizedEvent {
   @@index([entityName, commitTimestamp])
   @@index([changeType, commitTimestamp])
 }
+
+
+/** Platform-only commercial proposal; no subscription or entitlement linkage. */
+model TraceQmsCommercialProposal {
+  id                String   @id @default(uuid()) @db.Uuid
+  customerName      String
+  priceVersion      String
+  inputSnapshot     Json
+  calculationSnapshot Json
+  status            String   @default("DRAFT")
+  revision          Int      @default(0)
+  createdByIdentityId String @db.Uuid
+  createdAt         DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @db.Timestamptz(3)
+  events            TraceQmsCommercialProposalEvent[]
+
+  @@index([status, createdAt])
+}
+
+model TraceQmsCommercialProposalEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  proposalId  String   @db.Uuid
+  revision    Int
+  action      String
+  fromStatus  String
+  toStatus    String
+  actorIdentityId String @db.Uuid
+  reason      String
+  occurredAt  DateTime @default(now()) @db.Timestamptz(3)
+  proposal    TraceQmsCommercialProposal @relation(fields: [proposalId], references: [id], onDelete: Restrict)
+
+  @@unique([proposalId, revision])
+  @@index([actorIdentityId, occurredAt])
+}
