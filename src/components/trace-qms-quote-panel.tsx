@@ -34,6 +34,8 @@ export function TraceQmsQuotePanel() {
   const [annualPrepay, setAnnualPrepay] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [foundingDiscountPercent, setFoundingDiscountPercent] = useState(0);
+  const [preparedBy, setPreparedBy] = useState("");
+  const [approvalConfirmed, setApprovalConfirmed] = useState(false);
   const quote = useMemo(() => {
     try {
       return { value: calculateTraceQmsProposal({
@@ -49,6 +51,7 @@ export function TraceQmsQuotePanel() {
   return <article style={{border:"1px solid var(--border, #d1d5db)",borderRadius:12,padding:20}}>
     <h3>Trace QMS subscription quote preview</h3>
     <p>Internal estimate · Pricing {TRACE_QMS_PRICE_VERSION} · USD. Does not create a customer subscription or authorize access.</p>
+    <label>Prepared by <input value={preparedBy} maxLength={120} onChange={e=>setPreparedBy(e.target.value)} placeholder="Trace Scientific representative"/></label>
     <label>Customer / laboratory name <input value={customerName} maxLength={200} onChange={e=>setCustomerName(e.target.value)} placeholder="Prospective laboratory"/></label>
     <label>Founding-customer discount (%) <input type="number" min={0} max={15} step={1} value={foundingDiscountPercent} onChange={e=>setFoundingDiscountPercent(Number(e.target.value))}/></label>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12}}>
@@ -92,6 +95,10 @@ export function TraceQmsQuotePanel() {
       <p><strong>12-month recurring subscription: {money(quote.value.annualRecurringCents)}</strong></p>
       {quote.value.quote.setupCents!==null?<p>One-time onboarding (not included above): {money(quote.value.quote.setupCents)}</p>:<p>Onboarding, migration, and custom integrations: separately quoted.</p>}
       {quote.value.estimatedFirstYearCents!==null?<p>Estimated first year including onboarding: {money(quote.value.estimatedFirstYearCents)}</p>:null}
+      {quote.value.requiresCommercialApproval?<label style={{display:"flex",gap:8,alignItems:"center"}}><input type="checkbox" checked={approvalConfirmed} onChange={e=>setApprovalConfirmed(e.target.checked)}/> I confirm the founding-customer discount has received commercial approval.</label>:null}
+      <button type="button" disabled={!customerName.trim() || !preparedBy.trim() || (quote.value.requiresCommercialApproval && !approvalConfirmed)} onClick={()=>window.print()}>Print / save customer quotation as PDF</button>
+      <p>Prepared for: {quote.value.customerName} · Prepared by: {preparedBy || "Not specified"} · Pricing version: {TRACE_QMS_PRICE_VERSION}</p>
+      <p>Quotation preview only; subject to final commercial approval and execution of a separate agreement. No subscription is activated by this document.</p>
       <p>Estimate excludes applicable taxes and custom services. Feature availability must be confirmed before contracting. Existing customer pricing is unaffected.</p>
     </div>:null}
   </article>;
