@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { calculateTraceQmsProposal } from "@/lib/platform/trace-qms-proposal";
 import {
-  calculateTraceQmsQuote,
   TRACE_QMS_MODULES,
   TRACE_QMS_PRICE_VERSION,
   type OptionalTraceQmsModule,
@@ -32,9 +32,12 @@ export function TraceQmsQuotePanel() {
   const [modules, setModules] = useState<OptionalTraceQmsModule[]>([]);
   const [additionalSites, setAdditionalSites] = useState(0);
   const [annualPrepay, setAnnualPrepay] = useState(false);
+  const [customerName, setCustomerName] = useState("");
+  const [foundingDiscountPercent, setFoundingDiscountPercent] = useState(0);
   const quote = useMemo(() => {
     try {
-      return { value: calculateTraceQmsQuote({
+      return { value: calculateTraceQmsProposal({
+        customerName: customerName || "Internal estimate", foundingDiscountPercent,
         users: packageCode === "essential" ? 10 : packageCode === "professional" ? 25 : packageCode === "enterprise" ? 50 : users,
         ...(packageCode === "custom" ? { modules } : { package: packageCode }),
         additionalSites, annualPrepay,
@@ -42,10 +45,12 @@ export function TraceQmsQuotePanel() {
     } catch (error) {
       return { value: null, error: error instanceof Error ? error.message : "Invalid quote." };
     }
-  }, [packageCode, users, modules, additionalSites, annualPrepay]);
+  }, [packageCode, users, modules, additionalSites, annualPrepay, customerName, foundingDiscountPercent]);
   return <article style={{border:"1px solid var(--border, #d1d5db)",borderRadius:12,padding:20}}>
     <h3>Trace QMS subscription quote preview</h3>
     <p>Internal estimate · Pricing {TRACE_QMS_PRICE_VERSION} · USD. Does not create a customer subscription or authorize access.</p>
+    <label>Customer / laboratory name <input value={customerName} maxLength={200} onChange={e=>setCustomerName(e.target.value)} placeholder="Prospective laboratory"/></label>
+    <label>Founding-customer discount (%) <input type="number" min={0} max={15} step={1} value={foundingDiscountPercent} onChange={e=>setFoundingDiscountPercent(Number(e.target.value))}/></label>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12}}>
       <label>Package
         <select aria-label="Package" value={packageCode} onChange={e=>setPackageCode(e.target.value as typeof packageCode)}>
@@ -77,13 +82,16 @@ export function TraceQmsQuotePanel() {
     </fieldset>:null}
     {quote.error?<p role="alert">{quote.error}</p>:null}
     {quote.value? <div aria-live="polite" style={{marginTop:16}}>
-      <p>Core platform: {money(quote.value.coreCents)}/mo · Optional modules: {money(quote.value.optionalModulesCents)}/mo</p>
-      <p>{quote.value.users} users × {money(quote.value.userRateCents)}: {money(quote.value.usersCents)}/mo · Additional sites: {money(quote.value.additionalSitesCents)}/mo</p>
-      {quote.value.packageDiscountCents>0?<p>Package discount: −{money(quote.value.packageDiscountCents)}/mo</p>:null}
-      <p><strong>Monthly subscription subtotal: {money(quote.value.monthlySubtotalCents)}</strong></p>
-      {annualPrepay?<p>Annual prepayment equivalent: {money(quote.value.monthlyEquivalentCents)}/mo after 10% discount</p>:null}
-      <p><strong>12-month recurring subscription: {money(quote.value.annualContractCents)}</strong></p>
-      {quote.value.setupCents!==null?<p>One-time onboarding (not included above): {money(quote.value.setupCents)}</p>:<p>Onboarding, migration, and custom integrations: separately quoted.</p>}
+      <p>Core platform: {money(quote.value.quote.coreCents)}/mo · Optional modules: {money(quote.value.quote.optionalModulesCents)}/mo</p>
+      <p>{quote.value.quote.users} users × {money(quote.value.quote.userRateCents)}: {money(quote.value.quote.usersCents)}/mo · Additional sites: {money(quote.value.quote.additionalSitesCents)}/mo</p>
+      {quote.value.quote.packageDiscountCents>0?<p>Package discount: −{money(quote.value.quote.packageDiscountCents)}/mo</p>:null}
+      <p><strong>Monthly subscription subtotal: {money(quote.value.quote.monthlySubtotalCents)}</strong></p>
+      {annualPrepay?<p>Annual prepayment equivalent: {money(quote.value.quote.monthlyEquivalentCents)}/mo after 10% discount</p>:null}
+      {quote.value.foundingDiscountCents>0?<p>Founding-customer discount (approval required): −{money(quote.value.foundingDiscountCents)}/mo</p>:null}
+      <p><strong>Customer recurring monthly rate: {money(quote.value.discountedMonthlyCents)}</strong></p>
+      <p><strong>12-month recurring subscription: {money(quote.value.annualRecurringCents)}</strong></p>
+      {quote.value.quote.setupCents!==null?<p>One-time onboarding (not included above): {money(quote.value.quote.setupCents)}</p>:<p>Onboarding, migration, and custom integrations: separately quoted.</p>}
+      {quote.value.estimatedFirstYearCents!==null?<p>Estimated first year including onboarding: {money(quote.value.estimatedFirstYearCents)}</p>:null}
       <p>Estimate excludes applicable taxes and custom services. Feature availability must be confirmed before contracting. Existing customer pricing is unaffected.</p>
     </div>:null}
   </article>;
