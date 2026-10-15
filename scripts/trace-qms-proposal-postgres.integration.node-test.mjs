@@ -69,6 +69,18 @@ if (!url) {
       `);
       assert.deepEqual(events.map(x => [x.revision, x.action]), [[1, "SUBMIT"], [2, "APPROVE"]]);
       await assert.rejects(db.$executeRaw(Prisma.sql`
+        INSERT INTO "TraceQmsCommercialProposalEvent"
+          ("id", "proposalId", "revision", "action", "fromStatus", "toStatus", "actorIdentityId", "reason")
+        VALUES (gen_random_uuid(), ${id}::uuid, 3, 'APPROVE', 'SUBMITTED', 'APPROVED',
+          ${reviewer}::uuid, 'Forged synthetic event')
+      `), /does not match proposal state/);
+      await assert.rejects(db.$executeRaw(Prisma.sql`
+        INSERT INTO "TraceQmsCommercialProposalEvent"
+          ("id", "proposalId", "revision", "action", "fromStatus", "toStatus", "actorIdentityId", "reason")
+        VALUES (gen_random_uuid(), ${id}::uuid, 2, 'APPROVE', 'SUBMITTED', 'APPROVED',
+          ${creator}::uuid, 'Creator self approval')
+      `), /creator cannot approve or reject/);
+      await assert.rejects(db.$executeRaw(Prisma.sql`
         UPDATE "TraceQmsCommercialProposalEvent" SET "reason" = 'tampered'
         WHERE "proposalId" = ${id}::uuid
       `), /append-only/);
