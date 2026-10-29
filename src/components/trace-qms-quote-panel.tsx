@@ -70,6 +70,17 @@ export function TraceQmsQuotePanel() {
     } catch (error) { setSaveMessage(error instanceof Error ? error.message : "Unable to save draft proposal."); }
     finally { setSaving(false); }
   }
+  const [auditSummary, setAuditSummary] = useState<{checkedAt:string;totalFindings:number;findingsByCode:Array<{findingCode:string;findingCount:number;affectedProposals:number}>}|null>(null);
+  const [auditSummaryError, setAuditSummaryError] = useState("");
+  async function loadAuditSummary() {
+    setAuditSummaryError("");
+    try {
+      const response = await fetch("/api/platform/commercial-proposals/audit-summary", { cache: "no-store" });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || "Unable to load audit summary.");
+      setAuditSummary(payload.data);
+    } catch (error) { setAuditSummary(null); setAuditSummaryError(error instanceof Error ? error.message : "Unable to load audit summary."); }
+  }
   const [auditProposalId, setAuditProposalId] = useState("");
   const [auditFindings, setAuditFindings] = useState<Array<{proposalId:string;findingCode:string;eventRevision:number|null}>>([]);
   const [auditLoaded, setAuditLoaded] = useState(false);
@@ -182,6 +193,13 @@ export function TraceQmsQuotePanel() {
       <button type="button" onClick={()=>void loadSaved()}>View saved quotations</button>
       <section aria-label="Commercial approval audit findings" style={{border:"1px solid var(--border, #d1d5db)",borderRadius:8,padding:12,marginTop:16}}>
         <h4>Commercial approval audit findings</h4>
+        <button type="button" onClick={()=>void loadAuditSummary()}>Refresh audit monitoring summary</button>
+        {auditSummaryError?<p role="alert">{auditSummaryError}</p>:null}
+        {auditSummary?<div aria-live="polite">
+          <p>On-demand check: {new Date(auditSummary.checkedAt).toLocaleString()} · Total findings: {auditSummary.totalFindings}</p>
+          {auditSummary.findingsByCode.length>0?<ul>{auditSummary.findingsByCode.map(row=><li key={row.findingCode}>{row.findingCode}: {row.findingCount} finding(s) across {row.affectedProposals} proposal(s)</li>)}</ul>:<p>No inconsistencies detected by the current checks.</p>}
+          <p>This is a manual snapshot, not an automatic alert or scheduled monitor.</p>
+        </div>:null}
         <p>Read-only consistency checks. Results do not prove the absence of privileged database tampering.</p>
         <label>Filter by proposal ID (optional)
           <input aria-label="Audit proposal ID" value={auditProposalId} onChange={e=>setAuditProposalId(e.target.value)} placeholder="UUID or leave blank for all" />
