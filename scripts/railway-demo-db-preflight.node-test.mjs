@@ -33,3 +33,9 @@ test("wrong environment fails before querying", async () => {
   await assert.rejects(inspectRailwayDemoDatabase({ db, identity: { ...identity, environmentId: "production" }, databaseUrl }));
   assert.equal(called, false);
 });
+
+test("identity rejection identifies failed field without exposing credentials", () => {
+  assert.throws(() => validateDemoDatabaseIdentityRows([{ ...row, database_user: "postgres" }]), /database_user_is_superuser_name/);
+  assert.throws(() => validateDemoDatabaseIdentityRows([{ ...row, server_address: null }]), /server_address_unavailable/);
+  assert.throws(() => validateDemoDatabaseIdentityRows([{ ...row, database_name: "wrong" }]), /database_name_mismatch/);
+});
