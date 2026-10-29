@@ -1,6 +1,6 @@
 import { DEMO_RAILWAY, assertRailwayDemoIdentity, assertRailwayDemoDatabaseUrl } from "./railway-demo-identity.mjs";
 
-export function attestRailwayDemoRuntime(env = process.env) {
+export function attestRailwayDemoRuntime(env = process.env, expectedServiceId = DEMO_RAILWAY.applicationServiceId) {
   const identity = {
     projectId: env.RAILWAY_PROJECT_ID,
     environmentId: env.RAILWAY_ENVIRONMENT_ID,
@@ -10,7 +10,7 @@ export function attestRailwayDemoRuntime(env = process.env) {
     databaseName: DEMO_RAILWAY.databaseName,
     deploymentTier: env.DEPLOYMENT_TIER,
   };
-  assertRailwayDemoIdentity(identity);
+  assertRailwayDemoIdentity(identity, expectedServiceId);
   assertRailwayDemoDatabaseUrl(env.DATABASE_URL);
   if (env.RAILWAY_ENVIRONMENT_NAME !== "demo") {
     throw new Error("Demo runtime: expected Railway demo environment name");
