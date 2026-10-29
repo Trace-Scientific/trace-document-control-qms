@@ -70,6 +70,28 @@ export function TraceQmsQuotePanel() {
     } catch (error) { setSaveMessage(error instanceof Error ? error.message : "Unable to save draft proposal."); }
     finally { setSaving(false); }
   }
+  const [auditProposalId, setAuditProposalId] = useState("");
+  const [auditFindings, setAuditFindings] = useState<Array<{proposalId:string;findingCode:string;eventRevision:number|null}>>([]);
+  const [auditLoaded, setAuditLoaded] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState("");
+  async function loadAuditFindings() {
+    setAuditLoading(true); setAuditError(""); setAuditLoaded(false); setAuditFindings([]);
+    try {
+      const query = auditProposalId.trim() ? "?proposalId=" + encodeURIComponent(auditProposalId.trim()) : "";
+      const response = await fetch("/api/platform/commercial-proposals/audit-findings" + query, { cache: "no-store" });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || "Unable to load audit findings.");
+      setAuditFindings(payload.data); setAuditLoaded(true);
+    } catch (error) { setAuditError(error instanceof Error ? error.message : "Unable to load audit findings."); }
+    finally { setAuditLoading(false); }
+  }
+  const auditDescriptions: Record<string,string> = {
+    EVENT_COUNT_MISMATCH: "Proposal revision does not match recorded event count or latest event revision.",
+    LATEST_STATUS_MISMATCH: "Proposal status differs from its latest recorded approval event.",
+    EVENT_CHAIN_MISMATCH: "Approval event revisions, status sequence, or action transitions are inconsistent.",
+    CREATOR_SELF_APPROVAL: "Proposal creator appears as the actor for an approval or rejection.",
+  };
   const [historyId, setHistoryId] = useState<string | null>(null);
   const [history, setHistory] = useState<Array<{revision:number;action:string;fromStatus:string;toStatus:string;actorIdentityId:string;reason:string;occurredAt:string}>>([]);
   async function viewHistory(proposalId: string) {
@@ -158,6 +180,25 @@ export function TraceQmsQuotePanel() {
       {quote.value.requiresCommercialApproval?<label style={{display:"flex",gap:8,alignItems:"center"}}><input type="checkbox" checked={approvalConfirmed} onChange={e=>setApprovalConfirmed(e.target.checked)}/> I confirm the founding-customer discount has received commercial approval.</label>:null}
       <button type="button" disabled={saving || !customerName.trim()} onClick={()=>void saveDraft()}>{saving ? "Saving…" : "Save draft quotation"}</button>
       <button type="button" onClick={()=>void loadSaved()}>View saved quotations</button>
+      <section aria-label="Commercial approval audit findings" style={{border:"1px solid var(--border, #d1d5db)",borderRadius:8,padding:12,marginTop:16}}>
+        <h4>Commercial approval audit findings</h4>
+        <p>Read-only consistency checks. Results do not prove the absence of privileged database tampering.</p>
+        <label>Filter by proposal ID (optional)
+          <input aria-label="Audit proposal ID" value={auditProposalId} onChange={e=>setAuditProposalId(e.target.value)} placeholder="UUID or leave blank for all" />
+        </label>
+        <button type="button" disabled={auditLoading} onClick={()=>void loadAuditFindings()}>{auditLoading?"Loading…":"Check audit findings"}</button>
+        {auditError?<p role="alert">{auditError}</p>:null}
+        {auditLoaded?<div role="status">{auditFindings.length===0?<p>No inconsistencies detected by the current checks.</p>:<>
+          <p>{auditFindings.length} finding(s) returned (maximum 200). Review each discrepancy before taking action.</p>
+          <div style={{overflowX:"auto"}}><table><thead><tr><th scope="col">Proposal ID</th><th scope="col">Finding</th><th scope="col">Event revision</th></tr></thead><tbody>
+            {auditFindings.map((finding,index)=><tr key={finding.proposalId+"-"+finding.findingCode+"-"+index}>
+              <td>{finding.proposalId}</td>
+              <td><strong>{finding.findingCode}</strong><p>{auditDescriptions[finding.findingCode]??"Unrecognized audit finding; investigate."}</p></td>
+              <td>{finding.eventRevision??"—"}</td>
+            </tr>)}
+          </tbody></table></div>
+        </>}</div>:null}
+      </section>
       {saveMessage?<p role="status">{saveMessage}</p>:null}
       {savedProposals.length>0?<ul>{savedProposals.map(item=><li key={item.id}>
         <strong>{item.customerName}</strong> · {item.status} · revision {item.revision} · {item.priceVersion}

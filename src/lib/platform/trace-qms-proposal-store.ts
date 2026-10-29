@@ -58,6 +58,21 @@ export class TraceQmsProposalStore {
     `);
   }
 
+  /** Read-only audit findings, scoped to authorized platform sales readers. */
+  async auditFindings(context: PlatformAuthorizationContext, proposalId: string | null) {
+    requirePlatformAuthorization(context, { permission: "platform.sales.read" });
+    if (proposalId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(proposalId)) {
+      throw new RangeError("Invalid proposal ID.");
+    }
+    return db.$queryRaw<Array<{ proposalId: string; findingCode: string; eventRevision: number | null }>>(Prisma.sql`
+      SELECT "proposalId", "findingCode", "eventRevision"
+      FROM "TraceQmsCommercialProposalAuditFinding"
+      WHERE (${proposalId}::uuid IS NULL OR "proposalId" = ${proposalId}::uuid)
+      ORDER BY "proposalId", "findingCode", "eventRevision" NULLS FIRST
+      LIMIT 200
+    `);
+  }
+
   /** Atomic revision-checked transition. Commercial approval requires a separate authorized identity. */
   async transition(
     context: PlatformAuthorizationContext,
