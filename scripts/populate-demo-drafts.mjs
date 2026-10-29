@@ -1,3 +1,4 @@
+import { assertDemoTestDatabase, assertDemoTestDatabaseIdentity } from "./demo-database-safety.mjs";
 import { createHash } from "node:crypto";
 import { DEMO_DOCUMENTS, DEMO_DOCUMENT_TYPES, validateDemoManifest } from "./demo-tenant-manifest.mjs";
 
@@ -15,6 +16,8 @@ export function demoDraftContent(document) {
 }
 
 export async function planDemoDrafts(db, organizationId) {
+  assertDemoTestDatabase(process.env.DATABASE_URL);
+  await assertDemoTestDatabaseIdentity(db);
   validateDemoManifest();
   if (!organizationId) throw new Error("Explicit organization ID required");
   const org = await db.organization.findUnique({ where: { id: organizationId } });
