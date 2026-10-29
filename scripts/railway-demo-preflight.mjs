@@ -2,16 +2,17 @@
 // Explicitly read-only. Does not provision or mutate any records.
 import { pathToFileURL } from "node:url";
 import { attestRailwayDemoRuntime } from "./railway-demo-runtime.mjs";
+import { DEMO_RAILWAY } from "./railway-demo-identity.mjs";
 import { inspectRailwayDemoDatabase } from "./railway-demo-db-preflight.mjs";
 
 export async function runRailwayDemoPreflight({ env = process.env, createClient }) {
-  const { identity, databaseUrl } = attestRailwayDemoRuntime(env);
+  const { identity, databaseUrl } = attestRailwayDemoRuntime(env, DEMO_RAILWAY.preflightServiceId);
   if (typeof createClient !== "function") {
     throw new Error("Demo preflight: database client factory is required");
   }
   const db = await createClient();
   try {
-    return await inspectRailwayDemoDatabase({ db, identity, databaseUrl });
+    return await inspectRailwayDemoDatabase({ db, identity, databaseUrl, expectedServiceId: DEMO_RAILWAY.preflightServiceId });
   } finally {
     await db.$disconnect();
   }
