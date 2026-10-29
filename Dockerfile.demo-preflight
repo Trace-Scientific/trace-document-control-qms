@@ -1,0 +1,22 @@
+# Dedicated one-shot read-only demo preflight. Never use this as the web app image.
+FROM node:22-alpine AS dependencies
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+
+FROM node:22-alpine AS builder
+WORKDIR /app
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY prisma ./prisma
+RUN npx prisma generate
+
+FROM node:22-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+RUN addgroup --system --gid 1001 qms && adduser --system --uid 1001 --ingroup qms qms
+COPY --from=builder --chown=qms:qms /app/node_modules ./node_modules
+COPY --from=builder --chown=qms:qms /app/prisma ./prisma
+COPY --chown=qms:qms scripts/railway-demo-identity.mjs scripts/railway-demo-runtime.mjs scripts/railway-demo-db-preflight.mjs scripts/railway-demo-preflight.mjs ./scripts/
+USER qms
+# No migrations, web server, scheduled restart, or writes.
+CMD ["node", "scripts/railway-demo-preflight.mjs"]
