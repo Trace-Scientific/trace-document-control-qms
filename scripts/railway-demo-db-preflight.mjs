@@ -18,8 +18,8 @@ export function validateDemoDatabaseIdentityRows(rows) {
   return { databaseName: row.database_name, databaseUser: row.database_user };
 }
 
-export async function inspectRailwayDemoDatabase({ db, identity, databaseUrl }) {
-  assertRailwayDemoIdentity(identity);
+export async function inspectRailwayDemoDatabase({ db, identity, databaseUrl, expectedServiceId = DEMO_RAILWAY.applicationServiceId }) {
+  assertRailwayDemoIdentity(identity, expectedServiceId);
   assertRailwayDemoDatabaseUrl(databaseUrl);
   if (!db || typeof db.$queryRaw !== "function") {
     throw new Error("Demo preflight: a database client is required");

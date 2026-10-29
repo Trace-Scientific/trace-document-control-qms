@@ -6,7 +6,7 @@ import { runRailwayDemoPreflight } from "./railway-demo-preflight.mjs";
 const env = {
   RAILWAY_PROJECT_ID: DEMO_RAILWAY.projectId,
   RAILWAY_ENVIRONMENT_ID: DEMO_RAILWAY.environmentId,
-  RAILWAY_SERVICE_ID: DEMO_RAILWAY.applicationServiceId,
+  RAILWAY_SERVICE_ID: DEMO_RAILWAY.preflightServiceId,
   DEMO_DATABASE_SERVICE_ID: DEMO_RAILWAY.databaseServiceId,
   RAILWAY_ENVIRONMENT_NAME: "demo",
   DEPLOYMENT_TIER: "demo",

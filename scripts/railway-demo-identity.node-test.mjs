@@ -11,7 +11,7 @@ const url = "postgresql://demo:example@postgres-6qrb.railway.internal:5432/railw
 
 test("accepts only the pinned demo environment", () => {
   assert.equal(assertRailwayDemoIdentity(identity), true);
-  for (const field of Object.keys(DEMO_RAILWAY)) {
+  for (const field of Object.keys(DEMO_RAILWAY).filter((field) => field !== "preflightServiceId")) {
     assert.throws(() => assertRailwayDemoIdentity({ ...identity, [field]: "production" }));
   }
   assert.throws(() => assertRailwayDemoIdentity({ ...identity, deploymentTier: "production" }));
@@ -32,4 +32,11 @@ test("accepts only demo database connection shape", () => {
   ]) {
     assert.throws(() => assertRailwayDemoDatabaseUrl(candidate));
   }
+});
+
+test("dedicated preflight identity cannot impersonate web service", () => {
+  const job = { ...identity, applicationServiceId: DEMO_RAILWAY.preflightServiceId };
+  assert.throws(() => assertRailwayDemoIdentity(job));
+  assert.equal(assertRailwayDemoIdentity(job, DEMO_RAILWAY.preflightServiceId), true);
+  assert.throws(() => assertRailwayDemoIdentity(identity, DEMO_RAILWAY.preflightServiceId));
 });
