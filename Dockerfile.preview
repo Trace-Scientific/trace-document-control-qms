@@ -23,6 +23,11 @@ COPY --from=dependencies --chown=qms:qms /app/node_modules ./node_modules
 COPY --from=builder --chown=qms:qms /app/.next/standalone ./
 COPY --from=builder --chown=qms:qms /app/.next/static ./.next/static
 COPY --from=builder --chown=qms:qms /app/prisma ./prisma
+# Manual read-only Railway demo preflight; never invoked during startup.
+COPY --from=builder --chown=qms:qms /app/scripts/railway-demo-identity.mjs ./scripts/railway-demo-identity.mjs
+COPY --from=builder --chown=qms:qms /app/scripts/railway-demo-runtime.mjs ./scripts/railway-demo-runtime.mjs
+COPY --from=builder --chown=qms:qms /app/scripts/railway-demo-db-preflight.mjs ./scripts/railway-demo-db-preflight.mjs
+COPY --from=builder --chown=qms:qms /app/scripts/railway-demo-preflight.mjs ./scripts/railway-demo-preflight.mjs
 COPY --from=builder --chown=qms:qms /app/scripts/bootstrap-admin.mjs ./scripts/bootstrap-admin.mjs
 COPY --from=builder --chown=qms:qms /app/scripts/bootstrap-platform-admin.mjs ./scripts/bootstrap-platform-admin.mjs
 COPY --from=builder --chown=qms:qms /app/scripts/run-twilio-delivery-monitoring.mjs ./scripts/run-twilio-delivery-monitoring.mjs
