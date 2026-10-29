@@ -12,7 +12,7 @@ test("demo manifest has stable, unique, synthetic document identifiers", () => {
     sites: 2,
     departments: 4,
     documentTypes: 4,
-    documents: 15,
+    documents: 30,
     personas: 6,
   });
   assert.ok(DEMO_DOCUMENTS.every((doc) => doc.documentNumber.startsWith("DEMO-")));
