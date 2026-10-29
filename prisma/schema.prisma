@@ -766,3 +766,16 @@ model TraceQmsCommercialProposalEvent {
   @@unique([proposalId, revision])
   @@index([actorIdentityId, occurredAt])
 }
+
+
+model TraceQmsCommercialAuditScan {
+  id                    String   @id @default(uuid()) @db.Uuid
+  checkedAt             DateTime @default(now()) @db.Timestamptz(3)
+  findingCount          Int
+  affectedProposals     Int
+  findingsByCode        Json
+  initiatedByIdentityId String   @db.Uuid
+  trigger               String   @default("MANUAL")
+
+  @@index([checkedAt])
+}
