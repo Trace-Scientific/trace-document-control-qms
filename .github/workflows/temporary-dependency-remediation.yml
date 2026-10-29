@@ -1,0 +1,35 @@
+name: One-time dependency security remediation
+on:
+  push:
+    branches:
+      - codex/qms-commercial-audit-consistency-view
+    paths:
+      - .github/workflows/temporary-dependency-remediation.yml
+permissions:
+  contents: write
+jobs:
+  repair-lockfile:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+      - name: Update affected dependencies and lockfile
+        run: |
+          npm install --save-exact next@16.4.3 zod@4.6.6
+          npm install --save-dev --save-exact eslint-config-next@16.4.3
+          npm audit --audit-level=high
+          npm audit --omit=dev --audit-level=high
+      - name: Commit dependency security fixes to PR branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Fix Next.js and Zod security advisories"
+          git push origin HEAD:codex/qms-commercial-audit-consistency-view
