@@ -33,6 +33,21 @@ export const DEMO_DOCUMENTS = Object.freeze([
   ["DEMO-FRM-001", "Specimen Rejection Log", "FRM"],
   ["DEMO-FRM-002", "Temperature Log", "FRM"],
   ["DEMO-FRM-003", "Corrective Action Record", "FRM"],
+  ["DEMO-SOP-009", "Document Review and Periodic Reapproval", "SOP"],
+  ["DEMO-SOP-010", "Critical Result Communication", "SOP"],
+  ["DEMO-SOP-011", "Sample Storage and Disposal", "SOP"],
+  ["DEMO-SOP-012", "Internal Quality Audit", "SOP"],
+  ["DEMO-SOP-013", "Supplier Qualification and Monitoring", "SOP"],
+  ["DEMO-POL-003", "Records Retention and Archiving", "POL"],
+  ["DEMO-POL-004", "Incident Reporting and Escalation", "POL"],
+  ["DEMO-WI-003", "Daily Temperature Monitoring", "WI"],
+  ["DEMO-WI-004", "Document Revision Request", "WI"],
+  ["DEMO-WI-005", "Reagent Lot Receipt and Verification", "WI"],
+  ["DEMO-FRM-004", "Equipment Maintenance Log", "FRM"],
+  ["DEMO-FRM-005", "Personnel Training Record", "FRM"],
+  ["DEMO-FRM-006", "Competency Assessment Checklist", "FRM"],
+  ["DEMO-FRM-007", "Internal Audit Checklist", "FRM"],
+  ["DEMO-FRM-008", "CAPA Effectiveness Review", "FRM"],
 ].map(([documentNumber, title, documentTypeCode]) =>
   Object.freeze({ documentNumber, title, documentTypeCode })
 ));
