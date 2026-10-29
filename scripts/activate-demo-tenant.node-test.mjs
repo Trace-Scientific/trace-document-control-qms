@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { activateDemoTenant, parseActivationArgs } from "./activate-demo-tenant.mjs";
 
+const APPROVED_URL = "postgresql://trace_qms_test:local_integration_test_only@127.0.0.1:5433/trace_qms_integration_test?schema=public";
+process.env.DATABASE_URL = APPROVED_URL;
+
 const org = {
   id: "demo-id", loginCode: "trace-demo-lab",
   legalName: "Trace Scientific Demonstration Laboratory - Fictional",
@@ -11,6 +14,7 @@ function mock(overrides = {}) {
   const calls = [];
   return {
     calls,
+    $queryRaw: async () => [{ database_name: "trace_qms_integration_test", database_user: "trace_qms_test" }],
     organization: {
       findUnique: async () => ({ ...org, ...(overrides.org || {}) }),
       updateMany: async (args) => { calls.push(args); return { count: 1 }; },
@@ -39,4 +43,23 @@ test("confirmed activation targets only the verified demo organization", async (
   const db = mock();
   assert.equal((await activateDemoTenant(db, { apply: true })).applied, true);
   assert.deepEqual(db.calls[0].where, { id: "demo-id", loginCode: "trace-demo-lab", active: false });
+});
+
+test("activation refuses wrong database URL before reading tenant data", async () => {
+  const previous = process.env.DATABASE_URL;
+  try {
+    process.env.DATABASE_URL = "postgresql://user:pass@production.example.com:5432/qms";
+    const db = mock();
+    await assert.rejects(activateDemoTenant(db, { apply: true }), /not the approved isolated integration-test database/);
+    assert.equal(db.calls.length, 0);
+  } finally {
+    process.env.DATABASE_URL = previous;
+  }
+});
+
+test("activation refuses mismatched database identity", async () => {
+  const db = mock();
+  db.$queryRaw = async () => [{ database_name: "customer_database", database_user: "trace_qms_test" }];
+  await assert.rejects(activateDemoTenant(db, { apply: true }), /database identity is not approved/);
+  assert.equal(db.calls.length, 0);
 });
