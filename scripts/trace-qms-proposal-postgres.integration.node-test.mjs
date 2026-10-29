@@ -68,6 +68,11 @@ if (!url) {
         WHERE "proposalId" = ${id}::uuid ORDER BY "revision"
       `);
       assert.deepEqual(events.map(x => [x.revision, x.action]), [[1, "SUBMIT"], [2, "APPROVE"]]);
+      const auditFindings = await db.$queryRaw(Prisma.sql`
+        SELECT "findingCode" FROM "TraceQmsCommercialProposalAuditFinding"
+        WHERE "proposalId" = ${id}::uuid
+      `);
+      assert.deepEqual(auditFindings, []);
       await assert.rejects(db.$executeRaw(Prisma.sql`
         INSERT INTO "TraceQmsCommercialProposalEvent"
           ("id", "proposalId", "revision", "action", "fromStatus", "toStatus", "actorIdentityId", "reason")
