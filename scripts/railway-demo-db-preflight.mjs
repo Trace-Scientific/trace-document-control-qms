@@ -13,7 +13,12 @@ export function validateDemoDatabaseIdentityRows(rows) {
     row.server_address === null ||
     typeof row.server_address !== "string"
   ) {
-    throw new Error("Demo preflight: connected PostgreSQL identity is not approved");
+    const reasons = [];
+    if (row.database_name !== DEMO_RAILWAY.databaseName) reasons.push("database_name_mismatch");
+    if (typeof row.database_user !== "string" || !row.database_user) reasons.push("database_user_missing");
+    else if (row.database_user === "postgres") reasons.push("database_user_is_superuser_name");
+    if (row.server_address === null || typeof row.server_address !== "string") reasons.push("server_address_unavailable");
+    throw new Error(`Demo preflight: connected PostgreSQL identity is not approved (${reasons.join(", ")})`);
   }
   return { databaseName: row.database_name, databaseUser: row.database_user };
 }
