@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { pathToFileURL } from "node:url";
+import { assertDemoTestDatabase, assertDemoTestDatabaseIdentity } from "./demo-database-safety.mjs";
 
 export const DEMO_CODE = "trace-demo-lab";
 export const CONFIRM = "ACTIVATE-SYNTHETIC-DEMO-TENANT";
@@ -11,6 +12,8 @@ export function parseActivationArgs(args) {
 }
 
 export async function activateDemoTenant(db, { apply = false } = {}) {
+  assertDemoTestDatabase(process.env.DATABASE_URL);
+  await assertDemoTestDatabaseIdentity(db);
   const org = await db.organization.findUnique({
     where: { loginCode: DEMO_CODE },
     select: { id: true, loginCode: true, legalName: true, displayName: true, active: true },
