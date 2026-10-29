@@ -1,6 +1,9 @@
+import { assertDemoTestDatabase, assertDemoTestDatabaseIdentity } from "./demo-database-safety.mjs";
 import { DEMO_DOCUMENT_TYPES, DEMO_SITES, DEMO_DEPARTMENTS, validateDemoManifest } from "./demo-tenant-manifest.mjs";
 
 export async function planDemoConfiguration(db, organizationId) {
+  assertDemoTestDatabase(process.env.DATABASE_URL);
+  await assertDemoTestDatabaseIdentity(db);
   validateDemoManifest();
   if (!organizationId) throw new Error("Explicit demo organization ID required");
   const organization = await db.organization.findUnique({ where: { id: organizationId } });
