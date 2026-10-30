@@ -1,0 +1,6 @@
+FROM postgres:18-bookworm
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends awscli ca-certificates coreutils && rm -rf /var/lib/apt/lists/*
+COPY --chmod=0755 scripts/railway-demo-s3-restore-validation.sh /usr/local/bin/validate-demo-restore
+USER postgres
+ENTRYPOINT ["/usr/local/bin/validate-demo-restore"]
