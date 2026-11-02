@@ -3,7 +3,7 @@ import test from "node:test";
 import { DEMO_RAILWAY } from "./railway-demo-identity.mjs";
 import { planRailwayDemoProvisioning } from "./railway-demo-provisioning-plan.mjs";
 
-const SERVICE_ID = "b0d83a6f-5555-4a55-8c55-111111111111";
+const SERVICE_ID = "be0f039a-cfad-46c7-a360-95bf0eeefb8c";
 const DATABASE_URL = "postgresql://demo:example@postgres-6qrb.railway.internal:5432/railway?schema=public";
 
 function environment(overrides = {}) {
@@ -72,6 +72,7 @@ for (const [label, overrides] of [
   ["wrong database service", { DEMO_DATABASE_SERVICE_ID: "00000000-0000-0000-0000-000000000000" }],
   ["wrong database host", { DATABASE_URL: "postgresql://demo:example@production.internal:5432/railway" }],
   ["wrong service identity", { RAILWAY_SERVICE_ID: "00000000-0000-0000-0000-000000000000" }],
+  ["self-approved different service", { RAILWAY_SERVICE_ID: "00000000-0000-0000-0000-000000000000", DEMO_PROVISIONER_SERVICE_ID: "00000000-0000-0000-0000-000000000000" }],
   ["missing approved provisioner ID", { DEMO_PROVISIONER_SERVICE_ID: "" }],
   ["malformed approved provisioner ID", { DEMO_PROVISIONER_SERVICE_ID: "not-a-uuid" }],
   ["wrong deployment tier", { DEPLOYMENT_TIER: "production" }],
