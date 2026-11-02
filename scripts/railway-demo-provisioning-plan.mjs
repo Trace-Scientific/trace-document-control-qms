@@ -7,9 +7,14 @@ import { attestRailwayDemoRuntime } from "./railway-demo-runtime.mjs";
 import { inspectRailwayDemoDatabase } from "./railway-demo-db-preflight.mjs";
 
 export const DEMO_LOGIN_CODE = "trace-demo-lab";
+// Pinned independently to the dedicated Railway demo-only service.
+export const DEMO_PROVISIONER_SERVICE_ID = "be0f039a-cfad-46c7-a360-95bf0eeefb8c";
 
 export async function planRailwayDemoProvisioning({ env = process.env, createClient }) {
-  const expectedServiceId = env.DEMO_PROVISIONER_SERVICE_ID;
+  const expectedServiceId = DEMO_PROVISIONER_SERVICE_ID;
+  if (env.DEMO_PROVISIONER_SERVICE_ID !== expectedServiceId) {
+    throw new Error("Demo provisioning: configured service ID differs from pinned approved service");
+  }
   if (!expectedServiceId || !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(expectedServiceId)) {
     throw new Error("Demo provisioning: dedicated provisioner service ID must be explicitly configured");
   }
