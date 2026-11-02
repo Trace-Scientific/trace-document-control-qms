@@ -2,6 +2,7 @@
 // Only an independently authorized caller may pass apply=true in a future reviewed release.
 import { attestRailwayDemoRuntime } from "./railway-demo-runtime.mjs";
 import { inspectRailwayDemoDatabase } from "./railway-demo-db-preflight.mjs";
+import { inspectDemoProvisionerRole } from "./railway-demo-provisioner-role-gate.mjs";
 import { DEMO_PROVISIONER_SERVICE_ID, DEMO_LOGIN_CODE } from "./railway-demo-provisioning-plan.mjs";
 
 const CONFIRMATION = "CREATE-INACTIVE-SYNTHETIC-TRACE-DEMO-LAB";
@@ -18,6 +19,7 @@ export async function prepareGuardedDemoCreation({ env = process.env, createClie
   if (typeof createClient !== "function") throw new Error("Demo creation: database client factory required");
   const db = await createClient();
   try {
+    const roleCheck = await inspectDemoProvisionerRole(db);
     const preflight = await inspectRailwayDemoDatabase({
       db, identity, databaseUrl, expectedServiceId: DEMO_PROVISIONER_SERVICE_ID,
     });
@@ -30,7 +32,7 @@ export async function prepareGuardedDemoCreation({ env = process.env, createClie
       plannedActive: false, plannedAuditAction: "DEMO_TENANT_PROVISIONED",
       applyAvailable: false, writesPerformed: 0,
       requiredFutureConfirmation: CONFIRMATION,
-      preflight,
+      roleCheck, preflight,
     };
   } finally {
     await db.$disconnect();
