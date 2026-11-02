@@ -18,7 +18,11 @@ const env = {
 function fakeDb(existing = null) {
   const calls = { reads: 0, writes: 0, disconnected: false };
   const db = {
-    $queryRaw: async () => { calls.reads++; return [{ database_name: "railway", database_user: "demo_readonly", server_address: "10.0.0.1" }]; },
+    $queryRaw: async (parts) => {
+      calls.reads++;
+      if (String(parts[0]).includes("pg_roles")) return [{ database_user: "trace_demo_provisioner", is_superuser: false, can_create_db: false, can_create_role: false, can_replicate: false, bypass_rls: false, transaction_read_only: "on" }];
+      return [{ database_name: "railway", database_user: "trace_demo_provisioner", server_address: "10.0.0.1" }];
+    },
     organization: { findUnique: async () => { calls.reads++; return existing; } },
     $disconnect: async () => { calls.disconnected = true; },
   };
@@ -31,7 +35,8 @@ test("prepares inactive synthetic organization without writes", async () => {
   assert.equal(result.plannedActive, false);
   assert.equal(result.applyAvailable, false);
   assert.equal(result.writesPerformed, 0);
-  assert.equal(calls.reads, 2);
+  assert.equal(calls.reads, 3);
+  assert.equal(result.roleCheck.verifiedReadOnly, true);
   assert.equal(calls.writes, 0);
   assert.equal(calls.disconnected, true);
 });
@@ -55,3 +60,14 @@ for (const options of [
     assert.equal(connections, 0);
   });
 }
+
+test("refuses write-enabled database session before organization lookup", async () => {
+  const { db, calls } = fakeDb();
+  db.$queryRaw = async () => {
+    calls.reads++;
+    return [{ database_user: "trace_demo_provisioner", is_superuser: false, can_create_db: false, can_create_role: false, can_replicate: false, bypass_rls: false, transaction_read_only: "off" }];
+  };
+  await assert.rejects(prepareGuardedDemoCreation({ env, createClient: () => db }), /not approved/);
+  assert.equal(calls.reads, 1);
+  assert.equal(calls.disconnected, true);
+});
