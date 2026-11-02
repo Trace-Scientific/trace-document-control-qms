@@ -6,6 +6,8 @@ const approved = {
   database_user: "trace_demo_provisioner",
   is_superuser: false, can_create_db: false, can_create_role: false,
   can_replicate: false, bypass_rls: false, transaction_read_only: "on",
+  can_insert_organization: false, can_update_organization: false, can_delete_organization: false,
+  can_insert_audit: false, can_update_audit: false, can_delete_audit: false,
 };
 test("accepts the exact restricted read-only provisioner role", async () => {
   let reads = 0;
@@ -24,6 +26,7 @@ for (const [name, change] of [
   ["replication", { can_replicate: true }],
   ["bypass RLS", { bypass_rls: true }],
   ["write-enabled session", { transaction_read_only: "off" }],
+  ...["can_insert_organization", "can_update_organization", "can_delete_organization", "can_insert_audit", "can_update_audit", "can_delete_audit"].map((field) => [field, { [field]: true }]),
 ]) {
   test("rejects " + name, () => assert.throws(
     () => validateDemoProvisionerRole([{ ...approved, ...change }]), /not approved/
