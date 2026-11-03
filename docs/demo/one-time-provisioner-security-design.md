@@ -29,3 +29,9 @@
 No live role or function creation, no grants, no credentials, no Railway provisioner activation, no database writes, no existing organization edits, no PHI, and no fabricated approvals/signatures. Production and Orange County Labs are out of scope.
 
 **Next engineering step:** implement a read-only inspection of the live column/constraint/privilege facts, then review a concrete SQL implementation with tests. The present document is not permission to run it.
+
+## Offline schema contract CI gate (PR #410)
+- The standalone `scripts/demo-provisioner-schema-contract.mjs` validator checks the structure-report contract; its Node tests are now included in `npm run test:demo`.
+- This validates **synthetic test fixtures only**, not the live Railway schema. The validator is **not** called by the Railway preflight or the disabled provisioner.
+- Before wiring it into Railway, reconcile real schema defaults and constraint names, check all required Organization and AuditEvent columns and the role/privilege boundary, and add end-to-end tests with representative real read-only preflight output.
+- No deployment authorization, grants, credentials, SQL writes, or activation is conferred by a green CI check.
