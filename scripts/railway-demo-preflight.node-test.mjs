@@ -27,7 +27,7 @@ test("reports synthetic login collision and disconnects without writes", async (
   const db = {
     $queryRaw: async (strings) => String(strings[0]).includes("current_database()")
       ? [{ database_name: "railway", database_user: "railway", server_address: "10.0.0.2" }]
-      : ["Organization", "AuditEvent"].map((table_name) => ({ schema_name: "public", table_name, table_kind: "r", table_owner: "railway", row_security: false, force_row_security: false, trigger_count: 0, policy_count: 0 })),
+      : ["Organization", "AuditEvent"].map((table_name) => ({ schema_name: "public", table_name, table_kind: "r", table_owner: "railway", row_security: false, force_row_security: false, trigger_count: 0, policy_count: 0, trigger_definitions: [] })),
     organization: { findUnique: async () => ({ id: "synthetic", loginCode: "trace-demo-lab", active: false }) },
     $disconnect: async () => { disconnected = true; },
   };
