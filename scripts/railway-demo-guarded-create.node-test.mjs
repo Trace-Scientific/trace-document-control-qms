@@ -20,7 +20,7 @@ function fakeDb(existing = null) {
   const db = {
     $queryRaw: async (parts) => {
       calls.reads++;
-      if (String(parts[0]).includes("pg_roles")) return [{ database_user: "trace_demo_provisioner", is_superuser: false, can_create_db: false, can_create_role: false, can_replicate: false, bypass_rls: false, transaction_read_only: "on" }];
+      if (String(parts[0]).includes("pg_roles")) return [{ database_user: "trace_demo_provisioner", is_superuser: false, can_create_db: false, can_create_role: false, can_replicate: false, bypass_rls: false, transaction_read_only: "on", can_insert_organization: false, can_update_organization: false, can_delete_organization: false, can_insert_audit: false, can_update_audit: false, can_delete_audit: false }];
       return [{ database_name: "railway", database_user: "trace_demo_provisioner", server_address: "10.0.0.1" }];
     },
     organization: { findUnique: async () => { calls.reads++; return existing; } },
