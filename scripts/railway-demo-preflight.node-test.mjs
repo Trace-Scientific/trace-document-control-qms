@@ -25,15 +25,23 @@ test("refuses bad runtime before constructing a database client", async () => {
 test("reports synthetic login collision and disconnects without writes", async () => {
   let disconnected = false;
   const db = {
-    $queryRaw: async (strings) => String(strings[0]).includes("current_database()")
-      ? [{ database_name: "railway", database_user: "railway", server_address: "10.0.0.2" }]
-      : ["Organization", "AuditEvent"].map((table_name) => ({ schema_name: "public", table_name, table_kind: "r", table_owner: "railway", row_security: false, force_row_security: false, trigger_count: 0, policy_count: 0, trigger_definitions: [] })),
+    $queryRaw: async (strings) => {
+      const query = String(strings[0]);
+      if (query.includes("current_database()")) return [{ database_name: "railway", database_user: "railway", server_address: "10.0.0.2" }];
+      if (query.includes("'column'::text")) return ["Organization", "AuditEvent"].flatMap(table_name => [
+        { table_name, kind: "column", name: "id", definition: "type=uuid;not_null=true;default=<none>" },
+        { table_name, kind: "constraint", name: table_name + "_pkey", definition: "PRIMARY KEY (id)" },
+      ]);
+      return ["Organization", "AuditEvent"].map(table_name => ({ schema_name: "public", table_name, table_kind: "r", table_owner: "railway", row_security: false, force_row_security: false, trigger_count: 0, policy_count: 0, trigger_definitions: [] }));
+    },
     organization: { findUnique: async () => ({ id: "synthetic", loginCode: "trace-demo-lab", active: false }) },
     $disconnect: async () => { disconnected = true; },
   };
   const result = await runRailwayDemoPreflight({ env, createClient: () => db });
   assert.equal(result.canCreate, false);
   assert.equal(result.catalog.tables.length, 2);
+  assert.equal(result.structure.tables.length, 2);
+  assert.equal(result.structure.writesPerformed, 0);
   assert.equal(result.catalog.writesPerformed, 0);
   assert.equal(result.writesPerformed, 0);
   assert.equal(disconnected, true);
@@ -59,5 +67,21 @@ test("fails closed and disconnects when catalog inspection is incomplete", async
     $disconnect: async () => { disconnected = true; },
   };
   await assert.rejects(runRailwayDemoPreflight({ env, createClient: () => db }), /expected exactly/);
+  assert.equal(disconnected, true);
+});
+
+test("fails closed and disconnects when structure inspection is incomplete", async () => {
+  let disconnected = false;
+  const db = {
+    $queryRaw: async (strings) => {
+      const query = String(strings[0]);
+      if (query.includes("current_database()")) return [{ database_name: "railway", database_user: "trace_demo_preflight_ro", server_address: "10.0.0.2" }];
+      if (query.includes("'column'::text")) return [];
+      return ["Organization", "AuditEvent"].map(table_name => ({ schema_name: "public", table_name, table_kind: "r", table_owner: "postgres", row_security: false, force_row_security: false, trigger_count: 0, policy_count: 0, trigger_definitions: [] }));
+    },
+    organization: { findUnique: async () => null },
+    $disconnect: async () => { disconnected = true; },
+  };
+  await assert.rejects(runRailwayDemoPreflight({ env, createClient: () => db }), /Demo structure: missing catalog rows/);
   assert.equal(disconnected, true);
 });

@@ -16,7 +16,7 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 qms && adduser --system --uid 1001 --ingroup qms qms
 COPY --from=builder --chown=qms:qms /app/node_modules ./node_modules
 COPY --from=builder --chown=qms:qms /app/prisma ./prisma
-COPY --chown=qms:qms scripts/railway-demo-identity.mjs scripts/railway-demo-runtime.mjs scripts/railway-demo-db-preflight.mjs scripts/railway-demo-catalog-inspection.mjs scripts/railway-demo-preflight.mjs ./scripts/
+COPY --chown=qms:qms scripts/railway-demo-identity.mjs scripts/railway-demo-runtime.mjs scripts/railway-demo-db-preflight.mjs scripts/railway-demo-catalog-inspection.mjs scripts/railway-demo-provisioning-structure.mjs scripts/railway-demo-preflight.mjs ./scripts/
 USER qms
 # No migrations, web server, scheduled restart, or writes.
 CMD ["node", "scripts/railway-demo-preflight.mjs"]
