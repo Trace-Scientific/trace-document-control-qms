@@ -15,7 +15,8 @@ export function validateDemoCatalogInspection(rows) {
         typeof r.row_security !== "boolean" ||
         typeof r.force_row_security !== "boolean" ||
         typeof r.trigger_count !== "number" || r.trigger_count < 0 ||
-        typeof r.policy_count !== "number" || r.policy_count < 0) {
+        typeof r.policy_count !== "number" || r.policy_count < 0 ||
+        !Array.isArray(r.trigger_definitions) || !r.trigger_definitions.every((x) => typeof x === "string")) {
       throw new Error("Demo catalog: invalid metadata for " + name);
     }
   }
@@ -29,6 +30,7 @@ export function validateDemoCatalogInspection(rows) {
       forceRowSecurity: byName.get(name).force_row_security,
       triggerCount: byName.get(name).trigger_count,
       policyCount: byName.get(name).policy_count,
+      triggerDefinitions: byName.get(name).trigger_definitions,
     })),
   };
 }
@@ -47,7 +49,9 @@ export async function inspectDemoCatalog(db) {
            (SELECT count(*)::int FROM pg_trigger t
              WHERE t.tgrelid = c.oid AND NOT t.tgisinternal) AS trigger_count,
            (SELECT count(*)::int FROM pg_policy p
-             WHERE p.polrelid = c.oid) AS policy_count
+             WHERE p.polrelid = c.oid) AS policy_count,
+           (SELECT COALESCE(array_agg(pg_get_triggerdef(t.oid) ORDER BY t.tgname), ARRAY[]::text[])
+              FROM pg_trigger t WHERE t.tgrelid = c.oid AND NOT t.tgisinternal) AS trigger_definitions
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public'
        AND c.relname IN ('Organization', 'AuditEvent')
