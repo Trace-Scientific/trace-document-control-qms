@@ -5,7 +5,7 @@ import { inspectDemoCatalog, validateDemoCatalogInspection } from "./railway-dem
 const rows = ["Organization", "AuditEvent"].map((table_name) => ({
   schema_name: "public", table_name, table_kind: "r",
   table_owner: "demo_owner", row_security: false, force_row_security: false,
-  trigger_count: 0, policy_count: 0,
+  trigger_count: 0, policy_count: 0, trigger_definitions: [],
 }));
 test("inspects only two approved tables without writes", async () => {
   let reads = 0;
@@ -28,4 +28,8 @@ test("rejects unexpected table names and schema", () => {
 test("rejects malformed catalog values", () => {
   assert.throws(() => validateDemoCatalogInspection([{ ...rows[0], trigger_count: -1 }, rows[1]]), /invalid/);
   assert.throws(() => validateDemoCatalogInspection([{ ...rows[0], table_owner: "" }, rows[1]]), /invalid/);
+});
+
+test("rejects malformed trigger definitions", () => {
+  assert.throws(() => validateDemoCatalogInspection([{ ...rows[0], trigger_definitions: [null] }, rows[1]]), /invalid/);
 });
