@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { attestRailwayDemoRuntime } from "./railway-demo-runtime.mjs";
 import { DEMO_RAILWAY } from "./railway-demo-identity.mjs";
 import { inspectRailwayDemoDatabase } from "./railway-demo-db-preflight.mjs";
+import { inspectDemoCatalog } from "./railway-demo-catalog-inspection.mjs";
 
 export async function runRailwayDemoPreflight({ env = process.env, createClient }) {
   const { identity, databaseUrl } = attestRailwayDemoRuntime(env, DEMO_RAILWAY.preflightServiceId);
@@ -12,7 +13,9 @@ export async function runRailwayDemoPreflight({ env = process.env, createClient 
   }
   const db = await createClient();
   try {
-    return await inspectRailwayDemoDatabase({ db, identity, databaseUrl, expectedServiceId: DEMO_RAILWAY.preflightServiceId });
+    const preflight = await inspectRailwayDemoDatabase({ db, identity, databaseUrl, expectedServiceId: DEMO_RAILWAY.preflightServiceId });
+    const catalog = await inspectDemoCatalog(db);
+    return { ...preflight, catalog };
   } finally {
     await db.$disconnect();
   }
