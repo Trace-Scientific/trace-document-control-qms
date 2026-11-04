@@ -28,6 +28,7 @@ test("reports synthetic login collision and disconnects without writes", async (
     $queryRaw: async (strings) => {
       const query = String(strings[0]);
       if (query.includes("current_database()")) return [{ database_name: "railway", database_user: "railway", server_address: "10.0.0.2" }];
+      if (query.includes("FROM pg_index i")) return [];
       if (query.includes("has_schema_privilege(")) return [{
         database_user: "trace_demo_preflight_ro", is_superuser: false, can_create_db: false,
         can_create_role: false, can_replicate: false, bypass_rls: false,
@@ -51,6 +52,8 @@ test("reports synthetic login collision and disconnects without writes", async (
   assert.equal(result.structure.writesPerformed, 0);
   assert.equal(result.privileges.verifiedReadOnly, true);
   assert.equal(result.privileges.writesPerformed, 0);
+  assert.equal(result.indexes.loginCodeUniquenessVerified, false);
+  assert.equal(result.indexes.writesPerformed, 0);
   assert.equal(result.catalog.writesPerformed, 0);
   assert.equal(result.writesPerformed, 0);
   assert.equal(disconnected, true);
