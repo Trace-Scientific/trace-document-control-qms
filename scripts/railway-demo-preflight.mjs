@@ -8,6 +8,7 @@ import { inspectDemoCatalog } from "./railway-demo-catalog-inspection.mjs";
 import { inspectDemoProvisioningStructure } from "./railway-demo-provisioning-structure.mjs";
 import { inspectDemoPreflightPrivileges } from "./railway-demo-preflight-privileges.mjs";
 import { inspectDemoLoginCodeIndexes } from "./railway-demo-login-code-indexes.mjs";
+import { validateDemoCreationSchemaContract } from "./demo-provisioner-schema-contract.mjs";
 
 export async function runRailwayDemoPreflight({ env = process.env, createClient }) {
   const { identity, databaseUrl } = attestRailwayDemoRuntime(env, DEMO_RAILWAY.preflightServiceId);
@@ -21,7 +22,15 @@ export async function runRailwayDemoPreflight({ env = process.env, createClient 
     const structure = await inspectDemoProvisioningStructure(db);
     const privileges = await inspectDemoPreflightPrivileges(db);
     const indexes = await inspectDemoLoginCodeIndexes(db);
-    return { ...preflight, catalog, structure, privileges, indexes };
+    // Report schema incompatibilities without authorizing provisioning or masking permission failures.
+    let schemaContract;
+    try {
+      schemaContract = validateDemoCreationSchemaContract(structure, indexes);
+    } catch (error) {
+      schemaContract = { mode: "OFFLINE_VALIDATION", writesPerformed: 0,
+        schemaContractPassed: false, reason: error.message };
+    }
+    return { ...preflight, catalog, structure, privileges, indexes, schemaContract };
   } finally {
     await db.$disconnect();
   }
