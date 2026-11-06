@@ -33,3 +33,23 @@ test("rejects unexpected primary key default", () => {
   const report = make(); report.tables[0].columns[0].definition = "type=uuid;not_null=t;default=<none>";
   assert.throws(() => validate(report), /UUID primary key/);
 });
+
+const indexEvidence = () => ({
+ mode: "READ_ONLY", writesPerformed: 0, table: "Organization",
+ loginCodeUniquenessVerified: true,
+ indexes: [{name:"Organization_loginCode_key",usableUniqueLoginCode:true}],
+});
+test("accepts a verified standalone unique login code index", () => {
+ const report = make(); report.tables[0].constraints.pop();
+ const result = validate(report,indexEvidence());
+ assert.equal(result.loginCodeUniquenessSource,"index");
+});
+test("rejects unverified or write-tainted index evidence", () => {
+ const report = make(); report.tables[0].constraints.pop();
+ for (const patch of [{writesPerformed:1},{loginCodeUniquenessVerified:false},{indexes:[]},{mode:"WRITE"}]) {
+  assert.throws(()=>validate(report,{...indexEvidence(),...patch}),/unique loginCode/);
+ }
+});
+test("prefers verified constraint when index evidence is absent",()=>{
+ assert.equal(validate(make()).loginCodeUniquenessSource,"constraint");
+});

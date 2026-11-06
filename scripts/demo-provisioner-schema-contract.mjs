@@ -4,7 +4,7 @@ const required = {
   Organization: ["id", "loginCode", "legalName", "displayName", "timezone", "active"],
   AuditEvent: ["id", "organizationId", "action", "entityType", "entityId", "metadata", "occurredAt"],
 };
-export function validateDemoCreationSchemaContract(report) {
+export function validateDemoCreationSchemaContract(report, indexEvidence = null) {
   if (!report || report.mode !== "READ_ONLY" || report.writesPerformed !== 0 ||
       !Array.isArray(report.tables) || report.tables.length !== 2) {
     throw new Error("Demo contract: expected complete read-only structure report");
@@ -36,8 +36,14 @@ export function validateDemoCreationSchemaContract(report) {
     result[name] = { requiredColumns: fields.length, primaryKeyVerified: true };
   }
   const org = report.tables.find(t => t.table === "Organization");
-  if (!org.constraints.some(c => /UNIQUE/.test(c.definition) && /loginCode/.test(c.definition))) {
-    throw new Error("Demo contract: missing unique loginCode constraint");
+  const uniqueConstraint = org.constraints.some(c => /UNIQUE/.test(c.definition) && /"?loginCode"?/.test(c.definition));
+  const validIndexEvidence = indexEvidence && indexEvidence.mode === "READ_ONLY" &&
+    indexEvidence.writesPerformed === 0 && indexEvidence.table === "Organization" &&
+    indexEvidence.loginCodeUniquenessVerified === true && Array.isArray(indexEvidence.indexes) &&
+    indexEvidence.indexes.some(i => i && i.usableUniqueLoginCode === true &&
+      typeof i.name === "string" && i.name.length > 0);
+  if (!uniqueConstraint && !validIndexEvidence) {
+    throw new Error("Demo contract: missing verified unique loginCode constraint or index");
   }
   const audit = report.tables.find(t => t.table === "AuditEvent");
   if (!audit.constraints.some(c => /FOREIGN KEY/.test(c.definition) &&
@@ -47,5 +53,5 @@ export function validateDemoCreationSchemaContract(report) {
   if (!audit.columns.find(c => c.name === "metadata").definition.includes("type=jsonb;not_null=t")) {
     throw new Error("Demo contract: audit metadata must be required JSONB");
   }
-  return { mode: "OFFLINE_VALIDATION", writesPerformed: 0, schemaContractPassed: true, tables: result };
+  return { mode: "OFFLINE_VALIDATION", writesPerformed: 0, schemaContractPassed: true, loginCodeUniquenessSource: uniqueConstraint ? "constraint" : "index", tables: result };
 }
