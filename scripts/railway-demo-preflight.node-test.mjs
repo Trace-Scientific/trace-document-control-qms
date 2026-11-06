@@ -54,6 +54,8 @@ test("reports synthetic login collision and disconnects without writes", async (
   assert.equal(result.privileges.writesPerformed, 0);
   assert.equal(result.indexes.loginCodeUniquenessVerified, false);
   assert.equal(result.indexes.writesPerformed, 0);
+  assert.equal(result.schemaContract.schemaContractPassed, false);
+  assert.match(result.schemaContract.reason, /missing Organization.loginCode/);
   assert.equal(result.catalog.writesPerformed, 0);
   assert.equal(result.writesPerformed, 0);
   assert.equal(disconnected, true);
