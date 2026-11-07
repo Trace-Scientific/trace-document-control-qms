@@ -5,6 +5,7 @@
 import { pathToFileURL } from "node:url";
 import { attestRailwayDemoRuntime } from "./railway-demo-runtime.mjs";
 import { inspectRailwayDemoDatabase } from "./railway-demo-db-preflight.mjs";
+import { inspectDemoProvisionerRole } from "./railway-demo-provisioner-role-gate.mjs";
 
 export const DEMO_LOGIN_CODE = "trace-demo-lab";
 // Pinned independently to the dedicated Railway demo-only service.
@@ -27,11 +28,13 @@ export async function planRailwayDemoProvisioning({ env = process.env, createCli
   }
   const db = await createClient();
   try {
+    const roleCheck = await inspectDemoProvisionerRole(db);
     const preflight = await inspectRailwayDemoDatabase({
       db, identity, databaseUrl, expectedServiceId,
     });
     return {
       ...preflight,
+      roleCheck,
       phase: "PROVISIONING_PLAN_ONLY",
       targetLoginCode: DEMO_LOGIN_CODE,
       plannedOrganizationStatus: "INACTIVE",
