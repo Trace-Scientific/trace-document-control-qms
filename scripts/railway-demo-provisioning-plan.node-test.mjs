@@ -20,12 +20,20 @@ function environment(overrides = {}) {
   };
 }
 
-function fakeClient({ existing = null } = {}) {
+const APPROVED_ROLE = {
+  database_user: "trace_demo_provisioner",
+  is_superuser: false, can_create_db: false, can_create_role: false,
+  can_replicate: false, bypass_rls: false, transaction_read_only: "on",
+  can_insert_organization: false, can_update_organization: false, can_delete_organization: false,
+  can_insert_audit: false, can_update_audit: false, can_delete_audit: false,
+};
+
+function fakeClient({ existing = null, role = APPROVED_ROLE } = {}) {
   const calls = { reads: 0, disconnected: false, writes: 0 };
   const db = {
     $queryRaw: async () => {
       calls.reads++;
-      return [{ database_name: "railway", database_user: "demo_readonly", server_address: "10.0.0.1" }];
+      return calls.reads === 1 ? [role] : [{ database_name: "railway", database_user: "trace_demo_provisioner", server_address: "10.0.0.1" }];
     },
     organization: {
       findUnique: async ({ where, select }) => {
@@ -51,7 +59,8 @@ test("read-only plan for missing demo tenant", async () => {
   assert.equal(result.writesPerformed, 0);
   assert.equal(result.usersToCreate, 0);
   assert.equal(result.documentsToCreate, 0);
-  assert.equal(calls.reads, 2);
+  assert.equal(calls.reads, 3);
+  assert.equal(result.roleCheck.verifiedReadOnly, true);
   assert.equal(calls.writes, 0);
   assert.equal(calls.disconnected, true);
 });
@@ -99,3 +108,20 @@ test("disconnects on database preflight error", async () => {
   );
   assert.equal(calls.disconnected, true);
 });
+
+for (const [label, role] of [
+  ["wrong database role", { ...APPROVED_ROLE, database_user: "postgres" }],
+  ["write-capable role", { ...APPROVED_ROLE, can_insert_organization: true }],
+  ["write-enabled session", { ...APPROVED_ROLE, transaction_read_only: "off" }],
+]) {
+  test("fails closed for " + label + " before tenant lookup", async () => {
+    const { db, calls } = fakeClient({ role });
+    await assert.rejects(
+      planRailwayDemoProvisioning({ env: environment(), createClient: () => db }),
+      /database role is not approved/,
+    );
+    assert.equal(calls.reads, 1);
+    assert.equal(calls.writes, 0);
+    assert.equal(calls.disconnected, true);
+  });
+}
