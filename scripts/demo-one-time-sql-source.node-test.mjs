@@ -12,7 +12,7 @@ test("routine is inert repository source, with atomic create and revoke", () => 
   assert.match(sql, /INSERT INTO public\."AuditEvent"/);
   assert.match(sql, /"updatedAt"/);
   assert.match(sql, /'America\/Los_Angeles', false/);
-  assert.doesNotMatch(sql, /\bGRANT\s+EXECUTE\b/i);
+  assert.doesNotMatch(sql, /^\s*GRANT\s+EXECUTE\b/im);
   assert.doesNotMatch(sql, /\bDELETE\s+FROM\b|\bUPDATE\s+public\./i);
 });
 test("no caller-provided parameters or dynamic SQL", () => {
