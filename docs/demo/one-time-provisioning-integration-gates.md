@@ -1,30 +1,31 @@
-# Restricted demo provisioning: remaining integration and privilege gates
+# Restricted demo provisioning: integration evidence and remaining approval gates
 
-**Do not execute against Railway.** PR #421 remains draft until these gates are independently reviewed.
+**Review-only. Do not run against Railway or production.** This PR does not authorize installation, execution, or any live database write.
 
-## What the repository tests establish
-- Static source checks cover a fixed, parameterless SECURITY DEFINER routine, locked search path, transaction lock, paired Organization/AuditEvent inserts, and public EXECUTE revocation.
-- Opt-in local PostgreSQL tests are present for first creation, duplicate rejection, and simulated audit failure rollback.
-- CI passing does **not** prove opt-in tests ran. Confirm explicit execution logs and successful assertions.
+## Implemented in PR #421
 
-## Concurrency test still required (not yet implemented)
-A correct concurrency test requires two independent database sessions against a **disposable database**, with the function already installed and committed, and a safe full-database reset afterward. A transaction wrapping both installation and execution in one session cannot prove cross-session locking. Do not write a test that silently skips or cleans up by deleting append-only audit records.
+- Fixed, parameterless SECURITY DEFINER routine inserts one inactive synthetic Organization and one linked AuditEvent in the same transaction.
+- First-install-only SQL rejects a pre-existing `demo_one_time` schema and uses `CREATE FUNCTION`, not `CREATE OR REPLACE FUNCTION`.
+- `REVOKE EXECUTE FROM PUBLIC` occurs in the same transaction as function creation.
+- Dedicated GitHub Actions workflow `demo-one-time-concurrency.yml` invokes `RUN_DEMO_DISPOSABLE_CONCURRENCY=1` against a Docker PostgreSQL 18 container with `--network none`.
+- Disposable test installs the routine as NOLOGIN `demo_owner`, verifies ownership, revokes temporary database CREATE privilege, checks the executor has no direct INSERT privilege, grants test-only EXECUTE, and runs two separate psql sessions. It checks one success, one failure, one inactive organization, one linked audit event, and post-test EXECUTE revocation.
+- Separate opt-in scripts exist for duplicate and audit-failure rollback scenarios. **They are not automatically covered by the dedicated concurrency workflow.**
 
-1. Create a fresh throwaway PostgreSQL 18 database/container with application migrations.
-2. Attest localhost-only identity, database name, role, and container identity; never use Railway URLs.
-3. Install the function under a deliberately restricted NOLOGIN owner; revoke PUBLIC EXECUTE in the same transaction.
-4. Verify an unprivileged role cannot execute it. Grant EXECUTE to a dedicated test-only role.
-5. Launch two independent sessions simultaneously. Assert exactly one succeeds, the other rejects duplicate, exactly one inactive organization and exactly one linked audit event exist.
-6. Tear down the **entire throwaway database/container** after evidence capture. Never UPDATE/DELETE audit events to clean up.
-7. Run audit failure rollback and second-attempt tests in separately reset throwaway instances.
-8. Record test logs and Postgres version as CI artifacts.
+## Evidence limitations
 
-## Blocking privilege concerns
-- `CREATE SCHEMA IF NOT EXISTS` requires installation privileges and must not be run through the read-only provisioner.
-- `CREATE OR REPLACE FUNCTION` can preserve existing function ownership and grants. Before execution, inspect for a pre-existing function and fail closed; prefer first-install-only semantics.
-- PostgreSQL functions grant EXECUTE to PUBLIC by default; creation and REVOKE must be in one transaction.
-- A SECURITY DEFINER function must not be owned by a superuser, application runtime role, or broad table owner. Review its exact owner, role memberships, schema USAGE, table INSERT/SELECT rights, and any inherited/default privileges.
-- Verify audit triggers, column defaults, ownership, and search_path resolution in the target schema. A test role with direct DML privileges is not an adequate simulation of least privilege.
-- Do not grant EXECUTE or connect an application/CLI until separate written authorization for the precise demo-only operation.
+- A green workflow proves only that its configured checks ran and passed at that commit. Inspect the exact run logs, commit SHA, and the final `PASS` line before signing off.
+- The disposable concurrency test creates minimal stand-in tables, **not the complete migrated QMS schema**. It does not prove compatibility with actual audit triggers, default privileges, or all application migrations.
+- The test's second session is expected to fail, but the current harness does not yet assert the exact duplicate-error message. A different error could satisfy its one-success/one-failure condition.
+- The disposable test does not attest Railway identity or live permissions, and is not authorization for a live write.
+- The owner has SELECT and INSERT on both stand-in tables. Review whether these rights can be narrowed further on the actual migrated schema.
 
-**Approval gate:** successful isolated concurrency and rollback runs, signed-off privilege inventory, fresh verified backup, confirmed Railway demo identity, and explicit owner approval for the exact two-row live write.
+## Remaining gates before merge or live provisioning
+
+1. Run explicit audit-failure rollback and duplicate tests in separately reset disposable databases, and retain logs.
+2. Run a migration-faithful isolated PostgreSQL integration test with actual Organization and AuditEvent definitions, triggers, and defaults.
+3. Tighten the concurrent-session assertion to verify the expected duplicate rejection specifically, and retain per-session logs.
+4. Independently inspect SECURITY DEFINER ownership, role membership, search_path, schema permissions, table grants, default privileges, and effective EXECUTE access.
+5. Record PostgreSQL version, CI commit SHA, run URL, and test outcomes in review evidence.
+6. For any future **demo-only** live operation: obtain a fresh verified backup, confirm Railway demo project/database identity, inspect target loginCode absence, and obtain separate explicit approval for the exact operation. Never treat PR merge or CI success as that approval.
+
+**Decision:** Keep PR #421 in draft until these remaining review gates are resolved. Do not wire the function into an application or grant live EXECUTE.
