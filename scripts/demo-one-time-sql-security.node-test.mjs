@@ -5,7 +5,8 @@ import test from "node:test";
 const sql = readFileSync(new URL("../sql/demo-one-time-create-inactive.sql", import.meta.url), "utf8");
 
 test("security review: function has no caller arguments and no grant to execution role", () => {
-  assert.match(sql, /CREATE OR REPLACE FUNCTION demo_one_time\.create_inactive_trace_demo_lab\(\)/);
+  assert.match(sql, /CREATE FUNCTION demo_one_time\.create_inactive_trace_demo_lab\(\)/);
+  assert.doesNotMatch(sql, /CREATE\s+OR\s+REPLACE\s+FUNCTION/i);
   assert.match(sql, /SECURITY DEFINER/);
   assert.match(sql, /SET search_path = pg_catalog, pg_temp/);
   assert.match(sql, /REVOKE ALL ON FUNCTION demo_one_time\.create_inactive_trace_demo_lab\(\) FROM PUBLIC/);
