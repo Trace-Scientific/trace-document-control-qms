@@ -1,0 +1,28 @@
+name: Demo SQL disposable concurrency verification
+
+on:
+  pull_request:
+    paths:
+      - 'sql/demo-one-time-create-inactive.sql'
+      - 'scripts/demo-one-time-concurrency.disposable.sh'
+      - 'scripts/demo-one-time-sql*.mjs'
+      - '.github/workflows/demo-one-time-concurrency.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-concurrency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify test source and shell syntax
+        run: |
+          sh -n scripts/demo-one-time-concurrency.disposable.sh
+          node --test scripts/demo-one-time-sql-source.node-test.mjs scripts/demo-one-time-sql-security.node-test.mjs
+      - name: Run two-session test in network-isolated disposable PostgreSQL 18
+        env:
+          RUN_DEMO_DISPOSABLE_CONCURRENCY: '1'
+        run: sh scripts/demo-one-time-concurrency.disposable.sh
