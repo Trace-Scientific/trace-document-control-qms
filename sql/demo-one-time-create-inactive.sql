@@ -4,9 +4,17 @@
 -- IMPORTANT: PostgreSQL CREATE FUNCTION initially grants EXECUTE to PUBLIC by
 -- default; this file wraps CREATE and REVOKE in one transaction to avoid exposure.
 BEGIN;
-CREATE SCHEMA IF NOT EXISTS demo_one_time;
+-- Fail closed: never reuse an existing schema or replace an existing privileged function.
+DO $preflight$
+BEGIN
+  IF pg_catalog.to_regnamespace('demo_one_time') IS NOT NULL THEN
+    RAISE EXCEPTION 'Demo routine installation rejected: schema already exists';
+  END IF;
+END
+$preflight$;
+CREATE SCHEMA demo_one_time;
 REVOKE ALL ON SCHEMA demo_one_time FROM PUBLIC;
-CREATE OR REPLACE FUNCTION demo_one_time.create_inactive_trace_demo_lab()
+CREATE FUNCTION demo_one_time.create_inactive_trace_demo_lab()
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
