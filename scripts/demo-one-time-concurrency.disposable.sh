@@ -43,12 +43,27 @@ CREATE TABLE public."AuditEvent" (
 REVOKE ALL ON public."Organization", public."AuditEvent" FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO demo_owner;
 GRANT SELECT, INSERT ON public."Organization", public."AuditEvent" TO demo_owner;
+-- Temporary database CREATE permission is confined to the throwaway instance.
+GRANT CREATE ON DATABASE trace_demo_disposable TO demo_owner;
 SQL
 # The reviewed SQL is copied ONLY into this throwaway Docker container.
 docker cp sql/demo-one-time-create-inactive.sql "$NAME":/tmp/demo-create.sql
-psql_local -f /tmp/demo-create.sql >/dev/null
+psql_local -c "SET ROLE demo_owner" -f /tmp/demo-create.sql >/dev/null
 psql_local <<'SQL'
-ALTER FUNCTION demo_one_time.create_inactive_trace_demo_lab() OWNER TO demo_owner;
+REVOKE CREATE ON DATABASE trace_demo_disposable FROM demo_owner;
+DO $
+DECLARE actual_owner text;
+BEGIN
+  SELECT pg_catalog.pg_get_userbyid(p.proowner) INTO actual_owner
+  FROM pg_catalog.pg_proc p
+  WHERE p.oid = 'demo_one_time.create_inactive_trace_demo_lab()'::regprocedure;
+  IF actual_owner IS DISTINCT FROM 'demo_owner' THEN
+    RAISE EXCEPTION 'SECURITY DEFINER owner mismatch: %', actual_owner;
+  END IF;
+  IF has_database_privilege('demo_owner', 'trace_demo_disposable', 'CREATE') THEN
+    RAISE EXCEPTION 'Temporary CREATE permission remains';
+  END IF;
+END $;
 GRANT USAGE ON SCHEMA demo_one_time TO demo_executor;
 DO $$
 BEGIN
