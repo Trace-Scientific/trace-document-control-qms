@@ -14,10 +14,10 @@ trap cleanup EXIT INT TERM
 docker run -d --name "$NAME" -e POSTGRES_PASSWORD=local_disposable_only -e POSTGRES_DB=trace_demo_disposable --network none postgres:18-alpine >/dev/null
 ready=0
 for n in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-  if docker exec "$NAME" pg_isready -U postgres -d trace_demo_disposable >/dev/null 2>&1; then ready=1; break; fi
+  if docker exec "$NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d trace_demo_disposable -Atqc "SELECT 1" >/dev/null 2>&1; then ready=1; break; fi
   sleep 1
 done
-[ "$ready" -eq 1 ] || { echo "Disposable PostgreSQL did not become ready"; exit 1; }
+[ "$ready" -eq 1 ] || { echo "Disposable PostgreSQL database did not become queryable"; exit 1; }
 psql_local() { docker exec -i "$NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d trace_demo_disposable "$@"; }
 psql_local <<'SQL'
 CREATE ROLE demo_owner NOLOGIN;
