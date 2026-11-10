@@ -49,5 +49,5 @@ jobs:
         run: npx prisma migrate deploy
       - name: Verify migrated schema and execute rollback-safe SQL integration tests
         run: |
-          psql -X -v ON_ERROR_STOP=1 -At -d "$DATABASE_URL" -c 'SELECT current_database(), current_user, version();'
+          psql -X -v ON_ERROR_STOP=1 -At -d "${DATABASE_URL%%\?schema=*}" -c 'SELECT current_database(), current_user, version();'
           node --test scripts/demo-one-time-sql.integration.node-test.mjs scripts/demo-one-time-sql-failure.integration.node-test.mjs
