@@ -1,31 +1,26 @@
-# Restricted demo provisioning: integration evidence and remaining approval gates
+# Restricted demo provisioning: verified CI evidence and approval gates
 
-**Review-only. Do not run against Railway or production.** This PR does not authorize installation, execution, or any live database write.
+**Review-only. No Railway or production execution is authorized by this document, CI success, or PR merge.**
 
-## Implemented in PR #421
+## Verified automated evidence
 
-- Fixed, parameterless SECURITY DEFINER routine inserts one inactive synthetic Organization and one linked AuditEvent in the same transaction.
-- First-install-only SQL rejects a pre-existing `demo_one_time` schema and uses `CREATE FUNCTION`, not `CREATE OR REPLACE FUNCTION`.
-- `REVOKE EXECUTE FROM PUBLIC` occurs in the same transaction as function creation.
-- Dedicated GitHub Actions workflow `demo-one-time-concurrency.yml` invokes `RUN_DEMO_DISPOSABLE_CONCURRENCY=1` against a Docker PostgreSQL 18 container with `--network none`.
-- Disposable test installs the routine as NOLOGIN `demo_owner`, verifies ownership, revokes temporary database CREATE privilege, checks the executor has no direct INSERT privilege, grants test-only EXECUTE, and runs two separate psql sessions. It checks one success, one failure, one inactive organization, one linked audit event, and post-test EXECUTE revocation.
-- Separate opt-in scripts exist for duplicate and audit-failure rollback scenarios. **They are not automatically covered by the dedicated concurrency workflow.**
+- Commit `d98646aaf85e263981c6f0d8eb92dd62fac09ed3`: GitHub commit workflow results show **success** for `CI`, `Security`, `Demo SQL migration-faithful integration`, and `Demo SQL disposable concurrency verification`.
+- Migration-faithful workflow applies the repository's actual Prisma migrations to isolated PostgreSQL **17.11** and runs two integration tests: one inactive synthetic tenant plus linked audit and duplicate rejection; simulated audit failure must roll back tenant creation.
+- Disposable concurrency workflow uses PostgreSQL 18 in a Docker container with `--network none`. It checks a restricted NOLOGIN owner, role membership and attributes, function ownership, `SECURITY DEFINER`, restricted `search_path`, PUBLIC ACLs, executor direct DML denial, explicit test-only EXECUTE, two independent concurrent calls with exact duplicate rejection, one inactive organization, one linked audit, and EXECUTE revocation.
+- The SQL install rejects a pre-existing `demo_one_time` schema, avoids `CREATE OR REPLACE`, and revokes PUBLIC function execution in the same transaction.
+- These tests use **disposable databases**, not Railway. No live tenant was created.
 
-## Evidence limitations
+## Limitations requiring independent review
 
-- A green workflow proves only that its configured checks ran and passed at that commit. Inspect the exact run logs, commit SHA, and the final `PASS` line before signing off.
-- The disposable concurrency test creates minimal stand-in tables, **not the complete migrated QMS schema**. It does not prove compatibility with actual audit triggers, default privileges, or all application migrations.
-- The test's second session is expected to fail, but the current harness does not yet assert the exact duplicate-error message. A different error could satisfy its one-success/one-failure condition.
-- The disposable test does not attest Railway identity or live permissions, and is not authorization for a live write.
-- The owner has SELECT and INSERT on both stand-in tables. Review whether these rights can be narrowed further on the actual migrated schema.
+1. No submitted GitHub PR review was recorded when this document was prepared. A qualified reviewer must inspect the exact SQL, workflows, test harness, and actual effective privileges, including schema/table grants, role inheritance, ownership, default privileges, and EXECUTE access.
+2. The migrated-schema tests use the isolated test database administrator. The restricted-role test uses stand-in tables. Together they do **not** prove that the proposed roles have sufficient and only necessary privileges on the full migrated schema.
+3. Retain the exact GitHub Actions run URLs/logs, PostgreSQL versions, and commit SHA in the release approval record. A green workflow is evidence for its configured assertions, not a comprehensive security certification.
+4. Confirm that the application never automatically installs or invokes the review-only SQL and that no production/demo deployment hooks expose this routine.
 
-## Remaining gates before merge or live provisioning
+## Release decision
 
-1. Run explicit audit-failure rollback and duplicate tests in separately reset disposable databases, and retain logs.
-2. Run a migration-faithful isolated PostgreSQL integration test with actual Organization and AuditEvent definitions, triggers, and defaults.
-3. Tighten the concurrent-session assertion to verify the expected duplicate rejection specifically, and retain per-session logs.
-4. Independently inspect SECURITY DEFINER ownership, role membership, search_path, schema permissions, table grants, default privileges, and effective EXECUTE access.
-5. Record PostgreSQL version, CI commit SHA, run URL, and test outcomes in review evidence.
-6. For any future **demo-only** live operation: obtain a fresh verified backup, confirm Railway demo project/database identity, inspect target loginCode absence, and obtain separate explicit approval for the exact operation. Never treat PR merge or CI success as that approval.
+**PR #421 remains draft pending independent security approval.** After documented review, merge may be considered separately. A merge must not install or execute the routine on Railway.
 
-**Decision:** Keep PR #421 in draft until these remaining review gates are resolved. Do not wire the function into an application or grant live EXECUTE.
+## Separate future demo-only live authorization
+
+Before any Railway demo database write: independently verify demo project/environment/database identity, obtain and verify a fresh backup, confirm absence of the target `loginCode`, inventory effective owner/executor privileges, and obtain explicit authorization for the exact one-time operation. Never execute against production.
