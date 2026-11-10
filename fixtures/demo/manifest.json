@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Offline fictional customer demonstration; never automatically seed a database",
+  "documents": [
+    {
+      "id": "SOP-GEN-001",
+      "title": "Specimen Receipt and Acceptance",
+      "status": "approved",
+      "revision": "1.0",
+      "path": "documents/SOP-GEN-001.md",
+      "synthetic": true
+    },
+    {
+      "id": "SOP-QC-002",
+      "title": "Daily Quality Control Review",
+      "status": "draft",
+      "revision": "1.1",
+      "path": "documents/SOP-QC-002.md",
+      "synthetic": true
+    },
+    {
+      "id": "SOP-SAF-003",
+      "title": "Laboratory Safety Orientation",
+      "status": "approved",
+      "revision": "1.0",
+      "path": "documents/SOP-SAF-003.md",
+      "synthetic": true
+    },
+    {
+      "id": "POL-DOC-001",
+      "title": "Document Control Policy",
+      "status": "approved",
+      "revision": "1.0",
+      "path": "documents/POL-DOC-001.md",
+      "synthetic": true
+    },
+    {
+      "id": "FRM-DEV-001",
+      "title": "Nonconformance Report Form",
+      "status": "draft",
+      "revision": "0.1",
+      "path": "documents/FRM-DEV-001.md",
+      "synthetic": true
+    },
+    {
+      "id": "WI-EQP-001",
+      "title": "Equipment Maintenance Log Instructions",
+      "status": "approved",
+      "revision": "1.0",
+      "path": "documents/WI-EQP-001.md",
+      "synthetic": true
+    }
+  ]
+}
