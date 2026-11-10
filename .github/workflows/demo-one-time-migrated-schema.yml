@@ -1,0 +1,53 @@
+name: Demo SQL migration-faithful integration
+
+on:
+  pull_request:
+    paths:
+      - 'prisma/migrations/**'
+      - 'prisma/schema.prisma'
+      - 'sql/demo-one-time-create-inactive.sql'
+      - 'scripts/demo-one-time-sql*.mjs'
+      - '.github/workflows/demo-one-time-migrated-schema.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migrated-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: trace_qms_test
+          POSTGRES_PASSWORD: local_integration_test_only
+          POSTGRES_DB: trace_qms_integration_test
+        ports:
+          - 127.0.0.1:5433:5432
+        options: >-
+          --health-cmd "pg_isready -U trace_qms_test -d trace_qms_integration_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://trace_qms_test:local_integration_test_only@127.0.0.1:5433/trace_qms_integration_test?schema=public
+      RUN_DEMO_SQL_INTEGRATION: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install PostgreSQL client and dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          npm ci
+      - name: Apply actual QMS Prisma migrations to isolated PostgreSQL
+        run: npx prisma migrate deploy
+      - name: Verify migrated schema and execute rollback-safe SQL integration tests
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -At -d "$DATABASE_URL" -c 'SELECT current_database(), current_user, version();'
+          node --test scripts/demo-one-time-sql.integration.node-test.mjs scripts/demo-one-time-sql-failure.integration.node-test.mjs
