@@ -75,10 +75,17 @@ BEGIN
       AND (NOT p.prosecdef OR p.proconfig IS NULL
         OR NOT ('search_path=pg_catalog, pg_temp' = ANY(p.proconfig)))
   ) THEN RAISE EXCEPTION 'SECURITY DEFINER or search_path mismatch'; END IF;
-  IF has_schema_privilege('PUBLIC', 'demo_one_time', 'USAGE')
-    OR has_schema_privilege('PUBLIC', 'demo_one_time', 'CREATE')
-    OR has_function_privilege('PUBLIC', 'demo_one_time.create_inactive_trace_demo_lab()', 'EXECUTE')
-  THEN RAISE EXCEPTION 'PUBLIC has privileged access'; END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.pg_namespace n,
+      LATERAL pg_catalog.aclexplode(COALESCE(n.nspacl, pg_catalog.acldefault('n', n.nspowner))) a
+    WHERE n.nspname = 'demo_one_time' AND a.grantee = 0
+      AND a.privilege_type IN ('USAGE', 'CREATE')
+  ) OR EXISTS (
+    SELECT 1 FROM pg_catalog.pg_proc p,
+      LATERAL pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) a
+    WHERE p.oid = 'demo_one_time.create_inactive_trace_demo_lab()'::regprocedure
+      AND a.grantee = 0 AND a.privilege_type = 'EXECUTE'
+  ) THEN RAISE EXCEPTION 'PUBLIC has privileged access'; END IF;
   IF has_database_privilege('demo_owner', 'trace_demo_disposable', 'CREATE') THEN
     RAISE EXCEPTION 'Temporary CREATE permission remains';
   END IF;
