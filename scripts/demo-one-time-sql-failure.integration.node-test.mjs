@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { assertDemoTestDatabase } from "./demo-database-safety.mjs";
 
-const URL = "postgresql://trace_qms_test:local_integration_test_only@127.0.0.1:5433/trace_qms_integration_test?schema=public";
+const DATABASE_URL = "postgresql://trace_qms_test:local_integration_test_only@127.0.0.1:5433/trace_qms_integration_test?schema=public";
 const enabled = process.env.RUN_DEMO_SQL_INTEGRATION === "1";
 const available = spawnSync("psql", ["--version"], { encoding: "utf8" }).status === 0;
 const source = readFileSync(new URL("../sql/demo-one-time-create-inactive.sql", import.meta.url), "utf8")
@@ -15,7 +15,7 @@ const source = readFileSync(new URL("../sql/demo-one-time-create-inactive.sql", 
 test("failed audit insertion rolls back the organization and does not leave a tenant", {
   skip: !enabled || !available ? "Requires opt-in and local psql" : false,
 }, () => {
-  assertDemoTestDatabase(URL);
+  assertDemoTestDatabase(DATABASE_URL);
   const sql = `
 BEGIN;
 DO $identity$
@@ -58,7 +58,7 @@ $verify$;
 ROLLBACK;
 SELECT count(*) FROM public."Organization" WHERE "loginCode"='trace-demo-lab';
 `;
-  const result = spawnSync("psql", ["-X", "-v", "ON_ERROR_STOP=1", "-At", "-d", URL.replace("?schema=public", "")], {
+  const result = spawnSync("psql", ["-X", "-v", "ON_ERROR_STOP=1", "-At", "-d", DATABASE_URL.replace("?schema=public", "")], {
     input: sql, encoding: "utf8", timeout: 30000,
     env: { ...process.env, PGCONNECT_TIMEOUT: "3" },
   });
