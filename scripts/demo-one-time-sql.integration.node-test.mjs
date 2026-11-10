@@ -28,9 +28,15 @@ test("SQL routine creates one inactive synthetic tenant and audit atomically, th
   const source = sql.replace(/^BEGIN;\s*$/m, "").replace(/^COMMIT;\s*$/m, "");
   const output = run(`
 BEGIN;
-SELECT CASE WHEN current_database() = 'trace_qms_integration_test'
-  AND current_user = 'trace_qms_test' THEN 'identity-ok'
-  ELSE (1/0)::text END;
+DO $identity$
+BEGIN
+  IF current_database() <> 'trace_qms_integration_test'
+    OR current_user <> 'trace_qms_test' THEN
+    RAISE EXCEPTION 'Unexpected disposable test database identity';
+  END IF;
+END
+$identity$;
+SELECT 'identity-ok';
 ${source}
 DO $verify$
 DECLARE oid uuid; audits integer; active_flag boolean; duplicate_rejected boolean := false;
