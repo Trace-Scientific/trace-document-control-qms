@@ -74,6 +74,37 @@ BEGIN
 END $$;
 GRANT EXECUTE ON FUNCTION demo_one_time.create_inactive_trace_demo_lab() TO demo_executor;
 SQL
+# Simulate an audit insert failure before concurrency; rollback removes the test trigger.
+psql_local <<'SQL'
+BEGIN;
+CREATE FUNCTION pg_temp.reject_demo_audit() RETURNS trigger LANGUAGE plpgsql AS $reject$
+BEGIN
+ IF NEW.action = 'DEMO_TENANT_PROVISIONED' THEN RAISE EXCEPTION 'SIMULATED_AUDIT_FAILURE'; END IF;
+ RETURN NEW;
+END $reject$;
+CREATE TRIGGER demo_reject_audit BEFORE INSERT ON public."AuditEvent"
+FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_demo_audit();
+DO $verify$
+DECLARE failed boolean := false;
+BEGIN
+ BEGIN
+  PERFORM demo_one_time.create_inactive_trace_demo_lab();
+ EXCEPTION WHEN raise_exception THEN
+  failed := SQLERRM = 'SIMULATED_AUDIT_FAILURE';
+ END;
+ IF NOT failed THEN RAISE EXCEPTION 'Expected audit failure missing'; END IF;
+ IF EXISTS (SELECT 1 FROM public."Organization" WHERE "loginCode"='trace-demo-lab')
+ OR EXISTS (SELECT 1 FROM public."AuditEvent" WHERE action='DEMO_TENANT_PROVISIONED')
+ THEN RAISE EXCEPTION 'Failed audit did not roll back inserts'; END IF;
+END $verify$;
+ROLLBACK;
+DO $verify$
+BEGIN
+ IF EXISTS (SELECT 1 FROM public."Organization" WHERE "loginCode"='trace-demo-lab')
+ OR EXISTS (SELECT 1 FROM public."AuditEvent" WHERE action='DEMO_TENANT_PROVISIONED')
+ THEN RAISE EXCEPTION 'Rows remain after rollback'; END IF;
+END $verify$;
+SQL
 # Two independent sessions invoke concurrently. One must succeed, one must fail.
 docker exec "$NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d trace_demo_disposable -c 'SET ROLE demo_executor; SELECT demo_one_time.create_inactive_trace_demo_lab();' > /tmp/trace-demo-concurrency-a-$$.log 2>&1 &
 PID_A=$!
