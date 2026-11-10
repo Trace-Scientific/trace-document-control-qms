@@ -56,6 +56,20 @@ describe("synthetic demo documents through QMS DocumentCommandService", () => {
       revisionLabel: "0.1", contentHash: "a".repeat(64),
       contentText: "Synthetic denied example", changeSummary: "Denied",
     })).rejects.toThrow("Access denied");
+    await expect(service.createDraft({ ...context, organizationId: "00000000-0000-4000-8000-000000000099" }, {
+      organizationId: context.organizationId,
+      documentTypeId: "00000000-0000-4000-8000-000000000005",
+      documentNumber: "CROSS-TENANT", title: "Denied", versionNumber: 1,
+      revisionLabel: "0.1", contentHash: "a".repeat(64),
+      contentText: "Synthetic cross-tenant denial", changeSummary: "Denied",
+    })).rejects.toThrow("Access denied");
+    await expect(service.createDraft(context, {
+      organizationId: context.organizationId,
+      documentTypeId: "00000000-0000-4000-8000-000000000005",
+      documentNumber: "BAD-HASH", title: "Denied", versionNumber: 1,
+      revisionLabel: "0.1", contentHash: "not-a-sha256",
+      contentText: "Synthetic invalid digest", changeSummary: "Denied",
+    })).rejects.toThrow();
     expect(createDraft).toHaveBeenCalledTimes(6);
   });
 });
