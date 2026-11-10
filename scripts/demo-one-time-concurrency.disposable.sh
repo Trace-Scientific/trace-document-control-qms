@@ -83,10 +83,10 @@ A=0; B=0
 wait "$PID_A" || A=$?
 wait "$PID_B" || B=$?
 if [ "$A" -eq 0 ] && [ "$B" -eq 0 ]; then echo "FAIL: both calls succeeded"; exit 1; fi
-if [ "$A" -ne 0 ] && [ "$B" -ne 0 ]; then echo "FAIL: both calls failed"; cat /tmp/trace-demo-concurrency-?-$.log; exit 1; fi
+if [ "$A" -ne 0 ] && [ "$B" -ne 0 ]; then echo "FAIL: both calls failed"; cat /tmp/trace-demo-concurrency-?-$$.log; exit 1; fi
 # The rejected session must fail for the intended duplicate guard, not for a
 # missing permission, SQL syntax error, or unrelated PostgreSQL failure.
-if [ "$A" -ne 0 ]; then REJECTED="/tmp/trace-demo-concurrency-a-$.log"; else REJECTED="/tmp/trace-demo-concurrency-b-$.log"; fi
+if [ "$A" -ne 0 ]; then REJECTED="/tmp/trace-demo-concurrency-a-$$.log"; else REJECTED="/tmp/trace-demo-concurrency-b-$$.log"; fi
 if ! grep -Fq 'Demo provisioning rejected: target already exists' "$REJECTED"; then
   echo "FAIL: rejected session did not report the expected duplicate error"
   cat "$REJECTED"
