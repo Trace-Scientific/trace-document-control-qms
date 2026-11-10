@@ -72,4 +72,21 @@ describe("synthetic demo documents through QMS DocumentCommandService", () => {
     })).rejects.toThrow();
     expect(createDraft).toHaveBeenCalledTimes(6);
   });
+  it("blocks direct approval without the electronic signature pathway", async () => {
+    const store = { findVersion: vi.fn() } as unknown as DocumentLifecycleStore;
+    const service = new DocumentCommandService(store);
+    const context: AuthorizationContext = {
+      userId: "00000000-0000-4000-8000-000000000003",
+      organizationId: "00000000-0000-4000-8000-000000000004",
+      userState: "ACTIVE",
+      grants: [{ permission: "document.approve", scopeType: "ORGANIZATION", scopeId: null }],
+    };
+    await expect(service.transition(context, {
+      organizationId: context.organizationId,
+      versionId: "00000000-0000-4000-8000-000000000001",
+      command: "APPROVE",
+      expectedLockVersion: 0,
+    })).rejects.toThrow();
+    expect((store.findVersion as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
 });
