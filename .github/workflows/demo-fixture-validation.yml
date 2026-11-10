@@ -19,4 +19,6 @@ jobs:
         with:
           node-version: '22'
       - name: Validate synthetic demo fixtures without database access
-        run: node fixtures/demo/validate.mjs
+        run: |
+          node fixtures/demo/validate.mjs
+          node fixtures/demo/prepare-offline.mjs
