@@ -60,6 +60,25 @@ BEGIN
   IF actual_owner IS DISTINCT FROM 'demo_owner' THEN
     RAISE EXCEPTION 'SECURITY DEFINER owner mismatch: %', actual_owner;
   END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.pg_roles
+    WHERE rolname = 'demo_owner' AND (rolcanlogin OR rolsuper OR rolcreaterole OR rolcreatedb OR rolbypassrls)
+  ) THEN RAISE EXCEPTION 'Function owner has unsafe role attributes'; END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.pg_auth_members m
+    JOIN pg_catalog.pg_roles r ON r.oid = m.member
+    WHERE r.rolname IN ('demo_owner', 'demo_executor')
+  ) THEN RAISE EXCEPTION 'Disposable restricted roles have unexpected memberships'; END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.pg_proc p
+    WHERE p.oid = 'demo_one_time.create_inactive_trace_demo_lab()'::regprocedure
+      AND (NOT p.prosecdef OR p.proconfig IS NULL
+        OR NOT ('search_path=pg_catalog, pg_temp' = ANY(p.proconfig)))
+  ) THEN RAISE EXCEPTION 'SECURITY DEFINER or search_path mismatch'; END IF;
+  IF has_schema_privilege('PUBLIC', 'demo_one_time', 'USAGE')
+    OR has_schema_privilege('PUBLIC', 'demo_one_time', 'CREATE')
+    OR has_function_privilege('PUBLIC', 'demo_one_time.create_inactive_trace_demo_lab()', 'EXECUTE')
+  THEN RAISE EXCEPTION 'PUBLIC has privileged access'; END IF;
   IF has_database_privilege('demo_owner', 'trace_demo_disposable', 'CREATE') THEN
     RAISE EXCEPTION 'Temporary CREATE permission remains';
   END IF;
