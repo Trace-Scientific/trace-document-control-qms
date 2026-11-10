@@ -6,13 +6,13 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { assertDemoTestDatabase } from "./demo-database-safety.mjs";
 
-const URL = "postgresql://trace_qms_test:local_integration_test_only@127.0.0.1:5433/trace_qms_integration_test?schema=public";
+const DATABASE_URL = "postgresql://trace_qms_test:local_integration_test_only@127.0.0.1:5433/trace_qms_integration_test?schema=public";
 const sql = readFileSync(new URL("../sql/demo-one-time-create-inactive.sql", import.meta.url), "utf8");
 const available = spawnSync("psql", ["--version"], { encoding: "utf8" }).status === 0;
 const enabled = process.env.RUN_DEMO_SQL_INTEGRATION === "1";
-const target = URL.replace("?schema=public", "");
+const target = DATABASE_URL.replace("?schema=public", "");
 function run(script) {
-  assertDemoTestDatabase(URL);
+  assertDemoTestDatabase(DATABASE_URL);
   const p = spawnSync("psql", ["-X", "-v", "ON_ERROR_STOP=1", "-At", "-d", target], {
     input: script, encoding: "utf8", timeout: 30000,
     env: { ...process.env, PGCONNECT_TIMEOUT: "3" },
