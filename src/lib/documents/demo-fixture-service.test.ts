@@ -72,6 +72,55 @@ describe("synthetic demo documents through QMS DocumentCommandService", () => {
     })).rejects.toThrow();
     expect(createDraft).toHaveBeenCalledTimes(6);
   });
+  it("rejects an unauthorized review submission before accessing the store", async () => {
+    const findVersion = vi.fn();
+    const applyTransition = vi.fn();
+    const service = new DocumentCommandService({
+      findVersion, applyTransition,
+    } as unknown as DocumentLifecycleStore);
+    const context: AuthorizationContext = {
+      userId: "00000000-0000-4000-8000-000000000003",
+      organizationId: "00000000-0000-4000-8000-000000000004",
+      userState: "ACTIVE",
+      grants: [],
+    };
+    await expect(service.transition(context, {
+      organizationId: context.organizationId,
+      versionId: "00000000-0000-4000-8000-000000000001",
+      command: "SUBMIT",
+      expectedLockVersion: 0,
+    })).rejects.toThrow("Access denied");
+    expect(findVersion).not.toHaveBeenCalled();
+    expect(applyTransition).not.toHaveBeenCalled();
+  });
+
+  it("requires a distinct final approver before submitting a synthetic draft", async () => {
+    const findVersion = vi.fn(async () => ({
+      id: "00000000-0000-4000-8000-000000000001",
+      organizationId: "00000000-0000-4000-8000-000000000004",
+      documentId: "00000000-0000-4000-8000-000000000002",
+      status: "DRAFT" as const,
+      lockVersion: 0,
+    }));
+    const applyTransition = vi.fn();
+    const service = new DocumentCommandService({
+      findVersion, applyTransition,
+    } as unknown as DocumentLifecycleStore);
+    const context: AuthorizationContext = {
+      userId: "00000000-0000-4000-8000-000000000003",
+      organizationId: "00000000-0000-4000-8000-000000000004",
+      userState: "ACTIVE",
+      grants: [{ permission: "document.submit", scopeType: "ORGANIZATION", scopeId: null }],
+    };
+    await expect(service.transition(context, {
+      organizationId: context.organizationId,
+      versionId: "00000000-0000-4000-8000-000000000001",
+      command: "SUBMIT",
+      expectedLockVersion: 0,
+    })).rejects.toThrow("A final approver is required");
+    expect(applyTransition).not.toHaveBeenCalled();
+  });
+
   it("blocks direct approval without the electronic signature pathway", async () => {
     const store = { findVersion: vi.fn() } as unknown as DocumentLifecycleStore;
     const service = new DocumentCommandService(store);
