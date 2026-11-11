@@ -58,6 +58,24 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     } });
     expect(audits).toHaveLength(6);
     expect(new Set(audits.map((event) => event.entityId))).toEqual(new Set(ids));
+    expect(audits.every((event) => event.actorUserId === actor.id)).toBe(true);
+    expect(audits.every((event) => event.entityType === "DocumentVersion")).toBe(true);
+    const versions = await db.documentVersion.findMany({
+      where: { organizationId: org.id },
+      select: { id: true, documentId: true, contentHash: true, contentText: true, status: true },
+    });
+    expect(versions).toHaveLength(6);
+    for (const version of versions) {
+      expect(version.status).toBe("DRAFT");
+      expect(version.contentText).toContain("SYNTHETIC — DEMONSTRATION ONLY — NOT FOR LABORATORY USE");
+      expect(createHash("sha256").update(version.contentText ?? "").digest("hex")).toBe(version.contentHash);
+      const audit = audits.find((event) => event.entityId === version.id);
+      expect(audit).toBeDefined();
+      expect(audit?.metadata).toMatchObject({
+        documentId: version.documentId,
+        contentHash: version.contentHash,
+      });
+    }
     const otherOrg = await db.organization.create({ data: {
       loginCode: "fixture-service-other-isolated", legalName: "Other Synthetic Lab",
       displayName: "Other Synthetic Lab", active: false,
