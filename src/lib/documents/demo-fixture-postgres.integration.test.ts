@@ -108,6 +108,28 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     expect(unchanged).toEqual({ status: "DRAFT", lockVersion: 0 });
     expect(await db.workflowInstance.count({ where: { organizationId: org.id } })).toBe(0);
     expect(await db.auditEvent.count({ where: { organizationId: org.id } })).toBe(6);
+    // Approval must be routed through electronic signatures, never the generic command.
+    const approverContext: AuthorizationContext = {
+      ...context,
+      grants: [{ permission: "document.approve", scopeType: "ORGANIZATION", scopeId: null }],
+    };
+    await expect(service.transition(approverContext, {
+      organizationId: org.id,
+      versionId: ids[0],
+      command: "APPROVE",
+      expectedLockVersion: 0,
+    })).rejects.toThrow("Electronic signature is required for approval");
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[0] },
+      select: { status: true, lockVersion: true },
+    })).toEqual({ status: "DRAFT", lockVersion: 0 });
+    expect(await db.auditEvent.count({ where: { organizationId: org.id } })).toBe(6);
+    // Real tenant-scoped store reads must not disclose another tenant's document.
+    const store = new PrismaDocumentLifecycleStore();
+    expect(await store.findVersion(otherOrg.id, ids[0])).toBeNull();
+    expect(await store.findVersion(org.id, ids[0])).toMatchObject({
+      id: ids[0], organizationId: org.id, status: "DRAFT",
+    });
     // CI destroys this entire disposable PostgreSQL service after the job.
   }, 60000);
 });
