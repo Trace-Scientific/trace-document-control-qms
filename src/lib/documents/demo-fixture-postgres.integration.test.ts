@@ -639,6 +639,34 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       command: "MAKE_EFFECTIVE", expectedLockVersion: 2,
     })).rejects.toThrow("The document version changed; reload before retrying");
     expect(publishedEvents).toHaveLength(publishedBeforeSupersession + 1);
+    // The superseded version is immutable through the public lifecycle API;
+    // neither a second publication nor retirement may rewrite its history.
+    await expect(effectiveService.transition(effectiveContext, {
+      organizationId: org.id, versionId: ids[1],
+      command: "MAKE_EFFECTIVE", expectedLockVersion: 4,
+    })).rejects.toThrow("Invalid document transition");
+    await expect(effectiveService.transition(retireContext, {
+      organizationId: org.id, versionId: ids[1],
+      command: "RETIRE", expectedLockVersion: 4,
+      reason: "Attempt to retire superseded historical version",
+    })).rejects.toThrow("Invalid document transition");
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[1] },
+      select: { status: true, lockVersion: true, supersededAt: true },
+    })).toEqual(previousPublishedVersion);
+    expect(await db.document.findUniqueOrThrow({
+      where: { id: supersessionSource.documentId },
+      select: { currentVersionId: true, lifecycleState: true },
+    })).toEqual({
+      currentVersionId: supersessionSuccessor.id, lifecycleState: "ACTIVE",
+    });
+    expect(await db.auditEvent.count({
+      where: {
+        organizationId: org.id, entityId: ids[1],
+        action: { in: ["DOCUMENT_VERSION_RETIRE", "DOCUMENT_VERSION_MAKE_EFFECTIVE"] },
+      },
+    })).toBe(0);
+    expect(publishedEvents).toHaveLength(publishedBeforeSupersession + 1);
     // CI destroys this entire disposable PostgreSQL service after the job.
   }, 60000);
 });
