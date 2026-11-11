@@ -553,6 +553,26 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       where: { organizationId: org.id, entityId: ids[0], action: "DOCUMENT_VERSION_RETIRE" },
     })).toBe(1);
     expect(publishedEvents).toHaveLength(1);
+    // Retired source versions are no longer eligible for successor creation.
+    // A pre-existing draft remains historical work, but cannot be published
+    // directly or used to create another successor.
+    await expect(service.createRevision(revisionContext, revisionInput))
+      .rejects.toThrow("The current effective version is required to create a successor revision");
+    await expect(service.createRevision(revisionContext, {
+      ...revisionInput, sourceVersionId: successor.id,
+    })).rejects.toThrow("The current effective version is required to create a successor revision");
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: successor.id },
+      select: { status: true, versionNumber: true, documentId: true },
+    })).toEqual({
+      status: "DRAFT", versionNumber: 2, documentId: submitted.documentId,
+    });
+    expect(await db.documentVersion.count({
+      where: { organizationId: org.id, documentId: submitted.documentId },
+    })).toBe(2);
+    expect(await db.auditEvent.count({
+      where: { organizationId: org.id, action: "DOCUMENT_SUCCESSOR_REVISION_CREATED" },
+    })).toBe(1);
     // CI destroys this entire disposable PostgreSQL service after the job.
   }, 60000);
 });
