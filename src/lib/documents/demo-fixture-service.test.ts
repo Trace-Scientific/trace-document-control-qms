@@ -267,6 +267,57 @@ describe("synthetic demo documents through QMS DocumentCommandService", () => {
     expect(applyTransition).not.toHaveBeenCalled();
   });
 
+  it("submits a valid synthetic draft into review with reviewer and approver separation", async () => {
+    const version = {
+      id: "00000000-0000-4000-8000-000000000001",
+      organizationId: "00000000-0000-4000-8000-000000000004",
+      documentId: "00000000-0000-4000-8000-000000000002",
+      status: "DRAFT" as const,
+      lockVersion: 0,
+    };
+    const findVersion = vi.fn(async () => version);
+    const applyTransition = vi.fn(async () => true);
+    const service = new DocumentCommandService({
+      findVersion, applyTransition,
+    } as unknown as DocumentLifecycleStore);
+    const context: AuthorizationContext = {
+      userId: "00000000-0000-4000-8000-000000000003",
+      organizationId: version.organizationId,
+      userState: "ACTIVE",
+      grants: [{ permission: "document.submit", scopeType: "ORGANIZATION", scopeId: null }],
+    };
+    const reviewerId = "00000000-0000-4000-8000-000000000006";
+    const approverId = "00000000-0000-4000-8000-000000000007";
+    const dueAt = new Date("2099-01-01T00:00:00Z");
+    const result = await service.transition(context, {
+      organizationId: version.organizationId,
+      versionId: version.id,
+      command: "SUBMIT",
+      expectedLockVersion: 0,
+      reviewStages: [{ reviewerUserId: reviewerId, dueAt }],
+      approverUserId: approverId,
+      comment: "Synthetic review requested",
+    });
+    expect(result.status).toBe("IN_REVIEW");
+    expect(result.lockVersion).toBe(1);
+    expect(findVersion).toHaveBeenCalledWith(version.organizationId, version.id);
+    expect(applyTransition).toHaveBeenCalledTimes(1);
+    expect(applyTransition).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: version.organizationId,
+      versionId: version.id,
+      documentId: version.documentId,
+      actorUserId: context.userId,
+      command: "SUBMIT",
+      from: "DRAFT",
+      to: "IN_REVIEW",
+      expectedLockVersion: 0,
+      approverUserId: approverId,
+      assigneeUserIds: [reviewerId],
+      reviewStages: [{ reviewerUserId: reviewerId, dueAt }],
+      comment: "Synthetic review requested",
+    }));
+  });
+
   it("blocks direct approval without the electronic signature pathway", async () => {
     const store = { findVersion: vi.fn() } as unknown as DocumentLifecycleStore;
     const service = new DocumentCommandService(store);
