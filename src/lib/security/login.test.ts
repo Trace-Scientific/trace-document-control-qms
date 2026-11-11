@@ -70,6 +70,33 @@ describe("login session lifecycle", () => {
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
+  it("rejects unknown users without issuing sessions and records a generic failure", async () => {
+    mocks.user.findUnique.mockResolvedValue(null);
+    await expect(login({ organizationCode: "orange-county-labs", email: "missing@example.com", password: "correct horse battery staple", now })).rejects.toBeInstanceOf(LoginRejectedError);
+    expect(mocks.authenticationEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ eventType: "LOGIN_FAILURE", outcome: "FAILURE", userId: undefined }),
+    }));
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("normalizes organization codes and user emails for tenant-scoped lookup", async () => {
+    await expect(login({ organizationCode: "ORANGE-COUNTY-LABS", email: " ADMIN@EXAMPLE.COM ", password: "wrong", now })).rejects.toBeInstanceOf(LoginRejectedError);
+    expect(mocks.organization.findUnique).toHaveBeenCalledWith({ where: { loginCode: "orange-county-labs" } });
+    expect(mocks.user.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      where: { organizationId_email: { organizationId: "org-1", email: "admin@example.com" } },
+    }));
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("records a throttled failure without creating a session", async () => {
+    mocks.authenticationEvent.count.mockResolvedValue(5);
+    await expect(login({ organizationCode: "orange-county-labs", email: "admin@example.com", password: "correct horse battery staple", now })).rejects.toMatchObject({ throttled: true });
+    expect(mocks.authenticationEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ eventType: "LOGIN_FAILURE", outcome: "FAILURE", metadata: { reason: "throttled" } }),
+    }));
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
   it("temporarily throttles after five recent failures", async () => {
     mocks.authenticationEvent.count.mockResolvedValue(5);
     await expect(login({ organizationCode: "orange-county-labs", email: "admin@example.com", password: "correct horse battery staple", now })).rejects.toMatchObject({ throttled: true });
