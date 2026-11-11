@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import { db } from "../db";
 import { DocumentCommandService } from "./service";
 import { PrismaDocumentLifecycleStore } from "./prisma-store";
+import { WorkflowReviewService } from "./workflow-review";
+import { PrismaWorkflowReviewStore } from "./workflow-review-store";
 import { PrismaApprovalSignatureStore } from "../signatures/prisma-store";
 import { hashApprovalPayload } from "../signatures/payload";
 import { ApprovalSignatureService } from "../signatures/service";
@@ -276,19 +278,53 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     expect(await db.auditEvent.count({
       where: { organizationId: org.id, action: "DOCUMENT_VERSION_APPROVED_WITH_SIGNATURE" },
     })).toBe(0);
-    // Simulate the review engine completing the review task; then exercise the
-    // actual signature persistence transaction, not a mock signature store.
-    await db.workflowTask.updateMany({
-      where: { organizationId: org.id, workflowInstanceId: workflow.id, stepKey: "REVIEW_1" },
-      data: { status: "COMPLETED", completedAt: new Date(), decision: "APPROVE" },
+    // Complete review through the real authorization, service and Prisma
+    // transaction path rather than directly manipulating workflow rows.
+    const reviewerContext: AuthorizationContext = {
+      userId: reviewer.id, organizationId: org.id, userState: "ACTIVE",
+      grants: [{ permission: "document.review", scopeType: "ORGANIZATION", scopeId: null }],
+    };
+    const reviewService = new WorkflowReviewService(new PrismaWorkflowReviewStore());
+    const reviewTask = tasks.find((task) => task.stepKey === "REVIEW_1");
+    expect(reviewTask).toBeDefined();
+    const reviewDecision = {
+      organizationId: org.id, taskId: reviewTask!.id,
+      decision: "ACCEPT" as const, comment: "Synthetic reviewer accepted the controlled document",
+    };
+    await expect(reviewService.decide({
+      ...reviewerContext, grants: [],
+    }, reviewDecision)).rejects.toThrow("Access denied");
+    await expect(reviewService.decide({
+      ...reviewerContext, organizationId: otherOrg.id,
+    }, reviewDecision)).rejects.toThrow("Access denied");
+    await expect(reviewService.decide(reviewerContext, {
+      ...reviewDecision, comment: " ",
+    })).rejects.toThrow("A reviewer comment is required");
+    expect(await reviewService.decide(reviewerContext, reviewDecision))
+      .toEqual({ result: "AWAITING_APPROVAL" });
+    expect(await db.workflowTask.findUniqueOrThrow({
+      where: { id: reviewTask!.id },
+      select: { status: true, decision: true, comments: true },
+    })).toEqual({
+      status: "COMPLETED", decision: "ACCEPT", comments: reviewDecision.comment,
     });
-    await db.workflowTask.updateMany({
-      where: { organizationId: org.id, workflowInstanceId: workflow.id, stepKey: "APPROVAL" },
-      data: { status: "IN_PROGRESS" },
-    });
-    await db.workflowInstance.update({
-      where: { id: workflow.id }, data: { state: "APPROVAL" },
-    });
+    expect(await db.workflowTask.count({
+      where: {
+        organizationId: org.id, workflowInstanceId: workflow.id,
+        stepKey: "APPROVAL", status: "IN_PROGRESS",
+      },
+    })).toBe(1);
+    expect(await db.workflowInstance.findUniqueOrThrow({
+      where: { id: workflow.id }, select: { state: true, status: true },
+    })).toEqual({ state: "APPROVAL", status: "ACTIVE" });
+    expect(await db.auditEvent.count({
+      where: {
+        organizationId: org.id, entityId: ids[0],
+        action: "DOCUMENT_REVIEW_STAGES_COMPLETED",
+      },
+    })).toBe(1);
+    await expect(reviewService.decide(reviewerContext, reviewDecision))
+      .rejects.toThrow("The review task is no longer actionable");
     // The real service must verify the signer password and explicit signature
     // confirmation before the Prisma store is allowed to persist approval.
     const signingPassword = "Synthetic-approval-password-2026!";
