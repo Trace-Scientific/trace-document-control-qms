@@ -379,6 +379,24 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     })).toEqual({ status: "APPROVED", lockVersion: 2 });
     expect(await db.documentReviewTask.count({ where: { organizationId: org.id } })).toBe(0);
     expect(publishedEvents).toHaveLength(0);
+    // Publication authorization and tenant boundaries must be enforced before
+    // any version mutation or outbound publication event.
+    await expect(effectiveService.transition({
+      ...effectiveContext, grants: [],
+    }, {
+      organizationId: org.id, versionId: ids[0],
+      command: "MAKE_EFFECTIVE", expectedLockVersion: 2,
+    })).rejects.toThrow("Access denied");
+    await expect(effectiveService.transition({
+      ...effectiveContext, organizationId: otherOrg.id,
+    }, {
+      organizationId: org.id, versionId: ids[0],
+      command: "MAKE_EFFECTIVE", expectedLockVersion: 2,
+    })).rejects.toThrow("Access denied");
+    expect(publishedEvents).toHaveLength(0);
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[0] }, select: { status: true, lockVersion: true },
+    })).toEqual({ status: "APPROVED", lockVersion: 2 });
     await db.documentType.update({ where: { id: type.id }, data: { reviewMonths: 12 } });
     const effective = await effectiveService.transition(effectiveContext, {
       organizationId: org.id, versionId: ids[0],
