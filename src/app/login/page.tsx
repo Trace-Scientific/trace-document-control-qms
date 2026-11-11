@@ -68,7 +68,7 @@ export default function LoginPage() {
           <p>Use your assigned organization and account credentials.</p>
         </div>
         <div className={styles.loginFields}>
-          <label><span>Organization code</span><input name="organizationCode" defaultValue="orange-county-labs" autoComplete="organization" required /></label>
+          <label><span>Organization code</span><input name="organizationCode" placeholder="Enter your organization code" autoComplete="organization" required /></label>
           <label><span>Email address</span><input name="email" type="email" autoComplete="username" required /></label>
           <label><span>Password</span><input name="password" type="password" autoComplete="current-password" required /></label>
         </div>
