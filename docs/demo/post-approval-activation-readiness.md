@@ -42,20 +42,23 @@
 - Verify public demo URLs, availability, support contact, and a rehearsed 15-minute walkthrough.
 - Maintain a clear demo reset procedure and prohibit cross-tenant access.
 
-## Current state and verified evidence (2026-11-10)
+## Current state and verified evidence (2026-11-11)
 
-- PR #421 remains draft and unmerged. GitHub Actions for commit `5e4b80a649eb11a1c16967b5d56718c9315e10dd` were independently checked: all six completed successfully (`CI`, `Security`, `Demo offline fixture validation`, `Demo SQL disposable concurrency verification`, `Demo SQL migration-faithful integration`, and `Demo fixtures migrated-schema smoke`).
-- The project owner reports that an independent security specialist reviewed restricted PostgreSQL provisioning and found no inconsistencies. This is a **reported favorable review**, not yet independently verified attributable approval of the final PR commit. Preserve the specialist's identity, written finding, reviewed commit SHA, residual risks, and explicit GitHub PR review or equivalent approval record before closing gate 1.
-- CI verifies synthetic fixture loading through the real document service and Prisma store in a disposable database, and unit tests cover selected review authorization and draft-to-review transitions. It does **not** establish a complete live electronic-signature approval workflow or customer-demo operational readiness.
+- PR #421 remains draft and unmerged. All six GitHub Actions workflows were independently confirmed successful for commit `764414e63700229f7e8f3c7e4b1198c252f07c5c`: `CI`, `Security`, `Demo offline fixture validation`, `Demo SQL disposable concurrency verification`, `Demo SQL migration-faithful integration`, and `Demo fixtures migrated-schema smoke`. Reconfirm against the final PR head before approval.
+- The project owner reports that an independent security specialist reviewed restricted PostgreSQL provisioning and found no inconsistencies. This is a **reported favorable review**, not yet independently verified attributable approval of the final PR commit. Preserve the specialist's identity, written findings, reviewed commit SHA, residual risks, and explicit GitHub PR review or equivalent approval record before closing gate 1.
+- Disposable migrated-PostgreSQL integration tests now exercise six synthetic document drafts, submission into a reviewer/approver workflow, premature signature rollback, real password reauthentication and signature confirmation, failed password evidence, successful signature-backed approval, replay and cross-tenant denial, and approved-to-effective publication with review scheduling and audit events. The test simulates review-task completion, and publication webhooks use an injected fake publisher. This evidence does **not** establish a complete live user-interface workflow, external webhook delivery, demo login/MFA, or operational readiness.
+- Fixture documents are initially created as synthetic drafts even when the manifest labels their intended demonstration states differently. The tested approval/effectiveness flow covers one fixture; it does not mean all six are pre-populated in their final customer-demo states.
 - **No Railway provisioning, activation, merge, or production change is authorized or performed.**
 
 ## Evidence handoff checklist
 
-- [x] Six successful workflow conclusions verified for commit `5e4b80a649eb11a1c16967b5d56718c9315e10dd`.
+- [x] Six successful workflow conclusions independently verified for commit `764414e63700229f7e8f3c7e4b1198c252f07c5c`.
 - [x] Owner-reported favorable independent review documented with its evidence limitations.
+- [x] Disposable migrated-schema integration tests exercise signature-backed approval and linked audit/authentication evidence; review-stage completion is simulated.
+- [x] Disposable migrated-schema integration tests exercise approved-to-effective publication, review scheduling, audit events, and a fake webhook publisher.
 - [ ] Obtain attributable written independent review, reviewed SQL/commit hash, and residual-risk disposition; confirm it covers the final provisioning code.
 - [ ] Confirm final PR head passes all required checks after any additional commits.
-- [ ] Verify end-to-end signature-backed approval and audit events in disposable integration tests; preserve results.
+- [ ] Test the actual review-completion command, UI-driven signature flow, demo login/MFA, and external webhook delivery where required for customer demonstrations.
 - [ ] Record a separately authorized merge decision, if desired.
 - [ ] Before any **separately authorized** demo-only write, verify fresh backup/restore, exact target identity, role ACLs, target absence, operator and rollback plan.
 - [ ] After authorized activation, rehearse synthetic-only customer walkthrough, tenant isolation, login/MFA, and reset/recovery.
