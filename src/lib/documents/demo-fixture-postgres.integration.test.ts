@@ -151,6 +151,79 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     expect(await db.workflowInstance.count({ where: { organizationId: org.id } })).toBe(0);
     expect(await db.notificationOutbox.count({ where: { organizationId: org.id } })).toBe(0);
     expect(await db.auditEvent.count({ where: { organizationId: org.id } })).toBe(6);
+    // Positive-path submission persists review tasks, approval separation and audit atomically.
+    const reviewer = await db.user.create({ data: {
+      organizationId: org.id, email: "fixture-reviewer@example.invalid",
+      firstName: "Synthetic", lastName: "Reviewer", status: "ACTIVE",
+    } });
+    const finalApprover = await db.user.create({ data: {
+      organizationId: org.id, email: "fixture-approver@example.invalid",
+      firstName: "Synthetic", lastName: "Approver", status: "ACTIVE",
+    } });
+    const reviewPermission = await db.permission.upsert({
+      where: { key: "document.review" }, update: {},
+      create: { key: "document.review" },
+    });
+    const approvalPermission = await db.permission.upsert({
+      where: { key: "document.approve" }, update: {},
+      create: { key: "document.approve" },
+    });
+    const reviewRole = await db.role.create({ data: {
+      organizationId: org.id, name: "Synthetic reviewer",
+    } });
+    const approvalRole = await db.role.create({ data: {
+      organizationId: org.id, name: "Synthetic approver",
+    } });
+    await db.rolePermission.createMany({ data: [
+      { roleId: reviewRole.id, permissionId: reviewPermission.id },
+      { roleId: approvalRole.id, permissionId: approvalPermission.id },
+    ] });
+    await db.userRole.createMany({ data: [
+      { organizationId: org.id, userId: reviewer.id, roleId: reviewRole.id },
+      { organizationId: org.id, userId: finalApprover.id, roleId: approvalRole.id },
+    ] });
+    await db.workflowDefinition.create({ data: {
+      organizationId: org.id, key: "document-approval", version: 1,
+      name: "Synthetic document approval", active: true, definition: {},
+    } });
+    const dueAt = new Date(Date.now() + 7 * 86_400_000);
+    const submitted = await service.transition(submitter, {
+      organizationId: org.id, versionId: ids[0], command: "SUBMIT",
+      expectedLockVersion: 0, assigneeUserIds: [reviewer.id],
+      approverUserId: finalApprover.id, dueAt,
+      comment: "Synthetic review assignment",
+    });
+    expect(submitted).toMatchObject({ status: "IN_REVIEW", lockVersion: 1 });
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[0] }, select: { status: true, lockVersion: true },
+    })).toEqual({ status: "IN_REVIEW", lockVersion: 1 });
+    const workflow = await db.workflowInstance.findFirstOrThrow({
+      where: { organizationId: org.id, entityId: ids[0] },
+    });
+    expect(workflow.state).toBe("REVIEW");
+    const tasks = await db.workflowTask.findMany({
+      where: { organizationId: org.id, workflowInstanceId: workflow.id },
+    });
+    expect(tasks).toHaveLength(2);
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ stepKey: "REVIEW_1", assigneeUserId: reviewer.id, status: "IN_PROGRESS" }),
+      expect.objectContaining({ stepKey: "APPROVAL", assigneeUserId: finalApprover.id, status: "PENDING" }),
+    ]));
+    expect(await db.notificationOutbox.count({
+      where: { organizationId: org.id, recipientUserId: reviewer.id },
+    })).toBe(1);
+    const submitAudit = await db.auditEvent.findFirstOrThrow({
+      where: { organizationId: org.id, entityId: ids[0], action: "DOCUMENT_VERSION_SUBMIT" },
+    });
+    expect(submitAudit.actorUserId).toBe(actor.id);
+    expect(submitAudit.metadata).toMatchObject({
+      from: "DRAFT", to: "IN_REVIEW", approverUserId: finalApprover.id,
+    });
+    await expect(service.transition(submitter, {
+      organizationId: org.id, versionId: ids[0], command: "SUBMIT",
+      expectedLockVersion: 0, approverUserId: finalApprover.id,
+    })).rejects.toThrow("The document version changed; reload before retrying");
+    expect(await db.workflowInstance.count({ where: { organizationId: org.id } })).toBe(1);
     // CI destroys this entire disposable PostgreSQL service after the job.
   }, 60000);
 });
