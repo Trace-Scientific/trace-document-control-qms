@@ -1,6 +1,6 @@
 # External security review brief — PR #421
 
-**Status:** Review package; not an approval or authorization to deploy.
+**Status:** Project owner reports independent specialist completed restricted PostgreSQL provisioning review with no inconsistencies identified (2026-11-10). Attributable written findings, reviewed commit SHA, residual-risk statement, and GitHub PR approval have not been supplied or independently verified. This report is not authorization to merge or deploy.
 **Repository:** Trace-Scientific/trace-document-control-qms
 **PR:** https://github.com/Trace-Scientific/trace-document-control-qms/pull/421
 **Scope:** One-time inactive synthetic demo tenant provisioning via PostgreSQL SECURITY DEFINER.
@@ -29,7 +29,7 @@ Commission a qualified independent PostgreSQL/application security reviewer to e
 
 ## Known gaps to resolve
 
-- No independent GitHub approval is recorded.
+- Project owner reports a favorable independent specialist review; attributable GitHub approval, written findings, exact reviewed commit, and residual-risk statement remain unverified.
 - No migrated-schema test currently exercises the exact proposed restricted production-like owner/executor grants.
 - Live Railway effective privilege inventory, fresh backup, identity verification, and target-absence preflight are separate future gates, not evidence provided here.
 
