@@ -44,3 +44,5 @@ jobs:
       - run: npx prisma migrate deploy
       - run: node fixtures/demo/validate.mjs
       - run: node fixtures/demo/migrated-schema-smoke.mjs
+      - name: Verify actual document service, Prisma persistence and audit trail
+        run: npx vitest run src/lib/documents/demo-fixture-postgres.integration.test.ts
