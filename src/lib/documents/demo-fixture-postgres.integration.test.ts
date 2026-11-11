@@ -609,9 +609,8 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     expect(await db.auditEvent.count({
       where: { organizationId: org.id, action: "DOCUMENT_SUCCESSOR_REVISION_CREATED" },
     })).toBe(1);
-    // Supersession store integration: seed two synthetic versions at the
-    // post-signature boundary, then exercise the real publication transaction.
-    // This deliberately does not claim to test a second signature ceremony.
+    // End-to-end supersession: only the original published source is seeded;
+    // create the replacement through the real revision, review and signature services.
     const supersessionSource = await db.documentVersion.findUniqueOrThrow({
       where: { id: ids[1] },
     });
@@ -623,16 +622,44 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       where: { id: supersessionSource.documentId },
       data: { currentVersionId: ids[1], lifecycleState: "ACTIVE" },
     });
-    const supersessionSuccessor = await db.documentVersion.create({
-      data: {
-        organizationId: org.id, documentId: supersessionSource.documentId,
-        authoredByUserId: actor.id, versionNumber: 2, revisionLabel: "2.0",
-        contentHash: supersessionSource.contentHash,
-        contentText: supersessionSource.contentText,
-        changeSummary: "Synthetic approved successor for supersession transaction test",
-        status: "APPROVED", lockVersion: 2,
+    const supersessionText = "SYNTHETIC — DEMONSTRATION ONLY — NOT FOR LABORATORY USE\\nReplacement revision.";
+    const supersessionSuccessor = await service.createRevision(revisionContext, {
+      organizationId: org.id, sourceVersionId: ids[1],
+      revisionLabel: "2.0", contentText: supersessionText,
+      contentHash: createHash("sha256").update(supersessionText).digest("hex"),
+      changeSummary: "Synthetic successor with complete approval ceremony",
+    });
+    expect(supersessionSuccessor).toMatchObject({
+      status: "DRAFT", versionNumber: 2, lockVersion: 0,
+    });
+    expect(await service.transition(submitter, {
+      organizationId: org.id, versionId: supersessionSuccessor.id,
+      command: "SUBMIT", expectedLockVersion: 0,
+      assigneeUserIds: [reviewer.id], approverUserId: finalApprover.id,
+      dueAt, comment: "Review synthetic replacement",
+    })).toMatchObject({ status: "IN_REVIEW", lockVersion: 1 });
+    const replacementReview = await db.workflowTask.findFirstOrThrow({
+      where: {
+        organizationId: org.id, stepKey: "REVIEW_1",
+        workflow: { entityId: supersessionSuccessor.id },
       },
     });
+    expect(await reviewService.decide(reviewerContext, {
+      organizationId: org.id, taskId: replacementReview.id,
+      decision: "ACCEPT", comment: "Replacement reviewed and accepted",
+    })).toEqual({ result: "AWAITING_APPROVAL" });
+    const replacementApproval = await signatureService.signApproval(signingContext, {
+      organizationId: org.id, versionId: supersessionSuccessor.id,
+      expectedLockVersion: 1, password: signingPassword, confirmed: true,
+    });
+    expect(replacementApproval.signatureId).toBeTruthy();
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: supersessionSuccessor.id },
+      select: { status: true, lockVersion: true },
+    })).toEqual({ status: "APPROVED", lockVersion: 2 });
+    expect(await db.electronicSignature.count({
+      where: { organizationId: org.id, documentVersionId: supersessionSuccessor.id },
+    })).toBe(1);
     const publishedBeforeSupersession = publishedEvents.length;
     const publishedSuccessor = await effectiveService.transition(effectiveContext, {
       organizationId: org.id, versionId: supersessionSuccessor.id,
