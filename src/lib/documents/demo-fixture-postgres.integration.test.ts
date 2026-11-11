@@ -250,6 +250,66 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     expect(await db.auditEvent.count({
       where: { organizationId: org.id, action: "DOCUMENT_VERSION_APPROVED_WITH_SIGNATURE" },
     })).toBe(0);
+    // Simulate the review engine completing the review task; then exercise the
+    // actual signature persistence transaction, not a mock signature store.
+    await db.workflowTask.updateMany({
+      where: { organizationId: org.id, workflowInstanceId: workflow.id, stepKey: "REVIEW_1" },
+      data: { status: "COMPLETED", completedAt: new Date(), decision: "APPROVE" },
+    });
+    await db.workflowTask.updateMany({
+      where: { organizationId: org.id, workflowInstanceId: workflow.id, stepKey: "APPROVAL" },
+      data: { status: "IN_PROGRESS" },
+    });
+    await db.workflowInstance.update({
+      where: { id: workflow.id }, data: { state: "APPROVAL" },
+    });
+    const signedAt = new Date();
+    const approvalPayload = { ...pendingSignature, signedAt };
+    const payloadHash = hashApprovalPayload(approvalPayload);
+    const approved = await new PrismaApprovalSignatureStore().commitApproval({
+      ...approvalPayload,
+      expectedLockVersion: 1,
+      payloadHash,
+      authenticationValidUntil: new Date(signedAt.getTime() + 300_000),
+    });
+    expect(approved?.signatureId).toBeTruthy();
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[0] }, select: { status: true, lockVersion: true },
+    })).toEqual({ status: "APPROVED", lockVersion: 2 });
+    const signature = await db.electronicSignature.findFirstOrThrow({
+      where: { organizationId: org.id, documentVersionId: ids[0] },
+    });
+    expect(signature).toMatchObject({
+      id: approved!.signatureId, signerUserId: finalApprover.id,
+      workflowInstanceId: workflow.id, meaning: "APPROVED", payloadHash,
+    });
+    const auth = await db.authenticationEvent.findUniqueOrThrow({
+      where: { id: signature.authenticationEventId },
+    });
+    expect(auth).toMatchObject({
+      organizationId: org.id, userId: finalApprover.id,
+      eventType: "REAUTHENTICATION", outcome: "SUCCESS",
+    });
+    const approvalAudit = await db.auditEvent.findFirstOrThrow({
+      where: { organizationId: org.id, entityId: ids[0], action: "DOCUMENT_VERSION_APPROVED_WITH_SIGNATURE" },
+    });
+    expect(approvalAudit.actorUserId).toBe(finalApprover.id);
+    expect(approvalAudit.metadata).toMatchObject({
+      signatureId: signature.id, authenticationEventId: auth.id, payloadHash,
+    });
+    expect(await db.workflowInstance.findUniqueOrThrow({
+      where: { id: workflow.id }, select: { state: true, status: true },
+    })).toMatchObject({ state: "APPROVED", status: "COMPLETED" });
+    expect(await db.workflowTask.count({
+      where: { organizationId: org.id, workflowInstanceId: workflow.id, status: "COMPLETED" },
+    })).toBe(2);
+    // A duplicate approval must not create another signature or authentication event.
+    expect(await new PrismaApprovalSignatureStore().commitApproval({
+      ...approvalPayload, expectedLockVersion: 1, payloadHash,
+      authenticationValidUntil: new Date(signedAt.getTime() + 300_000),
+    })).toBeNull();
+    expect(await db.electronicSignature.count({ where: { organizationId: org.id } })).toBe(1);
+    expect(await db.authenticationEvent.count({ where: { organizationId: org.id } })).toBe(1);
     // CI destroys this entire disposable PostgreSQL service after the job.
   }, 60000);
 });
