@@ -450,6 +450,54 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       command: "MAKE_EFFECTIVE", expectedLockVersion: 2,
     })).rejects.toThrow("The document version changed; reload before retrying");
     expect(publishedEvents).toHaveLength(1);
+    // Successor revisions must be created only from the current effective
+    // version, remain drafts, and preserve the published original.
+    const revisionContext: AuthorizationContext = {
+      userId: actor.id, organizationId: org.id, userState: "ACTIVE",
+      grants: [{ permission: "document.revise", scopeType: "ORGANIZATION", scopeId: null }],
+    };
+    const revisionText = "SYNTHETIC DEMONSTRATION ONLY — NOT FOR LABORATORY USE\\nRevised controlled procedure.";
+    const revisionInput = {
+      organizationId: org.id, sourceVersionId: ids[0],
+      revisionLabel: "2.0",
+      contentText: revisionText,
+      contentHash: createHash("sha256").update(revisionText).digest("hex"),
+      changeSummary: "Synthetic revision demonstration",
+    };
+    await expect(service.createRevision({
+      ...revisionContext, grants: [],
+    }, revisionInput)).rejects.toThrow("Access denied");
+    await expect(service.createRevision({
+      ...revisionContext, organizationId: otherOrg.id,
+    }, revisionInput)).rejects.toThrow("Access denied");
+    const successor = await service.createRevision(revisionContext, revisionInput);
+    expect(successor).toMatchObject({
+      organizationId: org.id, documentId: submitted.documentId,
+      versionNumber: 2, revisionLabel: "2.0", status: "DRAFT",
+      contentHash: revisionInput.contentHash,
+    });
+    expect(await db.document.findUniqueOrThrow({
+      where: { id: submitted.documentId },
+      select: { currentVersionId: true, lifecycleState: true },
+    })).toEqual({ currentVersionId: ids[0], lifecycleState: "ACTIVE" });
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[0] }, select: { status: true, lockVersion: true },
+    })).toEqual({ status: "EFFECTIVE", lockVersion: 3 });
+    const successorAudit = await db.auditEvent.findFirstOrThrow({
+      where: {
+        organizationId: org.id, entityId: successor.id,
+        action: "DOCUMENT_SUCCESSOR_REVISION_CREATED",
+      },
+    });
+    expect(successorAudit.metadata).toMatchObject({
+      documentId: submitted.documentId, sourceVersionId: ids[0],
+      versionNumber: 2, revisionLabel: "2.0",
+    });
+    await expect(service.createRevision(revisionContext, revisionInput))
+      .rejects.toThrow("Complete the existing in-process revision first");
+    expect(await db.documentVersion.count({
+      where: { organizationId: org.id, documentId: submitted.documentId },
+    })).toBe(2);
     // Retirement is restricted, requires a reason, and atomically clears the
     // active pointer and cancels the pending periodic-review task.
     const retireContext: AuthorizationContext = {
