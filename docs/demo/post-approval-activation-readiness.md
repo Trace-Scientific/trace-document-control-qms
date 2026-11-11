@@ -50,6 +50,15 @@
 - Fixture documents are initially created as synthetic drafts even when the manifest labels their intended demonstration states differently. The tested approval/effectiveness flow covers one fixture; it does not mean all six are pre-populated in their final customer-demo states.
 - **No Railway provisioning, activation, merge, or production change is authorized or performed.**
 
+## Authentication review findings (source inspection, 2026-11-11)
+
+- The public login form no longer pre-populates a customer organization code (commit `be03c2a`).
+- `src/lib/security/login.ts` validates active organizations/users, verifies password hashes, records login successes/failures, throttles after five recent user failures within fifteen minutes, and creates opaque-token sessions with thirty-minute idle and twelve-hour absolute expiry. `src/app/api/auth/login/route.ts` sets an HttpOnly, SameSite=Strict cookie and Secure in production.
+- `src/lib/security/session.ts` rejects malformed/mismatched, revoked, idle-expired and absolute-expired sessions. Existing `src/lib/security/login.test.ts` covers session issuance, bad password, and failure throttling at the unit-test level.
+- **MFA enforcement is not demonstrated by the inspected password-login path.** The architecture describes *MFA-ready* authentication, not proof of an active second-factor challenge. Do not advertise MFA as enforced or activate customer demo accounts on that assumption.
+- Required before customer demo: decide the supported MFA method and enrollment/recovery policy; implement server-enforced second-factor verification **before** session issuance or privileged access; test enrollment, challenge, replay, expiry, bypass attempts, lockout, recovery, and cross-tenant isolation. Then validate browser login/logout, session expiry and electronic-signature reauthentication in a disposable or explicitly approved demo environment.
+- No live authentication testing or MFA implementation is claimed by this source review.
+
 ## Evidence handoff checklist
 
 - [x] Six successful workflow conclusions independently verified for commit `b78bbb4cb9e6ec5244fe3a93247d6c7efab26d5f` (before this documentation update).
