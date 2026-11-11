@@ -368,7 +368,7 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     const publishedEvents: Array<{ eventName: string; eventId: string }> = [];
     const effectiveService = new DocumentCommandService(
       new PrismaDocumentLifecycleStore(), () => new Date(),
-      async (event) => { publishedEvents.push({ eventName: event.eventName, eventId: event.eventId }); },
+      async (event) => { publishedEvents.push({ eventName: event.eventName, eventId: event.eventId }); return []; },
     );
     await expect(effectiveService.transition(effectiveContext, {
       organizationId: org.id, versionId: ids[0],
