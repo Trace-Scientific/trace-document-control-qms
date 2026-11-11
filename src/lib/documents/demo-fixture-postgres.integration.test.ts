@@ -7,6 +7,8 @@ import { DocumentCommandService } from "./service";
 import { PrismaDocumentLifecycleStore } from "./prisma-store";
 import { PrismaApprovalSignatureStore } from "../signatures/prisma-store";
 import { hashApprovalPayload } from "../signatures/payload";
+import { ApprovalSignatureService } from "../signatures/service";
+import { hashPassword } from "../security/crypto";
 import type { AuthorizationContext } from "../security/authorization";
 
 const expected = "postgresql://trace_qms_test:local_integration_test_only@127.0.0.1:5433/trace_qms_integration_test?schema=public";
@@ -263,14 +265,42 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     await db.workflowInstance.update({
       where: { id: workflow.id }, data: { state: "APPROVAL" },
     });
+    // The real service must verify the signer password and explicit signature
+    // confirmation before the Prisma store is allowed to persist approval.
+    const signingPassword = "Synthetic-approval-password-2026!";
+    await db.credential.create({ data: {
+      organizationId: org.id, userId: finalApprover.id,
+      passwordHash: hashPassword(signingPassword),
+    } });
+    const signatureService = new ApprovalSignatureService(new PrismaApprovalSignatureStore());
+    const signingContext: AuthorizationContext = {
+      userId: finalApprover.id, organizationId: org.id, userState: "ACTIVE",
+      grants: [{ permission: "document.approve", scopeType: "ORGANIZATION", scopeId: null }],
+    };
+    await expect(signatureService.signApproval(signingContext, {
+      organizationId: org.id, versionId: ids[0], expectedLockVersion: 1,
+      password: signingPassword, confirmed: false,
+    })).rejects.toThrow("Signature meaning must be confirmed");
+    await expect(signatureService.signApproval(signingContext, {
+      organizationId: org.id, versionId: ids[0], expectedLockVersion: 1,
+      password: "Incorrect-synthetic-password", confirmed: true,
+    })).rejects.toThrow("Reauthentication failed");
+    expect(await db.electronicSignature.count({ where: { organizationId: org.id } })).toBe(0);
+    expect(await db.authenticationEvent.count({
+      where: { organizationId: org.id, outcome: "FAILURE" },
+    })).toBe(1);
+    await expect(signatureService.signApproval({
+      ...signingContext, organizationId: otherOrg.id,
+    }, {
+      organizationId: org.id, versionId: ids[0], expectedLockVersion: 1,
+      password: signingPassword, confirmed: true,
+    })).rejects.toThrow("Access denied");
     const signedAt = new Date();
     const approvalPayload = { ...pendingSignature, signedAt };
     const payloadHash = hashApprovalPayload(approvalPayload);
-    const approved = await new PrismaApprovalSignatureStore().commitApproval({
-      ...approvalPayload,
-      expectedLockVersion: 1,
-      payloadHash,
-      authenticationValidUntil: new Date(signedAt.getTime() + 300_000),
+    const approved = await signatureService.signApproval(signingContext, {
+      organizationId: org.id, versionId: ids[0], expectedLockVersion: 1,
+      password: signingPassword, confirmed: true,
     });
     expect(approved?.signatureId).toBeTruthy();
     expect(await db.documentVersion.findUniqueOrThrow({
@@ -280,8 +310,8 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       where: { organizationId: org.id, documentVersionId: ids[0] },
     });
     expect(signature).toMatchObject({
-      id: approved!.signatureId, signerUserId: finalApprover.id,
-      workflowInstanceId: workflow.id, meaning: "APPROVED", payloadHash,
+      id: approved.signatureId, signerUserId: finalApprover.id,
+      workflowInstanceId: workflow.id, meaning: "APPROVED",
     });
     const auth = await db.authenticationEvent.findUniqueOrThrow({
       where: { id: signature.authenticationEventId },
@@ -295,7 +325,7 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     });
     expect(approvalAudit.actorUserId).toBe(finalApprover.id);
     expect(approvalAudit.metadata).toMatchObject({
-      signatureId: signature.id, authenticationEventId: auth.id, payloadHash,
+      signatureId: signature.id, authenticationEventId: auth.id, payloadHash: signature.payloadHash,
     });
     expect(await db.workflowInstance.findUniqueOrThrow({
       where: { id: workflow.id }, select: { state: true, status: true },
@@ -309,7 +339,7 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       authenticationValidUntil: new Date(signedAt.getTime() + 300_000),
     })).toBeNull();
     expect(await db.electronicSignature.count({ where: { organizationId: org.id } })).toBe(1);
-    expect(await db.authenticationEvent.count({ where: { organizationId: org.id } })).toBe(1);
+    expect(await db.authenticationEvent.count({ where: { organizationId: org.id } })).toBe(2);
     // CI destroys this entire disposable PostgreSQL service after the job.
   }, 60000);
 });
