@@ -172,6 +172,36 @@ describe("synthetic demo documents through QMS DocumentCommandService", () => {
     expect(applyTransition).not.toHaveBeenCalled();
   });
 
+  it("rejects a final approver who is also an assigned reviewer", async () => {
+    const findVersion = vi.fn(async () => ({
+      id: "00000000-0000-4000-8000-000000000001",
+      organizationId: "00000000-0000-4000-8000-000000000004",
+      documentId: "00000000-0000-4000-8000-000000000002",
+      status: "DRAFT" as const,
+      lockVersion: 0,
+    }));
+    const applyTransition = vi.fn();
+    const service = new DocumentCommandService({
+      findVersion, applyTransition,
+    } as unknown as DocumentLifecycleStore);
+    const context: AuthorizationContext = {
+      userId: "00000000-0000-4000-8000-000000000003",
+      organizationId: "00000000-0000-4000-8000-000000000004",
+      userState: "ACTIVE",
+      grants: [{ permission: "document.submit", scopeType: "ORGANIZATION", scopeId: null }],
+    };
+    const reviewerId = "00000000-0000-4000-8000-000000000006";
+    await expect(service.transition(context, {
+      organizationId: context.organizationId,
+      versionId: "00000000-0000-4000-8000-000000000001",
+      command: "SUBMIT",
+      expectedLockVersion: 0,
+      reviewStages: [{ reviewerUserId: reviewerId, dueAt: new Date("2099-01-01T00:00:00Z") }],
+      approverUserId: reviewerId,
+    })).rejects.toThrow("The final approver must be distinct from the reviewers");
+    expect(applyTransition).not.toHaveBeenCalled();
+  });
+
   it("blocks direct approval without the electronic signature pathway", async () => {
     const store = { findVersion: vi.fn() } as unknown as DocumentLifecycleStore;
     const service = new DocumentCommandService(store);
