@@ -40,11 +40,17 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - name: Install PostgreSQL client and dependencies
+      - name: Provide psql from disposable PostgreSQL image without apt repositories
         run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
-          npm ci
+          mkdir -p "$RUNNER_TEMP/demo-pg-bin"
+          cat > "$RUNNER_TEMP/demo-pg-bin/psql" <<'SH'
+          #!/bin/sh
+          exec docker run --rm -i --network host postgres:17-alpine psql "$@"
+          SH
+          chmod +x "$RUNNER_TEMP/demo-pg-bin/psql"
+          echo "$RUNNER_TEMP/demo-pg-bin" >> "$GITHUB_PATH"
+      - name: Install Node dependencies
+        run: npm ci
       - name: Apply actual QMS Prisma migrations to isolated PostgreSQL
         run: npx prisma migrate deploy
       - name: Verify migrated schema and execute rollback-safe SQL integration tests
