@@ -450,6 +450,61 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       command: "MAKE_EFFECTIVE", expectedLockVersion: 2,
     })).rejects.toThrow("The document version changed; reload before retrying");
     expect(publishedEvents).toHaveLength(1);
+    // Retirement is restricted, requires a reason, and atomically clears the
+    // active pointer and cancels the pending periodic-review task.
+    const retireContext: AuthorizationContext = {
+      userId: actor.id, organizationId: org.id, userState: "ACTIVE",
+      grants: [{ permission: "document.retire", scopeType: "ORGANIZATION", scopeId: null }],
+    };
+    await expect(effectiveService.transition({
+      ...retireContext, grants: [],
+    }, {
+      organizationId: org.id, versionId: ids[0],
+      command: "RETIRE", expectedLockVersion: 3, reason: "Synthetic retirement",
+    })).rejects.toThrow("Access denied");
+    await expect(effectiveService.transition({
+      ...retireContext, organizationId: otherOrg.id,
+    }, {
+      organizationId: org.id, versionId: ids[0],
+      command: "RETIRE", expectedLockVersion: 3, reason: "Synthetic retirement",
+    })).rejects.toThrow("Access denied");
+    await expect(effectiveService.transition(retireContext, {
+      organizationId: org.id, versionId: ids[0],
+      command: "RETIRE", expectedLockVersion: 3,
+    })).rejects.toThrow("A retirement reason is required");
+    expect(await db.documentReviewTask.count({
+      where: { organizationId: org.id, documentVersionId: ids[0], status: "PENDING" },
+    })).toBe(1);
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[0] }, select: { status: true, lockVersion: true },
+    })).toEqual({ status: "EFFECTIVE", lockVersion: 3 });
+    const retired = await effectiveService.transition(retireContext, {
+      organizationId: org.id, versionId: ids[0],
+      command: "RETIRE", expectedLockVersion: 3, reason: "Synthetic retirement",
+    });
+    expect(retired).toMatchObject({ status: "RETIRED", lockVersion: 4 });
+    expect(await db.document.findUniqueOrThrow({
+      where: { id: submitted.documentId },
+      select: { currentVersionId: true, lifecycleState: true },
+    })).toEqual({ currentVersionId: null, lifecycleState: "RETIRED" });
+    expect(await db.documentReviewTask.count({
+      where: { organizationId: org.id, documentVersionId: ids[0], status: "CANCELLED" },
+    })).toBe(1);
+    const retireAudit = await db.auditEvent.findFirstOrThrow({
+      where: { organizationId: org.id, entityId: ids[0], action: "DOCUMENT_VERSION_RETIRE" },
+    });
+    expect(retireAudit).toMatchObject({
+      actorUserId: actor.id, reason: "Synthetic retirement",
+    });
+    expect(retireAudit.metadata).toMatchObject({ from: "EFFECTIVE", to: "RETIRED" });
+    await expect(effectiveService.transition(retireContext, {
+      organizationId: org.id, versionId: ids[0],
+      command: "RETIRE", expectedLockVersion: 3, reason: "Replay",
+    })).rejects.toThrow("The document version changed; reload before retrying");
+    expect(await db.auditEvent.count({
+      where: { organizationId: org.id, entityId: ids[0], action: "DOCUMENT_VERSION_RETIRE" },
+    })).toBe(1);
+    expect(publishedEvents).toHaveLength(1);
     // CI destroys this entire disposable PostgreSQL service after the job.
   }, 60000);
 });
