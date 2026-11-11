@@ -573,6 +573,72 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     expect(await db.auditEvent.count({
       where: { organizationId: org.id, action: "DOCUMENT_SUCCESSOR_REVISION_CREATED" },
     })).toBe(1);
+    // Supersession store integration: seed two synthetic versions at the
+    // post-signature boundary, then exercise the real publication transaction.
+    // This deliberately does not claim to test a second signature ceremony.
+    const supersessionSource = await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[1] },
+    });
+    await db.documentVersion.update({
+      where: { id: ids[1] },
+      data: { status: "EFFECTIVE", lockVersion: 3, effectiveAt: new Date() },
+    });
+    await db.document.update({
+      where: { id: supersessionSource.documentId },
+      data: { currentVersionId: ids[1], lifecycleState: "ACTIVE" },
+    });
+    const supersessionSuccessor = await db.documentVersion.create({
+      data: {
+        organizationId: org.id, documentId: supersessionSource.documentId,
+        authoredByUserId: actor.id, versionNumber: 2, revisionLabel: "2.0",
+        contentHash: supersessionSource.contentHash,
+        contentText: supersessionSource.contentText,
+        changeSummary: "Synthetic approved successor for supersession transaction test",
+        status: "APPROVED", lockVersion: 2,
+      },
+    });
+    const publishedBeforeSupersession = publishedEvents.length;
+    const publishedSuccessor = await effectiveService.transition(effectiveContext, {
+      organizationId: org.id, versionId: supersessionSuccessor.id,
+      command: "MAKE_EFFECTIVE", expectedLockVersion: 2,
+    });
+    expect(publishedSuccessor).toMatchObject({ status: "EFFECTIVE", lockVersion: 3 });
+    const previousPublishedVersion = await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[1] },
+      select: { status: true, lockVersion: true, supersededAt: true },
+    });
+    expect(previousPublishedVersion).toMatchObject({
+      status: "SUPERSEDED", lockVersion: 4,
+    });
+    expect(previousPublishedVersion.supersededAt).toBeInstanceOf(Date);
+    expect(await db.document.findUniqueOrThrow({
+      where: { id: supersessionSource.documentId },
+      select: { currentVersionId: true, lifecycleState: true },
+    })).toEqual({
+      currentVersionId: supersessionSuccessor.id, lifecycleState: "ACTIVE",
+    });
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: supersessionSuccessor.id },
+      select: { status: true, lockVersion: true },
+    })).toEqual({ status: "EFFECTIVE", lockVersion: 3 });
+    expect(await db.documentReviewTask.count({
+      where: {
+        organizationId: org.id, documentVersionId: supersessionSuccessor.id,
+        status: "PENDING",
+      },
+    })).toBe(1);
+    expect(await db.auditEvent.count({
+      where: {
+        organizationId: org.id, entityId: supersessionSuccessor.id,
+        action: "DOCUMENT_VERSION_MAKE_EFFECTIVE",
+      },
+    })).toBe(1);
+    expect(publishedEvents).toHaveLength(publishedBeforeSupersession + 1);
+    await expect(effectiveService.transition(effectiveContext, {
+      organizationId: org.id, versionId: supersessionSuccessor.id,
+      command: "MAKE_EFFECTIVE", expectedLockVersion: 2,
+    })).rejects.toThrow("The document version changed; reload before retrying");
+    expect(publishedEvents).toHaveLength(publishedBeforeSupersession + 1);
     // CI destroys this entire disposable PostgreSQL service after the job.
   }, 60000);
 });
