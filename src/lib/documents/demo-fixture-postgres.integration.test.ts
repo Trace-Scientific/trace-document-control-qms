@@ -89,6 +89,25 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       changeSummary: "Denied",
     })).rejects.toThrow("Access denied");
     expect(await db.document.count({ where: { organizationId: org.id } })).toBe(6);
+    // A real store transition must fail atomically when the approval workflow is absent.
+    const submitter: AuthorizationContext = {
+      ...context,
+      grants: [{ permission: "document.submit", scopeType: "ORGANIZATION", scopeId: null }],
+    };
+    await expect(service.transition(submitter, {
+      organizationId: org.id,
+      versionId: ids[0],
+      command: "SUBMIT",
+      expectedLockVersion: 0,
+      approverUserId: actor.id,
+    })).rejects.toThrow("An active document-approval workflow is required");
+    const unchanged = await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[0] },
+      select: { status: true, lockVersion: true },
+    });
+    expect(unchanged).toEqual({ status: "DRAFT", lockVersion: 0 });
+    expect(await db.workflowInstance.count({ where: { organizationId: org.id } })).toBe(0);
+    expect(await db.auditEvent.count({ where: { organizationId: org.id } })).toBe(6);
     // CI destroys this entire disposable PostgreSQL service after the job.
   }, 60000);
 });
