@@ -155,6 +155,20 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     expect(await db.workflowInstance.count({ where: { organizationId: org.id } })).toBe(0);
     expect(await db.notificationOutbox.count({ where: { organizationId: org.id } })).toBe(0);
     expect(await db.auditEvent.count({ where: { organizationId: org.id } })).toBe(6);
+    // A publisher with permission cannot bypass signature approval by trying to
+    // make a draft effective. The state machine must reject before DB writes.
+    const earlyPublisher: AuthorizationContext = {
+      ...context,
+      grants: [{ permission: "document.make_effective", scopeType: "ORGANIZATION", scopeId: null }],
+    };
+    await expect(service.transition(earlyPublisher, {
+      organizationId: org.id, versionId: ids[0],
+      command: "MAKE_EFFECTIVE", expectedLockVersion: 0,
+    })).rejects.toThrow("Invalid document transition: DRAFT cannot MAKE_EFFECTIVE");
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[0] }, select: { status: true, lockVersion: true },
+    })).toEqual({ status: "DRAFT", lockVersion: 0 });
+    expect(await db.documentReviewTask.count({ where: { organizationId: org.id } })).toBe(0);
     // Positive-path submission persists review tasks, approval separation and audit atomically.
     const reviewer = await db.user.create({ data: {
       organizationId: org.id, email: "fixture-reviewer@example.invalid",
@@ -228,6 +242,16 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       expectedLockVersion: 0, approverUserId: finalApprover.id,
     })).rejects.toThrow("The document version changed; reload before retrying");
     expect(await db.workflowInstance.count({ where: { organizationId: org.id } })).toBe(1);
+    // A submitted version is not yet approved: publication is forbidden
+    // even for an otherwise authorized publisher.
+    await expect(service.transition(earlyPublisher, {
+      organizationId: org.id, versionId: ids[0],
+      command: "MAKE_EFFECTIVE", expectedLockVersion: 1,
+    })).rejects.toThrow("Invalid document transition: IN_REVIEW cannot MAKE_EFFECTIVE");
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[0] }, select: { status: true, lockVersion: true },
+    })).toEqual({ status: "IN_REVIEW", lockVersion: 1 });
+    expect(await db.documentReviewTask.count({ where: { organizationId: org.id } })).toBe(0);
     // Signing before the review task advances to APPROVAL must roll back every write.
     const pendingSignature = {
       organizationId: org.id,
