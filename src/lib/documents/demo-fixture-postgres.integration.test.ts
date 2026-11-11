@@ -333,6 +333,25 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     expect(await db.workflowTask.count({
       where: { organizationId: org.id, workflowInstanceId: workflow.id, status: "COMPLETED" },
     })).toBe(2);
+    // Service-level replay must be rejected before attempting another signature.
+    await expect(signatureService.signApproval(signingContext, {
+      organizationId: org.id, versionId: ids[0], expectedLockVersion: 1,
+      password: signingPassword, confirmed: true,
+    })).rejects.toThrow("Document is not awaiting approval");
+    await expect(signatureService.signApproval(signingContext, {
+      organizationId: org.id, versionId: ids[0], expectedLockVersion: 2,
+      password: signingPassword, confirmed: true,
+    })).rejects.toThrow("Document is not awaiting approval");
+    // A different tenant's signer cannot read or sign the approved document.
+    await expect(signatureService.signApproval({
+      ...signingContext, organizationId: otherOrg.id,
+    }, {
+      organizationId: otherOrg.id, versionId: ids[0], expectedLockVersion: 2,
+      password: signingPassword, confirmed: true,
+    })).rejects.toThrow("Access denied");
+    expect(await db.electronicSignature.count({
+      where: { organizationId: org.id, documentVersionId: ids[0] },
+    })).toBe(1);
     // A duplicate approval must not create another signature or authentication event.
     expect(await new PrismaApprovalSignatureStore().commitApproval({
       ...approvalPayload, expectedLockVersion: 1, payloadHash,
