@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import { db } from "../db";
 import { DocumentCommandService } from "./service";
 import { PrismaDocumentLifecycleStore } from "./prisma-store";
+import { PrismaApprovalSignatureStore } from "../signatures/prisma-store";
+import { hashApprovalPayload } from "../signatures/payload";
 import type { AuthorizationContext } from "../security/authorization";
 
 const expected = "postgresql://trace_qms_test:local_integration_test_only@127.0.0.1:5433/trace_qms_integration_test?schema=public";
@@ -224,6 +226,30 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       expectedLockVersion: 0, approverUserId: finalApprover.id,
     })).rejects.toThrow("The document version changed; reload before retrying");
     expect(await db.workflowInstance.count({ where: { organizationId: org.id } })).toBe(1);
+    // Signing before the review task advances to APPROVAL must roll back every write.
+    const pendingSignature = {
+      organizationId: org.id,
+      signerUserId: finalApprover.id,
+      documentId: submitted.documentId,
+      documentVersionId: ids[0],
+      revisionLabel: manifest.documents[0].revision,
+      contentHash: versions.find((version) => version.id === ids[0])!.contentHash,
+      signedAt: new Date(),
+    };
+    await expect(new PrismaApprovalSignatureStore().commitApproval({
+      ...pendingSignature,
+      expectedLockVersion: 1,
+      payloadHash: hashApprovalPayload(pendingSignature),
+      authenticationValidUntil: new Date(Date.now() + 300_000),
+    })).rejects.toThrow("An active review workflow is required");
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[0] }, select: { status: true, lockVersion: true },
+    })).toEqual({ status: "IN_REVIEW", lockVersion: 1 });
+    expect(await db.electronicSignature.count({ where: { organizationId: org.id } })).toBe(0);
+    expect(await db.authenticationEvent.count({ where: { organizationId: org.id } })).toBe(0);
+    expect(await db.auditEvent.count({
+      where: { organizationId: org.id, action: "DOCUMENT_VERSION_APPROVED_WITH_SIGNATURE" },
+    })).toBe(0);
     // CI destroys this entire disposable PostgreSQL service after the job.
   }, 60000);
 });
