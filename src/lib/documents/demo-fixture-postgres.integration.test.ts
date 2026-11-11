@@ -130,6 +130,27 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     expect(await store.findVersion(org.id, ids[0])).toMatchObject({
       id: ids[0], organizationId: org.id, status: "DRAFT",
     });
+    // Optimistic concurrency must reject stale commands before any workflow writes.
+    await expect(service.transition(submitter, {
+      organizationId: org.id,
+      versionId: ids[0],
+      command: "SUBMIT",
+      expectedLockVersion: 1,
+      approverUserId: actor.id,
+    })).rejects.toThrow("The document version changed; reload before retrying");
+    // Cross-tenant submission is rejected before the database transition path.
+    await expect(service.transition({
+      ...submitter, organizationId: otherOrg.id,
+    }, {
+      organizationId: org.id,
+      versionId: ids[0],
+      command: "SUBMIT",
+      expectedLockVersion: 0,
+      approverUserId: actor.id,
+    })).rejects.toThrow("Access denied");
+    expect(await db.workflowInstance.count({ where: { organizationId: org.id } })).toBe(0);
+    expect(await db.notificationOutbox.count({ where: { organizationId: org.id } })).toBe(0);
+    expect(await db.auditEvent.count({ where: { organizationId: org.id } })).toBe(6);
     // CI destroys this entire disposable PostgreSQL service after the job.
   }, 60000);
 });
