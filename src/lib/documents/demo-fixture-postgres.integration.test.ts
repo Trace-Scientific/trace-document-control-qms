@@ -359,6 +359,55 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     })).toBeNull();
     expect(await db.electronicSignature.count({ where: { organizationId: org.id } })).toBe(1);
     expect(await db.authenticationEvent.count({ where: { organizationId: org.id } })).toBe(2);
+    // Effective publication requires a configured review interval; failed
+    // publication must not change document state or create a review task.
+    const effectiveContext: AuthorizationContext = {
+      userId: actor.id, organizationId: org.id, userState: "ACTIVE",
+      grants: [{ permission: "document.make_effective", scopeType: "ORGANIZATION", scopeId: null }],
+    };
+    const publishedEvents: Array<{ eventName: string; eventId: string }> = [];
+    const effectiveService = new DocumentCommandService(
+      new PrismaDocumentLifecycleStore(), () => new Date(),
+      async (event) => { publishedEvents.push({ eventName: event.eventName, eventId: event.eventId }); },
+    );
+    await expect(effectiveService.transition(effectiveContext, {
+      organizationId: org.id, versionId: ids[0],
+      command: "MAKE_EFFECTIVE", expectedLockVersion: 2,
+    })).rejects.toThrow("A positive review interval is required");
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[0] }, select: { status: true, lockVersion: true },
+    })).toEqual({ status: "APPROVED", lockVersion: 2 });
+    expect(await db.documentReviewTask.count({ where: { organizationId: org.id } })).toBe(0);
+    expect(publishedEvents).toHaveLength(0);
+    await db.documentType.update({ where: { id: type.id }, data: { reviewMonths: 12 } });
+    const effective = await effectiveService.transition(effectiveContext, {
+      organizationId: org.id, versionId: ids[0],
+      command: "MAKE_EFFECTIVE", expectedLockVersion: 2,
+    });
+    expect(effective).toMatchObject({ status: "EFFECTIVE", lockVersion: 3 });
+    const effectiveVersion = await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[0] },
+    });
+    expect(effectiveVersion.status).toBe("EFFECTIVE");
+    expect(effectiveVersion.effectiveAt).toBeInstanceOf(Date);
+    expect(effectiveVersion.reviewDueAt).toBeInstanceOf(Date);
+    expect(await db.document.findUniqueOrThrow({
+      where: { id: submitted.documentId }, select: { currentVersionId: true, lifecycleState: true },
+    })).toMatchObject({ currentVersionId: ids[0], lifecycleState: "ACTIVE" });
+    expect(await db.documentReviewTask.count({
+      where: { organizationId: org.id, documentVersionId: ids[0], status: "PENDING" },
+    })).toBe(1);
+    expect(await db.auditEvent.count({
+      where: { organizationId: org.id, entityId: ids[0], action: "DOCUMENT_VERSION_MAKE_EFFECTIVE" },
+    })).toBe(1);
+    expect(publishedEvents).toEqual([{
+      eventName: "document.effective", eventId: `document.effective:${ids[0]}`,
+    }]);
+    await expect(effectiveService.transition(effectiveContext, {
+      organizationId: org.id, versionId: ids[0],
+      command: "MAKE_EFFECTIVE", expectedLockVersion: 2,
+    })).rejects.toThrow("The document version changed; reload before retrying");
+    expect(publishedEvents).toHaveLength(1);
     // CI destroys this entire disposable PostgreSQL service after the job.
   }, 60000);
 });
