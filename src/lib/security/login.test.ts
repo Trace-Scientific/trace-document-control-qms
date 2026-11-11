@@ -48,6 +48,28 @@ describe("login session lifecycle", () => {
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
+  it("rejects inactive organizations without looking up users or issuing sessions", async () => {
+    mocks.organization.findUnique.mockResolvedValue({ id: "org-1", active: false });
+    await expect(login({ organizationCode: "orange-county-labs", email: "admin@example.com", password: "correct horse battery staple", now })).rejects.toBeInstanceOf(LoginRejectedError);
+    expect(mocks.user.findUnique).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects inactive users and records a failed login without issuing sessions", async () => {
+    mocks.user.findUnique.mockResolvedValue({ ...user, status: "INACTIVE" });
+    await expect(login({ organizationCode: "orange-county-labs", email: "admin@example.com", password: "correct horse battery staple", now })).rejects.toBeInstanceOf(LoginRejectedError);
+    expect(mocks.authenticationEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ eventType: "LOGIN_FAILURE", outcome: "FAILURE" }),
+    }));
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects disabled password credentials without issuing sessions", async () => {
+    mocks.user.findUnique.mockResolvedValue({ ...user, credential: { ...user.credential, disabledAt: now } });
+    await expect(login({ organizationCode: "orange-county-labs", email: "admin@example.com", password: "correct horse battery staple", now })).rejects.toBeInstanceOf(LoginRejectedError);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
   it("temporarily throttles after five recent failures", async () => {
     mocks.authenticationEvent.count.mockResolvedValue(5);
     await expect(login({ organizationCode: "orange-county-labs", email: "admin@example.com", password: "correct horse battery staple", now })).rejects.toMatchObject({ throttled: true });
