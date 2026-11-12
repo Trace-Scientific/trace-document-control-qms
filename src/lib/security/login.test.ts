@@ -73,6 +73,15 @@ describe("login session lifecycle", () => {
     }));
   });
 
+  it("fails closed for MFA-enabled users until second-factor verification exists", async () => {
+    mocks.user.findUnique.mockResolvedValue({ ...user, mfaEnabled: true });
+    await expect(login({ organizationCode: "orange-county-labs", email: "admin@example.com", password: "correct horse battery staple", now })).rejects.toBeInstanceOf(LoginRejectedError);
+    expect(mocks.authenticationEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ eventType: "LOGIN_FAILURE", outcome: "FAILURE", metadata: { reason: "mfa_required" } }),
+    }));
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
   it("records a generic failure and does not create a session", async () => {
     await expect(login({ organizationCode: "orange-county-labs", email: "admin@example.com", password: "wrong", now })).rejects.toBeInstanceOf(LoginRejectedError);
     expect(mocks.authenticationEvent.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ eventType: "LOGIN_FAILURE", outcome: "FAILURE" }) }));
