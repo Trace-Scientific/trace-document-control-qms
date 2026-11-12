@@ -42,6 +42,37 @@ describe("login session lifecycle", () => {
     expect(tx.authenticationEvent.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ eventType: "LOGIN", outcome: "SUCCESS" }) }));
   });
 
+  it("does not issue a session when the authentication transaction fails", async () => {
+    const tx = {
+      authenticationEvent: { create: vi.fn().mockResolvedValue({ id: "event-1" }) },
+      session: { create: vi.fn().mockRejectedValue(new Error("session storage unavailable")) },
+      user: { update: vi.fn() },
+    };
+    mocks.transaction.mockImplementation((work) => work(tx));
+    await expect(login({ organizationCode: "orange-county-labs", email: "admin@example.com", password: "correct horse battery staple", now })).rejects.toThrow("session storage unavailable");
+    expect(tx.user.update).not.toHaveBeenCalled();
+  });
+
+  it("sets the session idle and absolute expiration boundaries at login", async () => {
+    const tx = {
+      authenticationEvent: { create: vi.fn().mockResolvedValue({ id: "event-1" }) },
+      session: { create: vi.fn().mockResolvedValue({ id: "session-1" }) },
+      user: { update: vi.fn().mockResolvedValue(user) },
+    };
+    mocks.transaction.mockImplementation((work) => work(tx));
+    const result = await login({ organizationCode: "orange-county-labs", email: "admin@example.com", password: "correct horse battery staple", now });
+    expect(result.absoluteExpiresAt).toEqual(new Date("2026-08-28T00:00:00.000Z"));
+    expect(tx.session.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        createdAt: now,
+        lastSeenAt: now,
+        idleExpiresAt: new Date("2026-08-27T12:30:00.000Z"),
+        absoluteExpiresAt: result.absoluteExpiresAt,
+        authenticationEventId: "event-1",
+      }),
+    }));
+  });
+
   it("records a generic failure and does not create a session", async () => {
     await expect(login({ organizationCode: "orange-county-labs", email: "admin@example.com", password: "wrong", now })).rejects.toBeInstanceOf(LoginRejectedError);
     expect(mocks.authenticationEvent.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ eventType: "LOGIN_FAILURE", outcome: "FAILURE" }) }));
