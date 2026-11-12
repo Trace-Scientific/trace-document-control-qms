@@ -69,6 +69,15 @@ export async function login(input: {
     throw new LoginRejectedError();
   }
 
+  // Fail closed: this password-only endpoint must not issue a session for MFA-enrolled users.
+  // A verified second-factor flow must be implemented before such accounts can sign in.
+  if (user.mfaEnabled) {
+    await db.authenticationEvent.create({
+      data: { ...commonEvent, eventType: "LOGIN_FAILURE", outcome: "FAILURE", occurredAt: now, metadata: { reason: "mfa_required" } },
+    });
+    throw new LoginRejectedError();
+  }
+
   const token = generateOpaqueToken();
   const absoluteExpiresAt = new Date(now.getTime() + ABSOLUTE_MS);
   await db.$transaction(async (transaction) => {
