@@ -8,7 +8,7 @@ describe("TOTP verifier primitive", () => {
   it("accepts RFC 6238 SHA-1 reference counters at six digits", () => {
     expect(verifyTotpCode({ secret, code: "287082", now: new Date(59_000), allowedDriftSteps: 0 })).toBe(1);
     expect(verifyTotpCode({ secret, code: "081804", now: new Date(1_111_111_109_000), allowedDriftSteps: 0 })).toBe(37037036);
-    expect(verifyTotpCode({ secret, code: "050471", now: new Date(1_234_567_890_000), allowedDriftSteps: 0 })).toBe(41152263);
+    expect(verifyTotpCode({ secret, code: "005924", now: new Date(1_234_567_890_000), allowedDriftSteps: 0 })).toBe(41152263);
   });
   it("rejects wrong, malformed, and too-short secrets", () => {
     expect(verifyTotpCode({ secret, code: "000000", now: new Date(59_000), allowedDriftSteps: 0 })).toBeNull();
