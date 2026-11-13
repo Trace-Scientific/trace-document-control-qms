@@ -37,6 +37,7 @@ model Organization {
   authenticationEvents AuthenticationEvent[]
   sessions             Session[]
   pendingMfaChallenges  PendingMfaChallenge[]
+  totpFactors           MfaTotpFactor[]
   documentReviews      DocumentReviewTask[]
   reviewEscalations    DocumentReviewEscalation[]
   notifications        NotificationOutbox[]
@@ -101,6 +102,7 @@ model User {
   authenticationEvents     AuthenticationEvent[]
   sessions                 Session[]                  @relation("SessionUser")
   pendingMfaChallenges     PendingMfaChallenge[]
+  totpFactor               MfaTotpFactor?
   revokedSessions          Session[]                  @relation("SessionRevoker")
   completedDocumentReviews DocumentReviewTask[]       @relation("ReviewCompleter")
   assignedDocumentReviews  DocumentReviewTask[]       @relation("ReviewAssignee")
@@ -648,6 +650,26 @@ enum AuthenticationMethod {
 
 // Short-lived MFA challenge state. No QMS session is issued until second-factor
 // verification succeeds and this challenge is atomically consumed.
+// Encrypted TOTP enrollment material only. The encryption key must never be
+// stored in this table; lastUsedStep is a replay-prevention high-water mark.
+model MfaTotpFactor {
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @db.Uuid
+  userId          String       @unique @db.Uuid
+  encryptedSecret String
+  keyVersion      String
+  enrolledAt      DateTime     @default(now()) @db.Timestamptz(3)
+  verifiedAt      DateTime?    @db.Timestamptz(3)
+  disabledAt      DateTime?    @db.Timestamptz(3)
+  lastUsedStep    BigInt?
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user            User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, userId])
+  @@index([organizationId, verifiedAt, disabledAt])
+}
+
 model PendingMfaChallenge {
   id             String       @id @default(uuid()) @db.Uuid
   organizationId String       @db.Uuid
