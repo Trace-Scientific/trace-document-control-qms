@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { startMfaChallenge } from "./mfa-challenge-issuance";
 import { generateOpaqueToken, hashOpaqueToken, verifyPassword } from "./crypto";
 
 const FAILURE_WINDOW_MS = 15 * 60 * 1000;
@@ -69,13 +70,22 @@ export async function login(input: {
     throw new LoginRejectedError();
   }
 
-  // Fail closed: this password-only endpoint must not issue a session for MFA-enrolled users.
-  // A verified second-factor flow must be implemented before such accounts can sign in.
+  // An MFA account receives only a short-lived challenge, never a session.
+  // Enrollment is required before a challenge can be issued.
   if (user.mfaEnabled) {
-    await db.authenticationEvent.create({
-      data: { ...commonEvent, eventType: "LOGIN_FAILURE", outcome: "FAILURE", occurredAt: now, metadata: { reason: "mfa_required" } },
+    const factor = await db.mfaTotpFactor.findUnique({
+      where: { organizationId_userId: { organizationId: organization.id, userId: user.id } },
     });
-    throw new LoginRejectedError();
+    if (!factor?.verifiedAt || factor.disabledAt) {
+      await db.authenticationEvent.create({
+        data: { ...commonEvent, eventType: "LOGIN_FAILURE", outcome: "FAILURE", occurredAt: now, metadata: { reason: "mfa_unavailable" } },
+      });
+      throw new LoginRejectedError();
+    }
+    const challenge = await db.$transaction((transaction) => startMfaChallenge({
+      transaction, organizationId: organization.id, userId: user.id, now,
+    }));
+    return { mfaRequired: true as const, ...challenge, user: { id: user.id, firstName: user.firstName, lastName: user.lastName } };
   }
 
   const token = generateOpaqueToken();
@@ -99,6 +109,6 @@ export async function login(input: {
     await transaction.user.update({ where: { id: user.id }, data: { lastLoginAt: now } });
   });
 
-  return { token, absoluteExpiresAt, user: { id: user.id, firstName: user.firstName, lastName: user.lastName } };
+  return { mfaRequired: false as const, token, absoluteExpiresAt, user: { id: user.id, firstName: user.firstName, lastName: user.lastName } };
 }
 
