@@ -21,12 +21,9 @@ export interface EnrollmentConfirmationTransaction {
       where: { id: string; organizationId: string; userId: string;
         verifiedAt: null; disabledAt: null; enrolledAt: { gte: Date; lte: Date };
         enrollmentFailedAttempts: { lt: number } };
-      data: { verifiedAt: Date; lastUsedStep: bigint };
+      data: { verifiedAt: Date; lastUsedStep: bigint } | { enrollmentFailedAttempts: { increment: number } };
     }): Promise<{ count: number }>;
-    update(args: {
-      where: { id: string };
-      data: { enrollmentFailedAttempts: { increment: number } };
-    }): Promise<unknown>;
+
   };
   user: {
     updateMany(args: {
@@ -64,8 +61,10 @@ export async function confirmTotpEnrollmentInTransaction(input: {
     secret.fill(0);
   }
   if (step === null) {
-    await transaction.mfaTotpFactor.update({
-      where: { id: factor.id },
+    await transaction.mfaTotpFactor.updateMany({
+      where: { id: factor.id, organizationId, userId, verifiedAt: null, disabledAt: null,
+        enrolledAt: { gte: new Date(now.getTime() - MFA_ENROLLMENT_TTL_MS), lte: now },
+        enrollmentFailedAttempts: { lt: MAX_MFA_ENROLLMENT_FAILURES } },
       data: { enrollmentFailedAttempts: { increment: 1 } },
     });
     return false;
