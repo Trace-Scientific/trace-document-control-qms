@@ -1,6 +1,8 @@
 import { decryptTotpSecret } from "./mfa-totp-encryption";
 import { verifyTotpCode } from "./mfa-totp";
 
+export const MFA_ENROLLMENT_TTL_MS = 10 * 60 * 1000;
+
 // Internal only: the caller must establish a recent, authenticated
 // reauthentication event before invoking this transaction-scoped operation.
 // Both writes must commit together; failure must roll back the transaction.
@@ -10,12 +12,12 @@ export interface EnrollmentConfirmationTransaction {
       organizationId: string; userId: string;
     } } }): Promise<{
       id: string; organizationId: string; userId: string;
-      encryptedSecret: string; keyVersion: string;
+      encryptedSecret: string; keyVersion: string; enrolledAt: Date;
       verifiedAt: Date | null; disabledAt: Date | null;
     } | null>;
     updateMany(args: {
       where: { id: string; organizationId: string; userId: string;
-        verifiedAt: null; disabledAt: null };
+        verifiedAt: null; disabledAt: null; enrolledAt: { gte: Date; lte: Date } };
       data: { verifiedAt: Date; lastUsedStep: bigint };
     }): Promise<{ count: number }>;
   };
@@ -39,7 +41,10 @@ export async function confirmTotpEnrollmentInTransaction(input: {
     where: { organizationId_userId: { organizationId, userId } },
   });
   if (!factor || factor.organizationId !== organizationId || factor.userId !== userId ||
-      factor.verifiedAt !== null || factor.disabledAt !== null) return false;
+      factor.verifiedAt !== null || factor.disabledAt !== null ||
+      !Number.isFinite(factor.enrolledAt.getTime()) ||
+      factor.enrolledAt.getTime() > now.getTime() ||
+      now.getTime() - factor.enrolledAt.getTime() > MFA_ENROLLMENT_TTL_MS) return false;
   const secret = decryptTotpSecret({
     encryptedSecret: factor.encryptedSecret, organizationId, userId,
     keyVersion: factor.keyVersion, encryptionKeyBase64,
@@ -52,7 +57,8 @@ export async function confirmTotpEnrollmentInTransaction(input: {
   }
   if (step === null) return false;
   const reserved = await transaction.mfaTotpFactor.updateMany({
-    where: { id: factor.id, organizationId, userId, verifiedAt: null, disabledAt: null },
+    where: { id: factor.id, organizationId, userId, verifiedAt: null, disabledAt: null,
+      enrolledAt: { gte: new Date(now.getTime() - MFA_ENROLLMENT_TTL_MS), lte: now } },
     data: { verifiedAt: now, lastUsedStep: BigInt(step) },
   });
   if (reserved.count !== 1) return false;
