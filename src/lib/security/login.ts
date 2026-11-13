@@ -85,7 +85,7 @@ export async function login(input: {
     const challenge = await db.$transaction((transaction) => startMfaChallenge({
       transaction, organizationId: organization.id, userId: user.id, now,
     }));
-    return { mfaRequired: true as const, ...challenge, user: { id: user.id, firstName: user.firstName, lastName: user.lastName } };
+    return { mfaRequired: true as const, token: undefined, absoluteExpiresAt: undefined, ...challenge, user: { id: user.id, firstName: user.firstName, lastName: user.lastName } };
   }
 
   const token = generateOpaqueToken();
