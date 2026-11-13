@@ -18,7 +18,10 @@ export async function POST(request: NextRequest) {
       ipAddressHash: fingerprint(request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null),
       userAgentHash: fingerprint(request.headers.get("user-agent")),
     });
-    const response = NextResponse.json({ data: { user: result.user } });
+    if (result.mfaRequired) {
+      return NextResponse.json({ data: { mfaRequired: true, challengeToken: result.challengeToken, expiresAt: result.expiresAt } });
+    }
+    const response = NextResponse.json({ data: { user: result.user, mfaRequired: false } });
     response.cookies.set("qms_session", result.token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
