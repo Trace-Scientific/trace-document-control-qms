@@ -20,7 +20,7 @@ function setup() {
         encryptedSecret: encryptTotpSecret({
           secret, organizationId, userId, keyVersion: "v1", encryptionKeyBase64,
         }),
-        keyVersion: "v1", verifiedAt: null, disabledAt: null,
+        keyVersion: "v1", enrolledAt: new Date(now.getTime() - 60_000), verifiedAt: null, disabledAt: null,
       }),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
@@ -33,7 +33,8 @@ describe("TOTP enrollment confirmation", () => {
     const { transaction, input } = setup();
     expect(await confirmTotpEnrollmentInTransaction(input)).toBe(true);
     expect(transaction.mfaTotpFactor.updateMany).toHaveBeenCalledWith({
-      where: { id: "factor-a", organizationId, userId, verifiedAt: null, disabledAt: null },
+      where: { id: "factor-a", organizationId, userId, verifiedAt: null, disabledAt: null,
+        enrolledAt: { gte: new Date(now.getTime() - 600_000), lte: now } },
       data: { verifiedAt: now, lastUsedStep: BigInt(Math.floor(now.getTime() / 30000)) },
     });
     expect(transaction.user.updateMany).toHaveBeenCalledWith({
@@ -52,6 +53,25 @@ describe("TOTP enrollment confirmation", () => {
     transaction.mfaTotpFactor.findUnique.mockResolvedValueOnce({
       ...(await transaction.mfaTotpFactor.findUnique({ where: { organizationId_userId: { organizationId, userId } } })),
       verifiedAt: now,
+    });
+    expect(await confirmTotpEnrollmentInTransaction(input)).toBe(false);
+    expect(transaction.user.updateMany).not.toHaveBeenCalled();
+  });
+  it("rejects expired pending enrollment without activating MFA", async () => {
+    const { transaction, input } = setup();
+    const factor = await transaction.mfaTotpFactor.findUnique({ where: { organizationId_userId: { organizationId, userId } } });
+    transaction.mfaTotpFactor.findUnique.mockResolvedValueOnce({
+      ...factor, enrolledAt: new Date(now.getTime() - 600_001),
+    });
+    expect(await confirmTotpEnrollmentInTransaction(input)).toBe(false);
+    expect(transaction.mfaTotpFactor.updateMany).not.toHaveBeenCalled();
+    expect(transaction.user.updateMany).not.toHaveBeenCalled();
+  });
+  it("rejects a factor with a future enrollment timestamp", async () => {
+    const { transaction, input } = setup();
+    const factor = await transaction.mfaTotpFactor.findUnique({ where: { organizationId_userId: { organizationId, userId } } });
+    transaction.mfaTotpFactor.findUnique.mockResolvedValueOnce({
+      ...factor, enrolledAt: new Date(now.getTime() + 1),
     });
     expect(await confirmTotpEnrollmentInTransaction(input)).toBe(false);
     expect(transaction.user.updateMany).not.toHaveBeenCalled();
