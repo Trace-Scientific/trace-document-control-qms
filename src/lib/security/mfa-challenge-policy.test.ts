@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { evaluateMfaChallenge, mfaChallengeExpiresAt, MFA_CHALLENGE_MAX_ATTEMPTS } from "./mfa-challenge-policy";
+import { evaluateMfaChallenge, mfaChallengeExpiresAt, MFA_CHALLENGE_MAX_ATTEMPTS, type PendingMfaChallenge } from "./mfa-challenge-policy";
 
 const now = new Date("2026-11-13T12:00:00.000Z");
-const base = { organizationId: "org-a", userId: "user-a", expiresAt: new Date(now.getTime() + 60_000), consumedAt: null, failedAttempts: 0 };
+const base: PendingMfaChallenge = { organizationId: "org-a", userId: "user-a", expiresAt: new Date(now.getTime() + 60_000), consumedAt: null, failedAttempts: 0 };
 const check = (challenge = base, organizationId = "org-a", userId = "user-a") =>
   evaluateMfaChallenge({ challenge, organizationId, userId, now });
 
