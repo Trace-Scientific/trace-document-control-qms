@@ -23,7 +23,6 @@ function setup() {
         keyVersion: "v1", enrolledAt: new Date(now.getTime() - 60_000), verifiedAt: null, disabledAt: null, enrollmentFailedAttempts: 0,
       }),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-      update: vi.fn().mockResolvedValue({}),
     },
     user: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
   };
@@ -90,8 +89,10 @@ describe("TOTP enrollment confirmation", () => {
     const { transaction, input } = setup();
     const wrong = code === "000000" ? "999999" : "000000";
     expect(await confirmTotpEnrollmentInTransaction({ ...input, code: wrong })).toBe(false);
-    expect(transaction.mfaTotpFactor.update).toHaveBeenCalledWith({
-      where: { id: "factor-a" },
+    expect(transaction.mfaTotpFactor.updateMany).toHaveBeenCalledWith({
+      where: { id: "factor-a", organizationId, userId, verifiedAt: null, disabledAt: null,
+        enrolledAt: { gte: new Date(now.getTime() - 600_000), lte: now },
+        enrollmentFailedAttempts: { lt: 5 } },
       data: { enrollmentFailedAttempts: { increment: 1 } },
     });
     expect(transaction.user.updateMany).not.toHaveBeenCalled();
