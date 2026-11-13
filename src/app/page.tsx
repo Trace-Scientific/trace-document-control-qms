@@ -130,6 +130,11 @@ export default async function HomePage() {
 
   return (
     <>
+      {process.env.QMS_MFA_ENROLLMENT_ENABLED === "true" && (
+        <nav aria-label="Account security" style={{ padding: "0.75rem 1.5rem" }}>
+          <a href="/settings/security">Set up authenticator security</a>
+        </nav>
+      )}
       <DashboardVisibilityGate />
       <DocumentControlDashboard
         developmentPreview={process.env.DEPLOYMENT_TIER === "development-preview"}
