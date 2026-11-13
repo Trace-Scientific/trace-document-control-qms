@@ -38,7 +38,7 @@ beforeEach(() => {
     organizationId: "org-a", userId: "user-a",
   });
   vi.mocked(confirmTotpEnrollmentInTransaction).mockResolvedValue(true);
-  vi.mocked(db.$transaction).mockImplementation(async (callback: never) => callback({}));
+  vi.mocked(db.$transaction).mockImplementation(async (callback) => callback({} as Parameters<typeof callback>[0]));
 });
 afterEach(() => {
   delete process.env.QMS_MFA_ENROLLMENT_ENABLED;
