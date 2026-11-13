@@ -4,12 +4,13 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { prepareTotpEnrollment } from "@/lib/security/mfa-enrollment";
 import { reauthenticateForMfaEnrollment } from "@/lib/security/mfa-enrollment-reauth";
+import { storePendingTotpEnrollment, type PendingEnrollmentStore } from "@/lib/security/mfa-enrollment-recovery";
 
 const schema = z.object({ password: z.string().min(1).max(1024) }).strict();
 
 // This endpoint is deliberately disabled unless explicitly configured.
 // Enrollment is only offered to an authenticated, password-reauthenticated
-// account without an existing factor; no replacement or reset is performed.
+// account. Only expired, unverified, active pending factors may be restarted.
 export async function POST(request: NextRequest) {
   if (!isSameOriginAccountMutation(request)) {
     return NextResponse.json({ error: "Request denied." }, { status: 403 });
@@ -32,16 +33,12 @@ export async function POST(request: NextRequest) {
     const prepared = prepareTotpEnrollment({
       ...identity, accountLabel: user.email, encryptionKeyBase64, keyVersion: "v1",
     });
-    // Unique tenant/user constraint makes concurrent enrollment requests fail closed.
-    // Never overwrite an existing factor (including disabled or pending factors).
-    await db.mfaTotpFactor.create({
-      data: {
-        organizationId: identity.organizationId,
-        userId: identity.userId,
-        encryptedSecret: prepared.encryptedSecret,
-        keyVersion: "v1",
-      },
+    const stored = await storePendingTotpEnrollment({
+      store: db as unknown as PendingEnrollmentStore,
+      ...identity, encryptedSecret: prepared.encryptedSecret,
+      keyVersion: "v1", now: new Date(),
     });
+    if (!stored) return NextResponse.json({ error: "Enrollment unavailable or already started." }, { status: 409 });
     const response = NextResponse.json({ data: { provisioningUri: prepared.provisioningUri } });
     response.headers.set("Cache-Control", "no-store");
     return response;
