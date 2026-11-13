@@ -662,6 +662,7 @@ model MfaTotpFactor {
   verifiedAt      DateTime?    @db.Timestamptz(3)
   disabledAt      DateTime?    @db.Timestamptz(3)
   lastUsedStep    BigInt?
+  enrollmentFailedAttempts Int @default(0)
   organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   user            User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
 
