@@ -21,7 +21,8 @@ describe("atomic MFA challenge consumption", () => {
   it("uses a single conditional update with tenant, user, expiry and attempt guards", async () => {
     const { input, updateMany } = setup();
     expect(await consumeVerifiedMfaChallenge(input)).toBe(true);
-    expect(updateMany).toHaveBeenCalledExactlyOnceWith({
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    expect(updateMany).toHaveBeenCalledWith({
       where: {
         tokenHash: hashOpaqueToken(input.token),
         organizationId: "org-a",
