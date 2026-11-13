@@ -20,9 +20,10 @@ function setup() {
         encryptedSecret: encryptTotpSecret({
           secret, organizationId, userId, keyVersion: "v1", encryptionKeyBase64,
         }),
-        keyVersion: "v1", enrolledAt: new Date(now.getTime() - 60_000), verifiedAt: null, disabledAt: null,
+        keyVersion: "v1", enrolledAt: new Date(now.getTime() - 60_000), verifiedAt: null, disabledAt: null, enrollmentFailedAttempts: 0,
       }),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      update: vi.fn().mockResolvedValue({}),
     },
     user: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
   };
@@ -34,7 +35,8 @@ describe("TOTP enrollment confirmation", () => {
     expect(await confirmTotpEnrollmentInTransaction(input)).toBe(true);
     expect(transaction.mfaTotpFactor.updateMany).toHaveBeenCalledWith({
       where: { id: "factor-a", organizationId, userId, verifiedAt: null, disabledAt: null,
-        enrolledAt: { gte: new Date(now.getTime() - 600_000), lte: now } },
+        enrolledAt: { gte: new Date(now.getTime() - 600_000), lte: now },
+        enrollmentFailedAttempts: { lt: 5 } },
       data: { verifiedAt: now, lastUsedStep: BigInt(Math.floor(now.getTime() / 30000)) },
     });
     expect(transaction.user.updateMany).toHaveBeenCalledWith({
@@ -74,6 +76,24 @@ describe("TOTP enrollment confirmation", () => {
       ...factor, enrolledAt: new Date(now.getTime() + 1),
     });
     expect(await confirmTotpEnrollmentInTransaction(input)).toBe(false);
+    expect(transaction.user.updateMany).not.toHaveBeenCalled();
+  });
+  it("rejects a factor locked after five failed enrollment codes", async () => {
+    const { transaction, input } = setup();
+    const factor = await transaction.mfaTotpFactor.findUnique({ where: { organizationId_userId: { organizationId, userId } } });
+    transaction.mfaTotpFactor.findUnique.mockResolvedValueOnce({ ...factor, enrollmentFailedAttempts: 5 });
+    expect(await confirmTotpEnrollmentInTransaction(input)).toBe(false);
+    expect(transaction.mfaTotpFactor.updateMany).not.toHaveBeenCalled();
+    expect(transaction.user.updateMany).not.toHaveBeenCalled();
+  });
+  it("increments failed enrollment attempts for a wrong six-digit code", async () => {
+    const { transaction, input } = setup();
+    const wrong = code === "000000" ? "999999" : "000000";
+    expect(await confirmTotpEnrollmentInTransaction({ ...input, code: wrong })).toBe(false);
+    expect(transaction.mfaTotpFactor.update).toHaveBeenCalledWith({
+      where: { id: "factor-a" },
+      data: { enrollmentFailedAttempts: { increment: 1 } },
+    });
     expect(transaction.user.updateMany).not.toHaveBeenCalled();
   });
   it("throws to roll back factor activation if account activation conflicts", async () => {
