@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { NextRequest } from "next/server";
 
-vi.mock("../db", () => ({ db: { user: { findUnique: vi.fn() } } }));
+vi.mock("../db", () => ({ db: { user: { findUnique: vi.fn() }, authenticationEvent: { count: vi.fn(), create: vi.fn() } } }));
 vi.mock("./authenticated-request", () => ({ authenticateRequest: vi.fn() }));
 vi.mock("./crypto", () => ({ verifyPassword: vi.fn() }));
 import { db } from "../db";
@@ -22,6 +22,8 @@ beforeEach(() => {
     userId: "user-a", organizationId: "org-a", userState: "ACTIVE", grants: [],
   });
   vi.mocked(db.user.findUnique).mockResolvedValue(user as never);
+  vi.mocked(db.authenticationEvent.count).mockResolvedValue(0);
+  vi.mocked(db.authenticationEvent.create).mockResolvedValue({} as never);
   vi.mocked(verifyPassword).mockReturnValue(true);
 });
 
@@ -53,6 +55,23 @@ describe("MFA enrollment reauthentication", () => {
     } as never);
     expect(await reauthenticateForMfaEnrollment(request, "password")).toBeNull();
     expect(await reauthenticateForMfaEnrollment(request, "")).toBeNull();
+  });
+  it("blocks enrollment after five recent failures", async () => {
+    vi.mocked(db.authenticationEvent.count).mockResolvedValueOnce(5);
+    await expect(reauthenticateForMfaEnrollment(request, "correct-password")).resolves.toBeNull();
+    expect(verifyPassword).not.toHaveBeenCalled();
+    expect(db.authenticationEvent.create).not.toHaveBeenCalled();
+  });
+  it("records failed password reauthentication", async () => {
+    vi.mocked(verifyPassword).mockReturnValue(false);
+    await expect(reauthenticateForMfaEnrollment(request, "wrong")).resolves.toBeNull();
+    expect(db.authenticationEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        organizationId: "org-a", userId: "user-a",
+        eventType: "REAUTHENTICATION", outcome: "FAILURE",
+        method: "PASSWORD", metadata: { purpose: "mfa_enrollment" },
+      }),
+    });
   });
   it("does not bypass session authentication", async () => {
     vi.mocked(authenticateRequest).mockRejectedValueOnce(new Error("Authentication required"));
