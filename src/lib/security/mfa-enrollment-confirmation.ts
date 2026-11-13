@@ -2,6 +2,7 @@ import { decryptTotpSecret } from "./mfa-totp-encryption";
 import { verifyTotpCode } from "./mfa-totp";
 
 export const MFA_ENROLLMENT_TTL_MS = 10 * 60 * 1000;
+export const MAX_MFA_ENROLLMENT_FAILURES = 5;
 
 // Internal only: the caller must establish a recent, authenticated
 // reauthentication event before invoking this transaction-scoped operation.
@@ -14,12 +15,18 @@ export interface EnrollmentConfirmationTransaction {
       id: string; organizationId: string; userId: string;
       encryptedSecret: string; keyVersion: string; enrolledAt: Date;
       verifiedAt: Date | null; disabledAt: Date | null;
+      enrollmentFailedAttempts: number;
     } | null>;
     updateMany(args: {
       where: { id: string; organizationId: string; userId: string;
-        verifiedAt: null; disabledAt: null; enrolledAt: { gte: Date; lte: Date } };
+        verifiedAt: null; disabledAt: null; enrolledAt: { gte: Date; lte: Date };
+        enrollmentFailedAttempts: { lt: number } };
       data: { verifiedAt: Date; lastUsedStep: bigint };
     }): Promise<{ count: number }>;
+    update(args: {
+      where: { id: string };
+      data: { enrollmentFailedAttempts: { increment: number } };
+    }): Promise<unknown>;
   };
   user: {
     updateMany(args: {
@@ -42,6 +49,7 @@ export async function confirmTotpEnrollmentInTransaction(input: {
   });
   if (!factor || factor.organizationId !== organizationId || factor.userId !== userId ||
       factor.verifiedAt !== null || factor.disabledAt !== null ||
+      factor.enrollmentFailedAttempts >= MAX_MFA_ENROLLMENT_FAILURES ||
       !Number.isFinite(factor.enrolledAt.getTime()) ||
       factor.enrolledAt.getTime() > now.getTime() ||
       now.getTime() - factor.enrolledAt.getTime() > MFA_ENROLLMENT_TTL_MS) return false;
@@ -55,10 +63,17 @@ export async function confirmTotpEnrollmentInTransaction(input: {
   } finally {
     secret.fill(0);
   }
-  if (step === null) return false;
+  if (step === null) {
+    await transaction.mfaTotpFactor.update({
+      where: { id: factor.id },
+      data: { enrollmentFailedAttempts: { increment: 1 } },
+    });
+    return false;
+  }
   const reserved = await transaction.mfaTotpFactor.updateMany({
     where: { id: factor.id, organizationId, userId, verifiedAt: null, disabledAt: null,
-      enrolledAt: { gte: new Date(now.getTime() - MFA_ENROLLMENT_TTL_MS), lte: now } },
+      enrolledAt: { gte: new Date(now.getTime() - MFA_ENROLLMENT_TTL_MS), lte: now },
+      enrollmentFailedAttempts: { lt: MAX_MFA_ENROLLMENT_FAILURES } },
     data: { verifiedAt: now, lastUsedStep: BigInt(step) },
   });
   if (reserved.count !== 1) return false;
