@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
+import { isSameOriginAccountMutation } from "@/lib/security/account-mutation-origin";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { confirmTotpEnrollmentInTransaction, type EnrollmentConfirmationTransaction } from "@/lib/security/mfa-enrollment-confirmation";
@@ -11,6 +12,9 @@ const schema = z.object({
 }).strict();
 
 export async function POST(request: NextRequest) {
+  if (!isSameOriginAccountMutation(request)) {
+    return NextResponse.json({ error: "Request denied." }, { status: 403 });
+  }
   if (process.env.QMS_MFA_ENROLLMENT_ENABLED !== "true") {
     return NextResponse.json({ error: "Enrollment is unavailable." }, { status: 503 });
   }
