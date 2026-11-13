@@ -4,6 +4,7 @@ import { hashPassword } from "./crypto";
 const mocks = vi.hoisted(() => ({
   organization: { findUnique: vi.fn() },
   user: { findUnique: vi.fn() },
+  mfaTotpFactor: { findUnique: vi.fn() },
   authenticationEvent: { count: vi.fn(), create: vi.fn() },
   transaction: vi.fn(),
 }));
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../db", () => ({ db: {
   organization: mocks.organization,
   user: mocks.user,
+  mfaTotpFactor: mocks.mfaTotpFactor,
   authenticationEvent: mocks.authenticationEvent,
   $transaction: mocks.transaction,
 } }));
@@ -25,6 +27,7 @@ describe("login session lifecycle", () => {
     vi.clearAllMocks();
     mocks.organization.findUnique.mockResolvedValue({ id: "org-1", active: true });
     mocks.user.findUnique.mockResolvedValue(user);
+    mocks.mfaTotpFactor.findUnique.mockResolvedValue(null);
     mocks.authenticationEvent.count.mockResolvedValue(0);
     mocks.authenticationEvent.create.mockResolvedValue({ id: "failed-1" });
   });
@@ -73,13 +76,30 @@ describe("login session lifecycle", () => {
     }));
   });
 
-  it("fails closed for MFA-enabled users until second-factor verification exists", async () => {
+  it("fails closed for MFA-enabled users without an enrolled factor", async () => {
     mocks.user.findUnique.mockResolvedValue({ ...user, mfaEnabled: true });
     await expect(login({ organizationCode: "orange-county-labs", email: "admin@example.com", password: "correct horse battery staple", now })).rejects.toBeInstanceOf(LoginRejectedError);
     expect(mocks.authenticationEvent.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ eventType: "LOGIN_FAILURE", outcome: "FAILURE", metadata: { reason: "mfa_required" } }),
+      data: expect.objectContaining({ eventType: "LOGIN_FAILURE", outcome: "FAILURE", metadata: { reason: "mfa_unavailable" } }),
     }));
     expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("issues a challenge but no session for enrolled MFA users", async () => {
+    mocks.user.findUnique.mockResolvedValue({ ...user, mfaEnabled: true });
+    mocks.mfaTotpFactor.findUnique.mockResolvedValue({ verifiedAt: now, disabledAt: null });
+    const tx = {
+      pendingMfaChallenge: { create: vi.fn().mockResolvedValue({ id: "challenge-1" }) },
+      authenticationEvent: { create: vi.fn().mockResolvedValue({ id: "event-1" }) },
+      session: { create: vi.fn() },
+    };
+    mocks.transaction.mockImplementation((work) => work(tx));
+    const result = await login({ organizationCode: "orange-county-labs", email: "admin@example.com", password: "correct horse battery staple", now });
+    expect(result.mfaRequired).toBe(true);
+    if (!result.mfaRequired) throw new Error("Expected MFA challenge");
+    expect(result.challengeToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(tx.pendingMfaChallenge.create).toHaveBeenCalledTimes(1);
+    expect(tx.session.create).not.toHaveBeenCalled();
   });
 
   it("records a generic failure and does not create a session", async () => {
