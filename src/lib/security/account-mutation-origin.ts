@@ -1,8 +1,6 @@
-import type { NextRequest } from "next/server";
-
 // Sensitive cookie-authenticated account changes must originate from the
 // application's own origin. Missing/malformed Origin is rejected fail-closed.
-export function isSameOriginAccountMutation(request: Pick<NextRequest, "headers" | "nextUrl">): boolean {
+export function isSameOriginAccountMutation(request: { headers: Pick<Headers, "get">; nextUrl: Pick<URL, "origin"> }): boolean {
   const origin = request.headers.get("origin");
   if (!origin) return false;
   try {
