@@ -36,6 +36,7 @@ describe("MFA login verification API", () => {
   it("does not create a session when the challenge or code is rejected", async () => {
     const response = await POST(request(valid));
     expect(response.status).toBe(401);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("set-cookie")).toBeNull();
     expect(await response.json()).toEqual({ error: "Verification failed." });
   });
@@ -46,6 +47,7 @@ describe("MFA login verification API", () => {
     });
     const response = await POST(request(valid));
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(await response.json()).toEqual({ data: { verified: true } });
     expect(verifyMfaLogin).toHaveBeenCalledWith(valid);
     const cookie = response.headers.get("set-cookie") ?? "";
@@ -58,6 +60,7 @@ describe("MFA login verification API", () => {
     vi.mocked(verifyMfaLogin).mockRejectedValue(new Error("private internal failure"));
     const response = await POST(request(valid));
     expect(response.status).toBe(503);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("set-cookie")).toBeNull();
     expect(JSON.stringify(await response.json())).not.toContain("private internal failure");
   });
