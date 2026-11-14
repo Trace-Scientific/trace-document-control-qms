@@ -95,6 +95,28 @@ describe("complete MFA login transaction", () => {
     expect(tx.pendingMfaChallenge.updateMany).not.toHaveBeenCalled();
     expect(tx.session.create).not.toHaveBeenCalled();
   });
+  it("rejects a disabled authenticator without issuing a session", async () => {
+    const { tx, input } = setup();
+    // Replace the factor lookup with a disabled enrollment fixture.
+    tx.mfaTotpFactor.findUnique.mockResolvedValueOnce({
+      id: "factor-a", organizationId, userId, encryptedSecret: "unused",
+      keyVersion: "v1", verifiedAt: now, disabledAt: now,
+    });
+    expect(await completeMfaLoginInTransaction(input)).toBeNull();
+    expect(tx.session.create).not.toHaveBeenCalled();
+    expect(tx.pendingMfaChallenge.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: { failedAttempts: { increment: 1 } },
+    }));
+  });
+  it("rejects a TOTP replay reservation conflict without issuing a session", async () => {
+    const { tx, input } = setup();
+    tx.mfaTotpFactor.updateMany.mockResolvedValueOnce({ count: 0 });
+    expect(await completeMfaLoginInTransaction(input)).toBeNull();
+    expect(tx.session.create).not.toHaveBeenCalled();
+    expect(tx.pendingMfaChallenge.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: { failedAttempts: { increment: 1 } },
+    }));
+  });
   it("throws on challenge consumption conflict to force transaction rollback", async () => {
     const { tx, input } = setup();
     tx.pendingMfaChallenge.updateMany.mockResolvedValueOnce({ count: 0 });
