@@ -84,7 +84,10 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof AuthenticationRequiredError) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     if (error instanceof Error && error.message === "Access denied") return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    if (error instanceof z.ZodError) return NextResponse.json({ error: "Invalid administration request" }, { status: 400 });
+    if (error instanceof z.ZodError) {
+      const details = error.issues.map((issue) => ({ field: issue.path.join("."), message: issue.message }));
+      return NextResponse.json({ error: "Invalid administration request", details }, { status: 400 });
+    }
     if (error instanceof Error && error.message === "Document type already exists") return NextResponse.json({ error: "A document type with that code or name already exists." }, { status: 409 });
     if (error instanceof Error && error.message === "Invalid role scope") return NextResponse.json({ error: "The selected role scope is invalid or inactive." }, { status: 409 });
     return NextResponse.json({ error: "Administration change could not be completed" }, { status: 409 });
