@@ -88,6 +88,36 @@ describe("MFA login service transaction boundary", () => {
     expect(await verifyMfaLogin(input)).toBeNull();
     expect(completeMfaLoginInTransaction).not.toHaveBeenCalled();
   });
+  it("rejects a missing challenge without loading a user", async () => {
+    const transaction = mockTransaction({ challenge: null });
+    expect(await verifyMfaLogin(input)).toBeNull();
+    expect(transaction.user.findUnique).not.toHaveBeenCalled();
+    expect(completeMfaLoginInTransaction).not.toHaveBeenCalled();
+  });
+  it("rejects a previously consumed challenge", async () => {
+    const transaction = mockTransaction({ challenge: {
+      organizationId: "org-a", userId: "user-a", consumedAt: now,
+      expiresAt: new Date(now.getTime() + 300000), failedAttempts: 0,
+    } });
+    expect(await verifyMfaLogin(input)).toBeNull();
+    expect(transaction.user.findUnique).not.toHaveBeenCalled();
+  });
+  it("rejects suspended users before verifying the authenticator", async () => {
+    mockTransaction({ user: {
+      id: "user-a", organizationId: "org-a", status: "SUSPENDED", mfaEnabled: true,
+      organization: { active: true },
+    } });
+    expect(await verifyMfaLogin(input)).toBeNull();
+    expect(completeMfaLoginInTransaction).not.toHaveBeenCalled();
+  });
+  it("rejects users without enabled MFA", async () => {
+    mockTransaction({ user: {
+      id: "user-a", organizationId: "org-a", status: "ACTIVE", mfaEnabled: false,
+      organization: { active: true },
+    } });
+    expect(await verifyMfaLogin(input)).toBeNull();
+    expect(completeMfaLoginInTransaction).not.toHaveBeenCalled();
+  });
   it("verifies inside a serializable transaction with server-resolved identity", async () => {
     mockTransaction();
     expect((await verifyMfaLogin(input))?.token).toBe("session-token");
