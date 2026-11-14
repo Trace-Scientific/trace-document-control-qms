@@ -33,7 +33,7 @@ function mockTransaction(overrides: {
     user: { findUnique: vi.fn().mockResolvedValue(user) },
   };
   vi.mocked(db.$transaction).mockImplementation((async (callback: (tx: typeof transaction) => Promise<unknown>) =>
-    callback(transaction)) as typeof db.$transaction);
+    callback(transaction)) as unknown as typeof db.$transaction);
   return transaction;
 }
 beforeEach(() => {
