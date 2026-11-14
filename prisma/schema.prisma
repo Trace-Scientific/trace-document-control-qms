@@ -36,6 +36,8 @@ model Organization {
   credentials          Credential[]
   authenticationEvents AuthenticationEvent[]
   sessions             Session[]
+  pendingMfaChallenges  PendingMfaChallenge[]
+  totpFactors           MfaTotpFactor[]
   documentReviews      DocumentReviewTask[]
   reviewEscalations    DocumentReviewEscalation[]
   notifications        NotificationOutbox[]
@@ -99,6 +101,8 @@ model User {
   credential               Credential?
   authenticationEvents     AuthenticationEvent[]
   sessions                 Session[]                  @relation("SessionUser")
+  pendingMfaChallenges     PendingMfaChallenge[]
+  totpFactor               MfaTotpFactor?
   revokedSessions          Session[]                  @relation("SessionRevoker")
   completedDocumentReviews DocumentReviewTask[]       @relation("ReviewCompleter")
   assignedDocumentReviews  DocumentReviewTask[]       @relation("ReviewAssignee")
@@ -642,6 +646,46 @@ enum AuthenticationMethod {
   MFA
   SSO
   RECOVERY
+}
+
+// Short-lived MFA challenge state. No QMS session is issued until second-factor
+// verification succeeds and this challenge is atomically consumed.
+// Encrypted TOTP enrollment material only. The encryption key must never be
+// stored in this table; lastUsedStep is a replay-prevention high-water mark.
+model MfaTotpFactor {
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @db.Uuid
+  userId          String       @unique @db.Uuid
+  encryptedSecret String
+  keyVersion      String
+  enrolledAt      DateTime     @default(now()) @db.Timestamptz(3)
+  verifiedAt      DateTime?    @db.Timestamptz(3)
+  disabledAt      DateTime?    @db.Timestamptz(3)
+  lastUsedStep    BigInt?
+  enrollmentFailedAttempts Int @default(0)
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user            User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, userId])
+  @@index([organizationId, verifiedAt, disabledAt])
+}
+
+model PendingMfaChallenge {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  userId         String       @db.Uuid
+  tokenHash      String       @unique
+  issuedAt       DateTime     @default(now()) @db.Timestamptz(3)
+  expiresAt      DateTime     @db.Timestamptz(3)
+  failedAttempts Int          @default(0)
+  consumedAt     DateTime?    @db.Timestamptz(3)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user           User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, id])
+  @@index([organizationId, userId, expiresAt])
+  @@index([expiresAt])
 }
 
 model Session {

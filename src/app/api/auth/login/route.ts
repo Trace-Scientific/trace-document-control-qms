@@ -8,6 +8,11 @@ const inputSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(254),
   password: z.string().min(1).max(1024),
 });
+// Authentication responses, including MFA challenge tokens, must never be cached.
+function noStore(response: NextResponse): NextResponse {
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
 const fingerprint = (value: string | null) => value ? createHash("sha256").update(value).digest("hex") : undefined;
 
 export async function POST(request: NextRequest) {
@@ -18,7 +23,10 @@ export async function POST(request: NextRequest) {
       ipAddressHash: fingerprint(request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null),
       userAgentHash: fingerprint(request.headers.get("user-agent")),
     });
-    const response = NextResponse.json({ data: { user: result.user } });
+    if (result.mfaRequired) {
+      return noStore(NextResponse.json({ data: { mfaRequired: true, challengeToken: result.challengeToken, expiresAt: result.expiresAt } }));
+    }
+    const response = NextResponse.json({ data: { user: result.user, mfaRequired: false } });
     response.cookies.set("qms_session", result.token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -26,13 +34,13 @@ export async function POST(request: NextRequest) {
       path: "/",
       expires: result.absoluteExpiresAt,
     });
-    return response;
+    return noStore(response);
   } catch (error) {
     const throttled = error instanceof LoginRejectedError && error.throttled;
-    return NextResponse.json(
+    return noStore(NextResponse.json(
       { error: throttled ? "Too many sign-in attempts. Try again later." : "Sign-in failed." },
       { status: throttled ? 429 : 401 },
-    );
+    ));
   }
 }
 
