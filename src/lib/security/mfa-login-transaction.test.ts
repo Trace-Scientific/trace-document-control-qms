@@ -60,6 +60,41 @@ describe("complete MFA login transaction", () => {
     expect(await completeMfaLoginInTransaction(input)).toBeNull();
     expect(tx.mfaTotpFactor.findUnique).not.toHaveBeenCalled();
   });
+  it("rejects expired challenges before retrieving the factor", async () => {
+    const { tx, input } = setup();
+    tx.pendingMfaChallenge.findUnique.mockResolvedValueOnce({
+      organizationId, userId, consumedAt: null, expiresAt: now, failedAttempts: 0,
+    });
+    expect(await completeMfaLoginInTransaction(input)).toBeNull();
+    expect(tx.mfaTotpFactor.findUnique).not.toHaveBeenCalled();
+    expect(tx.session.create).not.toHaveBeenCalled();
+  });
+  it("rejects consumed challenges before retrieving the factor", async () => {
+    const { tx, input } = setup();
+    tx.pendingMfaChallenge.findUnique.mockResolvedValueOnce({
+      organizationId, userId, consumedAt: now,
+      expiresAt: new Date(now.getTime() + 300000), failedAttempts: 0,
+    });
+    expect(await completeMfaLoginInTransaction(input)).toBeNull();
+    expect(tx.mfaTotpFactor.findUnique).not.toHaveBeenCalled();
+  });
+  it("rejects challenges after five failed codes", async () => {
+    const { tx, input } = setup();
+    tx.pendingMfaChallenge.findUnique.mockResolvedValueOnce({
+      organizationId, userId, consumedAt: null,
+      expiresAt: new Date(now.getTime() + 300000), failedAttempts: 5,
+    });
+    expect(await completeMfaLoginInTransaction(input)).toBeNull();
+    expect(tx.mfaTotpFactor.findUnique).not.toHaveBeenCalled();
+    expect(tx.session.create).not.toHaveBeenCalled();
+  });
+  it("rejects a missing enrolled authenticator factor", async () => {
+    const { tx, input } = setup();
+    tx.mfaTotpFactor.findUnique.mockResolvedValueOnce(null);
+    expect(await completeMfaLoginInTransaction(input)).toBeNull();
+    expect(tx.pendingMfaChallenge.updateMany).not.toHaveBeenCalled();
+    expect(tx.session.create).not.toHaveBeenCalled();
+  });
   it("throws on challenge consumption conflict to force transaction rollback", async () => {
     const { tx, input } = setup();
     tx.pendingMfaChallenge.updateMany.mockResolvedValueOnce({ count: 0 });
