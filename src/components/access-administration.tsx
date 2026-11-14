@@ -41,6 +41,7 @@ function scopePayload(value: string) {
 }
 
 export function AccessAdministration() {
+  const [showTemporaryPassword, setShowTemporaryPassword] = useState(false), [passwordMismatch, setPasswordMismatch] = useState(false);
   const [data, setData] = useState<AdminData | null>(null), [error, setError] = useState(""), [notice, setNotice] = useState(""), [section, setSection] = useState<AdminSection>("overview"), [platformAccess, setPlatformAccess] = useState(false);
   async function load() { const response = await fetch("/api/admin"); const body = await response.json().catch(() => null); if (response.ok) setData(body.data); else setError(body?.error ?? "Administration could not be loaded."); }
   useEffect(() => { let active = true; fetch("/api/admin").then(async (response) => ({ response, body: await response.json().catch(() => null) })).then(({ response, body }) => { if (!active) return; if (response.ok) setData(body.data); else setError(body?.error ?? "Administration could not be loaded."); }); return () => { active = false; }; }, []);
@@ -84,8 +85,56 @@ export function AccessAdministration() {
       </div></div>}
 
       {section === "access" && <div className="admin-section-stack"><div className="section-heading"><h3>Users &amp; access</h3><p>Create accounts, define least-privilege roles, and assign scoped access.</p></div><div className="template-layout">
-        <form className="template-form" onSubmit={form("CREATE_USER", (f) => ({ email: String(f.get("email")), firstName: String(f.get("firstName")), lastName: String(f.get("lastName")), temporaryPassword: String(f.get("temporaryPassword")) }))}><strong>Add user</strong><label>First name<input name="firstName" required /></label><label>Last name<input name="lastName" required /></label><label>Email<input name="email" type="email" required /></label><label>Temporary password<input name="temporaryPassword" type="password" minLength={12} required autoComplete="new-password" /></label><button className="primary-button">Create user</button></form>
-        <form className="template-form" onSubmit={form("CREATE_ROLE", (f) => ({ name: String(f.get("name")), permissionKeys: f.getAll("permissionKeys").map(String) }))}><strong>Add role</strong><label>Name<input name="name" required /></label><fieldset><legend>Permissions</legend>{data.permissions.map((permission) => <label key={permission.key}><span><input type="checkbox" name="permissionKeys" value={permission.key} /> <strong>{permission.key}</strong></span><small>{permissionDescription(permission)}</small></label>)}</fieldset><button className="primary-button">Create role</button></form>
+        <form className="template-form" onSubmit={(event) => {
+          event.preventDefault();
+          const element = event.currentTarget;
+          const fields = new FormData(element);
+          const password = String(fields.get("temporaryPassword") ?? "");
+          const confirmation = String(fields.get("confirmTemporaryPassword") ?? "");
+          if (password !== confirmation) { setPasswordMismatch(true); return; }
+          setPasswordMismatch(false);
+          void command({ operation: "CREATE_USER", email: String(fields.get("email")), firstName: String(fields.get("firstName")), lastName: String(fields.get("lastName")), temporaryPassword: password });
+          element.reset();
+          setShowTemporaryPassword(false);
+        }}>
+          <strong>Add user</strong>
+          <label>First name<input name="firstName" required /></label>
+          <label>Last name<input name="lastName" required /></label>
+          <label>Email<input name="email" type="email" required /></label>
+          <label>Temporary password
+            <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input name="temporaryPassword" type={showTemporaryPassword ? "text" : "password"} minLength={12} required autoComplete="new-password" onChange={() => setPasswordMismatch(false)} style={{ flex: 1, minWidth: 0 }} />
+              <button type="button" className="secondary-button" aria-label={showTemporaryPassword ? "Hide passwords" : "Show passwords"} aria-pressed={showTemporaryPassword} onClick={() => setShowTemporaryPassword((value) => !value)}>{showTemporaryPassword ? "Hide" : "Show"}</button>
+            </span>
+          </label>
+          <label>Confirm temporary password
+            <input name="confirmTemporaryPassword" type={showTemporaryPassword ? "text" : "password"} minLength={12} required autoComplete="new-password" aria-invalid={passwordMismatch} aria-describedby={passwordMismatch ? "temporary-password-error" : undefined} onChange={() => setPasswordMismatch(false)} />
+          </label>
+          {passwordMismatch && <p id="temporary-password-error" className="detail-error" role="alert">Passwords do not match. Please enter the same password in both fields.</p>}
+          <button className="primary-button">Create user</button>
+        </form>
+        <form className="template-form" onSubmit={form("CREATE_ROLE", (f) => ({ name: String(f.get("name")), permissionKeys: f.getAll("permissionKeys").map(String) }))}>
+          <strong>Add role</strong><label>Name<input name="name" required /></label>
+          <fieldset style={{ minWidth: 0 }}><legend>Permissions</legend>
+            <p style={{ margin: "0 0 12px" }}>Select only the permissions this role needs. Click anywhere on a row to select it.</p>
+            {Array.from(new Set(data.permissions.map((permission) => permission.key.split(".")[0]))).map((category) => (
+              <div key={category} style={{ marginBottom: 16 }}>
+                <h4 style={{ margin: "12px 0 8px", textTransform: "capitalize" }}>{category.replaceAll("_", " ")}</h4>
+                <div style={{ border: "1px solid #dbe2ea", borderRadius: 8, overflow: "hidden" }}>
+                  {data.permissions.filter((permission) => permission.key.split(".")[0] === category).map((permission, index) => (
+                    <label key={permission.key} style={{ display: "grid", gridTemplateColumns: "22px minmax(0, 1fr)", alignItems: "center", gap: 12, padding: "12px 14px", background: index % 2 ? "#f1f4f8" : "#fff", cursor: "pointer", borderBottom: "1px solid #e3e8ee", margin: 0 }}>
+                      <input type="checkbox" name="permissionKeys" value={permission.key} style={{ margin: 0, width: 16, height: 16, justifySelf: "center" }} />
+                      <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+                        <strong style={{ overflowWrap: "anywhere" }}>{permission.key}</strong>
+                        <small style={{ overflowWrap: "anywhere" }}>{permissionDescription(permission)}</small>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </fieldset><button className="primary-button">Create role</button>
+        </form>
         <form className="template-form" onSubmit={form("ASSIGN_ROLE", (f) => ({ userId: String(f.get("userId")), roleId: String(f.get("roleId")), ...scopePayload(String(f.get("scopeTarget"))) }))}><strong>Assign role</strong><p>Choose the smallest scope required. Reassigning the same role updates its scope.</p><label>User<select name="userId" required>{data.users.map((user) => <option value={user.id} key={user.id}>{user.firstName} {user.lastName} · {user.email}</option>)}</select></label><label>Role<select name="roleId" required>{data.roles.map((role) => <option value={role.id} key={role.id}>{role.name}</option>)}</select></label><label>Scope<select name="scopeTarget" required><option value="ORGANIZATION">Entire organization</option>{data.sites.map((site) => <option value={`SITE:${site.id}`} key={`site-${site.id}`}>Site · {site.name}</option>)}{data.departments.map((department) => <option value={`DEPARTMENT:${department.id}`} key={`department-${department.id}`}>Department · {department.name}</option>)}</select></label><button className="primary-button">Assign scoped role</button></form>
       </div><div className="detail-section"><h3>Existing role assignments &amp; effective access</h3><p>Review current scoped assignments before making access changes. Effective permissions are the union of assigned roles within their applicable scopes.</p>{data.users.map((user) => { const assignments = data.roleAssignments.filter((assignment) => assignment.userId === user.id); const effectivePermissions = [...new Set(assignments.flatMap((assignment) => roleById.get(assignment.roleId)?.permissions.map((item) => item.permission.key) ?? []))].sort(); return <div className="template-form" key={`access-${user.id}`}><strong>{user.firstName} {user.lastName} · {user.email}</strong><p>Status: {user.status}</p>{assignments.length === 0 ? <p>No role assignments.</p> : <div className="table-scroll"><table><thead><tr><th>Role</th><th>Scope</th><th>Assigned</th><th>Assigned by</th></tr></thead><tbody>{assignments.map((assignment) => { const assigner = assignment.assignedBy ? userById.get(assignment.assignedBy) : null; return <tr key={`${assignment.userId}-${assignment.roleId}`}><td>{roleById.get(assignment.roleId)?.name ?? "Unknown role"}</td><td>{scopeLabel(assignment)}</td><td>{new Date(assignment.assignedAt).toLocaleString()}</td><td>{assigner ? `${assigner.firstName} ${assigner.lastName}` : "System / historical"}</td></tr>; })}</tbody></table></div>}<details><summary>Effective permissions ({effectivePermissions.length})</summary>{effectivePermissions.length === 0 ? <p>No permissions granted.</p> : <p>{effectivePermissions.join(", ")}</p>}</details></div>; })}</div></div>}
 
