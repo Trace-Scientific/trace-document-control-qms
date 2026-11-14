@@ -50,14 +50,13 @@
 - Fixture documents are initially created as synthetic drafts even when the manifest labels their intended demonstration states differently. The tested approval/effectiveness flow covers one fixture; it does not mean all six are pre-populated in their final customer-demo states.
 - **No Railway provisioning, activation, merge, or production change is authorized or performed.**
 
-## Authentication review findings (source inspection, 2026-11-11)
+## Authentication implementation and remaining release gates (2026-11-13)
 
-- The public login form no longer pre-populates a customer organization code (commit `be03c2a`).
-- `src/lib/security/login.ts` validates active organizations/users, verifies password hashes, records login successes/failures, throttles after five recent user failures within fifteen minutes, and creates opaque-token sessions with thirty-minute idle and twelve-hour absolute expiry. `src/app/api/auth/login/route.ts` sets an HttpOnly, SameSite=Strict cookie and Secure in production.
-- `src/lib/security/session.ts` rejects malformed/mismatched, revoked, idle-expired and absolute-expired sessions. Existing `src/lib/security/login.test.ts` covers session issuance, bad password, and failure throttling at the unit-test level.
-- **MFA enforcement is not demonstrated by the inspected password-login path.** The architecture describes *MFA-ready* authentication, not proof of an active second-factor challenge. Do not advertise MFA as enforced or activate customer demo accounts on that assumption.
-- Required before customer demo: decide the supported MFA method and enrollment/recovery policy; implement server-enforced second-factor verification **before** session issuance or privileged access; test enrollment, challenge, replay, expiry, bypass attempts, lockout, recovery, and cross-tenant isolation. Then validate browser login/logout, session expiry and electronic-signature reauthentication in a disposable or explicitly approved demo environment.
-- No live authentication testing or MFA implementation is claimed by this source review.
+- The earlier 2026-11-11 finding that MFA was not implemented is superseded by subsequent branch changes. Password login now issues a short-lived, server-stored MFA challenge for MFA-enabled users and does **not** issue a session until successful TOTP verification. The MFA verification API issues an HttpOnly, SameSite=Strict session cookie on success and sends no-store responses.
+- TOTP enrollment uses fresh password reauthentication, an encrypted factor secret, a ten-minute pending-enrollment window, attempt limits, and a feature flag (`QMS_MFA_ENROLLMENT_ENABLED`, disabled unless explicitly enabled). Verification includes challenge expiry, five-attempt lockout, tenant and user eligibility, one-time challenge consumption, TOTP replay protection, and serializable transaction retries.
+- Unit and API tests cover these paths, including disabled factors, invalid codes, expired and consumed challenges, concurrent reservation conflicts, and retry exhaustion. All six GitHub workflows were independently verified successful on commit `6092040bd5801282d7d13ccd5e851f63e4d253a8`; later commit `be4ad1427ed0a6116478129be449cdd7579d2b0f` was also verified successful. **Reconfirm the final PR head after any additional changes.**
+- **Not yet demonstrated:** a full browser-driven password → challenge → TOTP → session journey against disposable migrated PostgreSQL; real MFA enrollment through the UI; account recovery; session expiry and electronic-signature reauthentication in a deployed demo; independent review of the final authentication changes. Existing disposable document-workflow integration tests do not substitute for these checks.
+- **Release decision:** do not advertise MFA as fully validated or enable the demo feature flag solely because unit tests pass. Resolve the remaining end-to-end evidence and obtain the required independent review and separate owner approvals before any merge or live demo activation.
 
 ## Evidence handoff checklist
 
