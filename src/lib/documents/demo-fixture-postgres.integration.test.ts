@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createHash } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
+import { login } from "../security/login";
+import { verifyMfaLogin } from "../security/mfa-login-service";
+import { encryptTotpSecret } from "../security/mfa-totp-encryption";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { db } from "../db";
@@ -18,6 +21,60 @@ const enabled = process.env.RUN_DEMO_FIXTURE_INTEGRATION === "1";
 const fixtureRoot = resolve(process.cwd(), "fixtures/demo");
 
 describe.skipIf(!enabled)("demo fixtures through real service and migrated PostgreSQL", () => {
+  it("completes password-to-TOTP-to-session login against disposable migrated PostgreSQL", async () => {
+    expect(process.env.DATABASE_URL).toBe(expected);
+    const identity = await db.$queryRaw<Array<{ name: string; username: string }>>`SELECT current_database() AS name, current_user AS username`;
+    expect(identity[0]).toMatchObject({ name: "trace_qms_integration_test", username: "trace_qms_test" });
+    const now = new Date("2026-11-13T12:00:00.000Z");
+    const password = "synthetic-mfa-test-password";
+    const encryptionKeyBase64 = randomBytes(32).toString("base64");
+    const previousKey = process.env.QMS_MFA_TOTP_ENCRYPTION_KEY;
+    process.env.QMS_MFA_TOTP_ENCRYPTION_KEY = encryptionKeyBase64;
+    try {
+      const org = await db.organization.create({ data: {
+        loginCode: "synthetic-mfa-login-integration",
+        legalName: "Synthetic MFA Integration Laboratory",
+        displayName: "Synthetic MFA Integration Laboratory", active: true,
+      } });
+      const user = await db.user.create({ data: {
+        organizationId: org.id, email: "mfa-integration@example.invalid",
+        firstName: "Synthetic", lastName: "MFA", status: "ACTIVE", mfaEnabled: true,
+      } });
+      await db.credential.create({ data: {
+        organizationId: org.id, userId: user.id, passwordHash: hashPassword(password),
+      } });
+      const secret = randomBytes(20);
+      await db.mfaTotpFactor.create({ data: {
+        organizationId: org.id, userId: user.id, keyVersion: "v1",
+        encryptedSecret: encryptTotpSecret({
+          secret, organizationId: org.id, userId: user.id, keyVersion: "v1", encryptionKeyBase64,
+        }), verifiedAt: now,
+      } });
+      const challenge = await login({
+        organizationCode: org.loginCode, email: user.email, password, now,
+      });
+      expect(challenge.mfaRequired).toBe(true);
+      if (!challenge.mfaRequired) throw new Error("Expected MFA challenge");
+      expect(await db.session.count({ where: { userId: user.id } })).toBe(0);
+      const counter = Buffer.alloc(8);
+      counter.writeBigUInt64BE(BigInt(Math.floor(now.getTime() / 30000)));
+      const digest = createHmac("sha1", secret).update(counter).digest();
+      const offset = digest[digest.length - 1] & 15;
+      const code = ((digest.readUInt32BE(offset) & 0x7fffffff) % 1000000).toString().padStart(6, "0");
+      const session = await verifyMfaLogin({ challengeToken: challenge.challengeToken, code, now });
+      expect(session?.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(await db.session.count({ where: { userId: user.id } })).toBe(1);
+      expect(await verifyMfaLogin({ challengeToken: challenge.challengeToken, code, now })).toBeNull();
+      expect(await db.session.count({ where: { userId: user.id } })).toBe(1);
+      expect(await db.authenticationEvent.count({ where: {
+        userId: user.id, eventType: "LOGIN", outcome: "SUCCESS", method: "MFA",
+      } })).toBe(1);
+    } finally {
+      if (previousKey === undefined) delete process.env.QMS_MFA_TOTP_ENCRYPTION_KEY;
+      else process.env.QMS_MFA_TOTP_ENCRYPTION_KEY = previousKey;
+    }
+  });
+
   it("creates six synthetic drafts and authentic audit records in a disposable database", async () => {
     expect(process.env.DATABASE_URL).toBe(expected);
     const identity = await db.$queryRaw<Array<{ name: string; username: string }>>`SELECT current_database() AS name, current_user AS username`;
