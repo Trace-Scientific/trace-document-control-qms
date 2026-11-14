@@ -7,12 +7,18 @@ const inputSchema = z.object({
   code: z.string().regex(/^\d{6}$/),
 }).strict();
 
+// MFA challenge responses must not be cached by browsers or intermediaries.
+function noStore(response: NextResponse): NextResponse {
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const parsed = inputSchema.safeParse(await request.json());
-    if (!parsed.success) return NextResponse.json({ error: "Verification failed." }, { status: 401 });
+    if (!parsed.success) return noStore(NextResponse.json({ error: "Verification failed." }, { status: 401 }));
     const result = await verifyMfaLogin(parsed.data);
-    if (!result) return NextResponse.json({ error: "Verification failed." }, { status: 401 });
+    if (!result) return noStore(NextResponse.json({ error: "Verification failed." }, { status: 401 }));
     const response = NextResponse.json({ data: { verified: true } });
     response.cookies.set("qms_session", result.token, {
       httpOnly: true,
@@ -21,8 +27,8 @@ export async function POST(request: NextRequest) {
       path: "/",
       expires: result.absoluteExpiresAt,
     });
-    return response;
+    return noStore(response);
   } catch {
-    return NextResponse.json({ error: "Verification unavailable." }, { status: 503 });
+    return noStore(NextResponse.json({ error: "Verification unavailable." }, { status: 503 }));
   }
 }
