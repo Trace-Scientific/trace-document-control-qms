@@ -118,6 +118,32 @@ describe("MFA login service transaction boundary", () => {
     expect(await verifyMfaLogin(input)).toBeNull();
     expect(completeMfaLoginInTransaction).not.toHaveBeenCalled();
   });
+  it("retries a serializable transaction after a Prisma write conflict", async () => {
+    mockTransaction();
+    vi.mocked(db.$transaction)
+      .mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError(
+        "Serialization conflict", { code: "P2034", clientVersion: "test" },
+      ));
+    expect((await verifyMfaLogin(input))?.token).toBe("session-token");
+    expect(db.$transaction).toHaveBeenCalledTimes(2);
+    expect(completeMfaLoginInTransaction).toHaveBeenCalledTimes(1);
+  });
+  it("fails closed after exhausting serializable transaction retries", async () => {
+    mockTransaction();
+    vi.mocked(db.$transaction).mockRejectedValue(new Prisma.PrismaClientKnownRequestError(
+      "Serialization conflict", { code: "P2034", clientVersion: "test" },
+    ));
+    await expect(verifyMfaLogin(input)).rejects.toMatchObject({ code: "P2034" });
+    expect(db.$transaction).toHaveBeenCalledTimes(3);
+    expect(completeMfaLoginInTransaction).not.toHaveBeenCalled();
+  });
+  it("does not retry non-serialization database errors", async () => {
+    mockTransaction();
+    vi.mocked(db.$transaction).mockRejectedValue(new Error("Database unavailable"));
+    await expect(verifyMfaLogin(input)).rejects.toThrow("Database unavailable");
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
+    expect(completeMfaLoginInTransaction).not.toHaveBeenCalled();
+  });
   it("verifies inside a serializable transaction with server-resolved identity", async () => {
     mockTransaction();
     expect((await verifyMfaLogin(input))?.token).toBe("session-token");
