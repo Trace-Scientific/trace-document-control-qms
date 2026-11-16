@@ -473,6 +473,55 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     expect(await db.workflowTask.findUniqueOrThrow({
       where: { id: firstStage.id }, select: { status: true },
     })).toEqual({ status: "COMPLETED" });
+    // Concurrent correction and reviewer decision must not both succeed.
+    const concurrentSubmitted = await service.transition(submitter, {
+      organizationId: org.id, versionId: ids[3], command: "SUBMIT",
+      expectedLockVersion: 0,
+      assigneeUserIds: [reviewer.id, mistakenReviewer.id],
+      approverUserId: finalApprover.id, dueAt,
+      comment: "Concurrent correction regression",
+    });
+    expect(concurrentSubmitted.status).toBe("IN_REVIEW");
+    const concurrentWorkflow = await db.workflowInstance.findFirstOrThrow({
+      where: { organizationId: org.id, entityId: ids[3] },
+    });
+    const concurrentTasks = await db.workflowTask.findMany({
+      where: { organizationId: org.id, workflowInstanceId: concurrentWorkflow.id },
+    });
+    const concurrentFirst = concurrentTasks.find((task) => task.stepKey === "REVIEW_1")!;
+    const concurrentSecond = concurrentTasks.find((task) => task.stepKey === "REVIEW_2")!;
+    expect(await reviewService.decide(reviewerContext, {
+      organizationId: org.id, taskId: concurrentFirst.id,
+      decision: "ACCEPT", comment: "First stage completed before race",
+    })).toEqual({ result: "NEXT_REVIEW" });
+    const competing = await Promise.allSettled([
+      reviewService.correctLastReview(managerContext, {
+        organizationId: org.id, taskId: concurrentSecond.id,
+        reason: "Competing correction",
+      }),
+      reviewService.decide({
+        ...reviewerContext, userId: mistakenReviewer.id,
+      }, {
+        organizationId: org.id, taskId: concurrentSecond.id,
+        decision: "ACCEPT", comment: "Competing reviewer decision",
+      }),
+    ]);
+    const succeeded = competing.filter((result) =>
+      result.status === "fulfilled" && result.value.result === "AWAITING_APPROVAL"
+    );
+    expect(succeeded).toHaveLength(1);
+    const concurrentSecondAfter = await db.workflowTask.findUniqueOrThrow({
+      where: { id: concurrentSecond.id }, select: { status: true },
+    });
+    expect(["CANCELLED", "COMPLETED"]).toContain(concurrentSecondAfter.status);
+    expect(await db.workflowTask.count({ where: {
+      organizationId: org.id, workflowInstanceId: concurrentWorkflow.id,
+      stepKey: "APPROVAL", status: "IN_PROGRESS",
+    } })).toBe(1);
+    expect(await db.auditEvent.count({ where: {
+      organizationId: org.id, entityId: ids[3],
+      action: { in: ["DOCUMENT_REVIEW_ASSIGNMENT_CORRECTED", "DOCUMENT_REVIEW_STAGES_COMPLETED"] },
+    } })).toBe(1);
     // The real service must verify the signer password and explicit signature
     // confirmation before the Prisma store is allowed to persist approval.
     const signingPassword = "Synthetic-approval-password-2026!";
