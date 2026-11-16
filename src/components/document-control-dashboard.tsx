@@ -8,7 +8,6 @@ import {
   summarizeOperationalData,
 } from "@/lib/documents/dashboard";
 import { diffLines } from "@/lib/documents/diff";
-import { reviewStageSelectionsAreValid } from "@/lib/documents/workflow-ui";
 import { AccessAdministration } from "./access-administration";
 import { ControlledFiles } from "./controlled-files";
 
@@ -275,14 +274,9 @@ export function DocumentControlDashboard({
     [approvalOpen, setApprovalOpen] = useState(false),
     [showApprovalPassword, setShowApprovalPassword] = useState(false),
     [revisionOpen, setRevisionOpen] = useState(false),
-    [submitOpen, setSubmitOpen] = useState(false),
     [templates, setTemplates] = useState<WorkflowTemplate[]>([]),
     [templatesError, setTemplatesError] = useState(""),
-    [selectedTemplateId, setSelectedTemplateId] = useState(""),
-    [templateStageCount, setTemplateStageCount] = useState(2),
-    [reviewStages, setReviewStages] = useState<ReviewStageDraft[]>([
-      { reviewerUserId: "", dueAt: "" },
-    ]);
+    [templateStageCount, setTemplateStageCount] = useState(2);
   const visible = useMemo(
     () =>
       live
@@ -517,54 +511,6 @@ export function DocumentControlDashboard({
     await loadDetail(body.data.id);
     setNotice(
       "Successor revision created from the selected controlled version.",
-    );
-  }
-  async function submitReview(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!detail) return;
-    if (!reviewStageSelectionsAreValid(reviewStages, Boolean(selectedTemplateId))) {
-      setDetailError("Review stages require unique reviewers and complete deadlines.");
-      return;
-    }
-    const form = new FormData(event.currentTarget),
-      reviewers = reviewStages.map((stage) => stage.reviewerUserId),
-      comment = String(form.get("reviewComment"));
-    setSubmitting(true);
-    const response = await fetch("/api/documents/commands", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          operation: "TRANSITION",
-          versionId: detail.selected.id,
-          command: "SUBMIT",
-          expectedLockVersion: detail.selected.lockVersion,
-          assigneeUserIds: reviewers,
-          ...(selectedTemplateId
-            ? { workflowTemplateId: selectedTemplateId }
-            : {
-                reviewStages: reviewStages.map((stage) => ({
-                  reviewerUserId: stage.reviewerUserId,
-                  dueAt: new Date(`${stage.dueAt}T23:59:59`).toISOString(),
-                })),
-              }),
-          comment,
-        }),
-      }),
-      body = await response.json().catch(() => null);
-    setSubmitting(false);
-    if (!response.ok) {
-      setDetailError(
-        body?.error || "The review assignment could not be created.",
-      );
-      return;
-    }
-    setSubmitOpen(false);
-    setSelectedTemplateId("");
-    setReviewStages([{ reviewerUserId: "", dueAt: "" }]);
-    await loadDetail(detail.selected.id);
-    setDocumentReload((value) => value + 1);
-    setNotice(
-      "Revision submitted to the ordered reviewers with an audited due date.",
     );
   }
   async function transferReview(
@@ -1387,7 +1333,6 @@ export function DocumentControlDashboard({
                   setDetail(null);
                   setApprovalOpen(false);
                   setRevisionOpen(false);
-                  setSubmitOpen(false);
                   setDetailError("");
                 }}
               >
@@ -1615,8 +1560,7 @@ export function DocumentControlDashboard({
                         onClick={() => {
                           const versionId = detail.selected.id;
                           setDetail(null);
-                          setSubmitOpen(false);
-                          window.dispatchEvent(new CustomEvent("trace-qms:open-controlled-submission", {
+                                  window.dispatchEvent(new CustomEvent("trace-qms:open-controlled-submission", {
                             detail: { versionId },
                           }));
                         }}
@@ -1664,64 +1608,6 @@ export function DocumentControlDashboard({
                     )}
                 </div>
               </div>
-              {submitOpen && (
-                <form className="approval-box" onSubmit={submitReview}>
-                  <strong>Assign revision review</strong>
-                  <p>
-                    Build ordered stages with individual deadlines or apply an
-                    active reusable template.
-                  </p>
-                  <label>
-                    Workflow template (optional)
-                    <select value={selectedTemplateId} onChange={(event) => {
-                      const id = event.target.value;
-                      setSelectedTemplateId(id);
-                      const template = templates.find((item) => item.id === id);
-                      if (template) setReviewStages(template.stages.map(() => ({ reviewerUserId: "", dueAt: "" })));
-                    }}>
-                      <option value="">Custom stage deadlines</option>
-                      {templates.filter((item) => item.active).map((template) => <option key={template.id} value={template.id}>{template.name} · v{template.version}</option>)}
-                    </select>
-                  </label>
-                  <div className="stage-builder">
-                    {reviewStages.map((stage, index) => (
-                      <div className="stage-row" key={index}>
-                        <span>{index + 1}</span>
-                        <label>Reviewer<select required value={stage.reviewerUserId} onChange={(event) => setReviewStages((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, reviewerUserId: event.target.value } : item))}>
-                          <option value="">Select reviewer</option>
-                          {detail.reviewers.map((reviewer) => <option key={reviewer.id} value={reviewer.id}>{reviewer.name}</option>)}
-                        </select></label>
-                        {!selectedTemplateId && <label>Due date<input required type="date" value={stage.dueAt} onChange={(event) => setReviewStages((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, dueAt: event.target.value } : item))} /></label>}
-                        {!selectedTemplateId && reviewStages.length > 1 && <button type="button" aria-label={`Remove stage ${index + 1}`} onClick={() => setReviewStages((items) => items.filter((_, itemIndex) => itemIndex !== index))}>Remove</button>}
-                      </div>
-                    ))}
-                    {!selectedTemplateId && reviewStages.length < 10 && <button type="button" className="text-button" onClick={() => setReviewStages((items) => [...items, { reviewerUserId: "", dueAt: "" }])}>Add review stage</button>}
-                  </div>
-                  <label>
-                    Review comment
-                    <textarea name="reviewComment" required maxLength={4000} />
-                  </label>
-                  <div>
-                    <button type="button" onClick={() => setSubmitOpen(false)}>
-                      Cancel
-                    </button>
-                    <button
-                      className="primary-button"
-                      type="submit"
-                      disabled={
-                        submitting ||
-                        !detail.reviewers.length ||
-                        !reviewStageSelectionsAreValid(
-                          reviewStages,
-                          Boolean(selectedTemplateId),
-                        )
-                      }
-                    >
-                      {submitting ? "Submitting…" : "Assign stages and submit"}
-                    </button>
-                  </div>
-                </form>
-              )}
               {revisionOpen && (
                 <form className="approval-box" onSubmit={createRevision}>
                   <strong>Create successor revision</strong>
