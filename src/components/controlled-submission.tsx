@@ -13,6 +13,8 @@ type Reviewer = { id: string; name: string };
 type Detail = {
   selected: { id: string; lockVersion: number };
   reviewers: Reviewer[];
+  versions: { id: string; versionNumber: number }[];
+  assignments: { versionId: string; stepKey: string; assignee: { id: string; name: string } | null }[];
 };
 type Approver = { id: string; name: string };
 type ApprovalQueue = { approvers: Approver[] };
@@ -24,6 +26,8 @@ export function ControlledSubmission() {
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null);
   const [approvers, setApprovers] = useState<Approver[]>([]);
+  const [approverId, setApproverId] = useState("");
+  const [routingNotice, setRoutingNotice] = useState("");
   const [stages, setStages] = useState<Stage[]>([
     { reviewerUserId: "", dueAt: "" },
   ]);
@@ -32,8 +36,11 @@ export function ControlledSubmission() {
   const [notice, setNotice] = useState("");
   const [confirmDirectApproval, setConfirmDirectApproval] = useState(false);
 
-  async function loadDetail(versionId: string) {
+  async function loadDetail(versionId: string, eligibleApprovers: Approver[] = approvers) {
     setDetail(null);
+    setRoutingNotice("");
+    setApproverId("");
+    setStages([{ reviewerUserId: "", dueAt: "" }]);
     if (!versionId) return;
     const response = await fetch(`/api/documents/${versionId}`, {
       credentials: "same-origin",
@@ -43,7 +50,21 @@ export function ControlledSubmission() {
       setError(body?.error || "Unable to load the draft submission details.");
       return;
     }
-    setDetail(body.data as Detail);
+    const next = body.data as Detail;
+    setDetail(next);
+    const previous = next.versions.filter((v) => v.id !== next.selected.id)
+      .sort((a, b) => b.versionNumber - a.versionNumber)[0];
+    if (!previous) return;
+    const tasks = next.assignments.filter((task) => task.versionId === previous.id);
+    const reviewer = tasks.find((task) => task.stepKey.startsWith("REVIEW_") &&
+      task.assignee && next.reviewers.some((user) => user.id === task.assignee?.id))?.assignee;
+    const approver = tasks.find((task) => task.stepKey === "APPROVAL" &&
+      task.assignee && eligibleApprovers.some((user) => user.id === task.assignee?.id))?.assignee;
+    if (reviewer) setStages([{ reviewerUserId: reviewer.id, dueAt: "" }]);
+    if (approver) setApproverId(approver.id);
+    if (reviewer || approver) setRoutingNotice(
+      "Eligible prior-revision assignments suggested. Confirm both people and enter a fresh review deadline before submitting."
+    );
   }
 
   async function load(preferredDocumentNumber?: string, preferredVersionId?: string) {
@@ -73,7 +94,7 @@ export function ControlledSubmission() {
     setApprovers((approverBody.data as ApprovalQueue).approvers);
     const first = nextDrafts.find((draft) => draft.id === preferredVersionId)?.id || nextDrafts.find((draft) => draft.documentNumber === preferredDocumentNumber)?.id || nextDrafts[0]?.id || "";
     setSelectedId(first);
-    await loadDetail(first);
+    await loadDetail(first, (approverBody.data as ApprovalQueue).approvers);
   }
 
   async function openPanel(preferredDocumentNumber?: string, preferredVersionId?: string) {
@@ -204,6 +225,7 @@ export function ControlledSubmission() {
             <div className="detail-body">
               {notice && <div className="notice" role="status"><span>{notice}</span></div>}
               {error && <div className="detail-error" role="alert">{error}</div>}
+              {routingNotice && <div className="notice" role="status">{routingNotice}</div>}
               {busy && !drafts.length && <p>Loading controlled submission data…</p>}
               {!busy && drafts.length === 0 && (
                 <div className="permission-state">
@@ -275,7 +297,7 @@ export function ControlledSubmission() {
                   )}
                   <label>
                     Final approver
-                    <select name="approverUserId" required defaultValue="">
+                    <select name="approverUserId" required value={approverId} onChange={(event) => setApproverId(event.target.value)}>
                       <option value="" disabled>Select an eligible approver</option>
                       {approvers.map((approver) => (
                         <option key={approver.id} value={approver.id}>{approver.name}</option>
