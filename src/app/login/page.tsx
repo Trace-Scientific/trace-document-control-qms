@@ -19,6 +19,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
   const [challengeExpiresAt, setChallengeExpiresAt] = useState<string | null>(null);
 
@@ -134,7 +135,7 @@ export default function LoginPage() {
           <div className={styles.loginFields}>
             <label><span>Organization code</span><input name="organizationCode" placeholder="Enter your organization code" autoComplete="organization" required /></label>
             <label><span>Email address</span><input name="email" type="email" autoComplete="username" required /></label>
-            <label><span>Password</span><input name="password" type="password" autoComplete="current-password" required /></label>
+            <label><span>Password</span><span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}><input name="password" type={showPassword ? "text" : "password"} autoComplete="current-password" required style={{ flex: 1, minWidth: 0 }} /><button type="button" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword((current) => !current)} style={{ width: "auto", flexShrink: 0 }}>{showPassword ? "Hide" : "Show"}</button></span></label>
           </div>
           {error && <p className={styles.error} role="alert">{error}</p>}
           <button type="submit" disabled={submitting}>{submitting ? "Signing in…" : "Log in securely"}</button>
