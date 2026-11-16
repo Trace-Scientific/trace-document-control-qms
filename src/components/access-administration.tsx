@@ -34,6 +34,12 @@ function permissionDescription(permission: { key: string; description: string | 
   return known[permission.key] ?? permission.key;
 }
 
+const demoRolePresets: Record<string, string[]> = {
+  "Document Reviewer": ["document.read", "document.review", "document.review.complete"],
+  "Document Approver": ["document.read", "document.approve"],
+  "Laboratory Technician": ["document.read", "document.acknowledge"],
+};
+
 function scopePayload(value: string) {
   if (value === "ORGANIZATION") return { scopeType: "ORGANIZATION", scopeId: null };
   const [scopeType, scopeId] = value.split(":", 2);
@@ -41,6 +47,7 @@ function scopePayload(value: string) {
 }
 
 export function AccessAdministration() {
+  const [roleName, setRoleName] = useState(""), [rolePermissions, setRolePermissions] = useState<string[]>([]);
   const [showTemporaryPassword, setShowTemporaryPassword] = useState(false), [passwordMismatch, setPasswordMismatch] = useState(false);
   const [data, setData] = useState<AdminData | null>(null), [error, setError] = useState(""), [notice, setNotice] = useState(""), [section, setSection] = useState<AdminSection>("overview"), [platformAccess, setPlatformAccess] = useState(false);
   async function load() { const response = await fetch("/api/admin"); const body = await response.json().catch(() => null); if (response.ok) setData(body.data); else setError(body?.error ?? "Administration could not be loaded."); }
@@ -114,7 +121,20 @@ export function AccessAdministration() {
           <button className="primary-button">Create user</button>
         </form>
         <form className="template-form" onSubmit={form("CREATE_ROLE", (f) => ({ name: String(f.get("name")), permissionKeys: f.getAll("permissionKeys").map(String) }))}>
-          <strong>Add role</strong><label>Name<input name="name" required /></label>
+          <strong>Add role</strong>
+          <label>Demo role preset (optional)
+            <select defaultValue="" onChange={(event) => {
+              const name = event.currentTarget.value;
+              if (!name) return;
+              setRoleName(name);
+              setRolePermissions(demoRolePresets[name].filter((key) => data.permissions.some((permission) => permission.key === key)));
+            }}>
+              <option value="">Select a preset or configure manually</option>
+              {Object.keys(demoRolePresets).map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </label>
+          <p>Presets only fill this form. Review the selected permissions and click Create role to save. Existing roles are not modified.</p>
+          <label>Name<input name="name" value={roleName} onChange={(event) => setRoleName(event.target.value)} required /></label>
           <fieldset style={{ minWidth: 0 }}><legend>Permissions</legend>
             <p style={{ margin: "0 0 12px" }}>Select only the permissions this role needs. Click anywhere on a row to select it.</p>
             {Array.from(new Set(data.permissions.map((permission) => permission.key.split(".")[0]))).map((category) => (
@@ -123,7 +143,7 @@ export function AccessAdministration() {
                 <div style={{ border: "1px solid #dbe2ea", borderRadius: 8, overflow: "hidden" }}>
                   {data.permissions.filter((permission) => permission.key.split(".")[0] === category).map((permission, index) => (
                     <label key={permission.key} style={{ display: "grid", gridTemplateColumns: "22px minmax(0, 1fr)", alignItems: "center", gap: 12, padding: "12px 14px", background: index % 2 ? "#f1f4f8" : "#fff", cursor: "pointer", borderBottom: "1px solid #e3e8ee", margin: 0 }}>
-                      <input type="checkbox" name="permissionKeys" value={permission.key} style={{ margin: 0, width: 16, height: 16, justifySelf: "center" }} />
+                      <input type="checkbox" name="permissionKeys" value={permission.key} checked={rolePermissions.includes(permission.key)} onChange={(event) => setRolePermissions((current) => event.target.checked ? [...current, permission.key] : current.filter((key) => key !== permission.key))} style={{ margin: 0, width: 16, height: 16, justifySelf: "center" }} />
                       <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
                         <strong style={{ overflowWrap: "anywhere" }}>{permission.key}</strong>
                         <small style={{ overflowWrap: "anywhere" }}>{permissionDescription(permission)}</small>
