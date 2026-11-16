@@ -31,6 +31,7 @@ function fixture(
       decisions.push(input);
       return result;
     },
+    async correctLastReview() { return true; },
     async notifyOverdue() {
       return 2;
     },
@@ -79,6 +80,23 @@ describe("sequential workflow review", () => {
         comment: " ",
       }),
     ).rejects.toThrow("comment");
+  });
+  it("allows a manager to correct the last active review with a reason", async () => {
+    await expect(new WorkflowReviewService(fixture().store).correctLastReview(context, {
+      organizationId: "org-1", taskId: "task-2", reason: "Approver assigned as reviewer by mistake",
+    })).resolves.toEqual({ result: "AWAITING_APPROVAL" });
+  });
+  it("denies correction without review-management authorization or across tenants", async () => {
+    const service = new WorkflowReviewService(fixture().store);
+    await expect(service.correctLastReview({ ...context, grants: [] }, {
+      organizationId: "org-1", taskId: "task-2", reason: "Correction",
+    })).rejects.toThrow("Access denied");
+    await expect(service.correctLastReview(context, {
+      organizationId: "org-2", taskId: "task-2", reason: "Correction",
+    })).rejects.toThrow("Access denied");
+    await expect(service.correctLastReview(context, {
+      organizationId: "org-1", taskId: "task-2", reason: " ",
+    })).rejects.toThrow("reason");
   });
   it("creates idempotent overdue notifications through a manager boundary", async () => {
     await expect(
