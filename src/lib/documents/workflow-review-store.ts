@@ -1,6 +1,97 @@
 import { db } from "../db";
 import type { WorkflowReviewStore } from "./workflow-review";
 export class PrismaWorkflowReviewStore implements WorkflowReviewStore {
+  async correctLastReview(input: Parameters<WorkflowReviewStore["correctLastReview"]>[0]) {
+    return db.$transaction(async (transaction) => {
+      const task = await transaction.workflowTask.findFirst({
+        where: {
+          id: input.taskId,
+          organizationId: input.organizationId,
+          status: "IN_PROGRESS",
+          stepKey: { startsWith: "REVIEW_" },
+          workflow: { status: "ACTIVE", state: "REVIEW", entityType: "DocumentVersion" },
+        },
+        select: { id: true, workflowInstanceId: true, assigneeUserId: true, workflow: { select: { entityId: true, lockVersion: true } } },
+      });
+      if (!task) return false;
+      // A correction may only remove the final outstanding review stage.
+      // All other required review stages must already be completed.
+      const remaining = await transaction.workflowTask.count({
+        where: {
+          organizationId: input.organizationId,
+          workflowInstanceId: task.workflowInstanceId,
+          id: { not: task.id },
+          stepKey: { startsWith: "REVIEW_" },
+          status: { in: ["PENDING", "IN_PROGRESS"] },
+        },
+      });
+      if (remaining !== 0) return false;
+      const approval = await transaction.workflowTask.findFirst({
+        where: {
+          organizationId: input.organizationId,
+          workflowInstanceId: task.workflowInstanceId,
+          stepKey: "APPROVAL",
+          status: "PENDING",
+          assigneeUserId: { not: null },
+        },
+        select: { id: true, assigneeUserId: true },
+      });
+      if (!approval?.assigneeUserId) return false;
+      // Compare-and-swap the workflow before changing its tasks.
+      const claimed = await transaction.workflowInstance.updateMany({
+        where: {
+          id: task.workflowInstanceId,
+          organizationId: input.organizationId,
+          status: "ACTIVE",
+          state: "REVIEW",
+          lockVersion: task.workflow.lockVersion,
+        },
+        data: { state: "APPROVAL", lockVersion: { increment: 1 } },
+      });
+      if (claimed.count !== 1) return false;
+      const cancelled = await transaction.workflowTask.updateMany({
+        where: { id: task.id, organizationId: input.organizationId, status: "IN_PROGRESS" },
+        data: { status: "CANCELLED" },
+      });
+      if (cancelled.count !== 1) throw new WorkflowStateConflict();
+      const activated = await transaction.workflowTask.updateMany({
+        where: { id: approval.id, organizationId: input.organizationId, status: "PENDING" },
+        data: { status: "IN_PROGRESS" },
+      });
+      if (activated.count !== 1) throw new WorkflowStateConflict();
+      await transaction.auditEvent.create({
+        data: {
+          organizationId: input.organizationId,
+          actorUserId: input.actorUserId,
+          action: "DOCUMENT_REVIEW_ASSIGNMENT_CORRECTED",
+          entityType: "DocumentVersion",
+          entityId: task.workflow.entityId,
+          reason: input.reason,
+          occurredAt: input.occurredAt,
+          metadata: {
+            workflowId: task.workflowInstanceId,
+            cancelledTaskId: task.id,
+            previousAssigneeUserId: task.assigneeUserId,
+            activatedApprovalTaskId: approval.id,
+            approverUserId: approval.assigneeUserId,
+          },
+        },
+      });
+      await transaction.notificationOutbox.create({
+        data: {
+          organizationId: input.organizationId,
+          recipientUserId: approval.assigneeUserId,
+          eventKey: `document-approval-ready:corrected:${approval.id}`,
+          templateKey: "DOCUMENT_APPROVAL_ASSIGNED",
+          payload: { documentVersionId: task.workflow.entityId, taskId: approval.id },
+        },
+      });
+      return true;
+    }).catch((error) => {
+      if (error instanceof WorkflowStateConflict) return false;
+      throw error;
+    });
+  }
   async transfer(input: Parameters<WorkflowReviewStore["transfer"]>[0]) {
     return db.$transaction(async (transaction) => {
       const task = await transaction.workflowTask.findFirst({
