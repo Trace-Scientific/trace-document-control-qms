@@ -163,10 +163,22 @@ export class PrismaWorkflowReviewStore implements WorkflowReviewStore {
           select: {
             id: true,
             workflowInstanceId: true,
-            workflow: { select: { entityId: true } },
+            workflow: { select: { entityId: true, lockVersion: true } },
           },
         });
         if (!task) return null;
+        // Serialize decisions against governed corrections using the workflow version.
+        const workflowClaim = await transaction.workflowInstance.updateMany({
+          where: {
+            id: task.workflowInstanceId,
+            organizationId: input.organizationId,
+            status: "ACTIVE",
+            state: "REVIEW",
+            lockVersion: task.workflow.lockVersion,
+          },
+          data: { lockVersion: { increment: 1 } },
+        });
+        if (workflowClaim.count !== 1) return null;
         const claimed = await transaction.workflowTask.updateMany({
           where: {
             organizationId: input.organizationId,
