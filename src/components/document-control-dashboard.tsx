@@ -273,6 +273,7 @@ export function DocumentControlDashboard({
     [detailError, setDetailError] = useState(""),
     [compareId, setCompareId] = useState(""),
     [approvalOpen, setApprovalOpen] = useState(false),
+    [showApprovalPassword, setShowApprovalPassword] = useState(false),
     [revisionOpen, setRevisionOpen] = useState(false),
     [submitOpen, setSubmitOpen] = useState(false),
     [templates, setTemplates] = useState<WorkflowTemplate[]>([]),
@@ -1773,14 +1774,25 @@ export function DocumentControlDashboard({
                   </p>
                   <label>
                     Password
-                    <input
-                      name="password"
-                      type="password"
-                      required
-                      maxLength={1024}
-                      autoComplete="current-password"
-                      autoFocus
-                    />
+                    <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <input
+                        name="password"
+                        type={showApprovalPassword ? "text" : "password"}
+                        required
+                        maxLength={1024}
+                        autoComplete="current-password"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        aria-label={showApprovalPassword ? "Hide password" : "Show password"}
+                        aria-pressed={showApprovalPassword}
+                        title={showApprovalPassword ? "Hide password" : "Show password"}
+                        onClick={() => setShowApprovalPassword((visible) => !visible)}
+                      >
+                        <Icon name={showApprovalPassword ? "eye-off" : "eye"} />
+                      </button>
+                    </span>
                   </label>
                   <div>
                     <button
