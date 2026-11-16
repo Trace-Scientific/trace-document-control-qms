@@ -713,10 +713,13 @@ export function DocumentControlDashboard({
       return;
     }
     setDialog(false);
+    window.dispatchEvent(new CustomEvent("trace-qms:open-controlled-submission", {
+      detail: { documentNumber: String(form.get("number")) },
+    }));
     resetDocumentQuery("", "ALL");
     setDocumentReload((value) => value + 1);
     setNotice(
-      `${String(form.get("number"))} was saved as controlled draft version 0.1. Next: open Document operations → Controlled submission to select reviewers and a final approver.`,
+      `${String(form.get("number"))} was saved as controlled draft version 0.1. Next: select reviewers and a final approver in the submission dialog.`,
     );
   }
   async function markRead(item: NotificationRow) {
