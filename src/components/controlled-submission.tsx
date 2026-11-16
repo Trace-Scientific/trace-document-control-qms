@@ -46,7 +46,7 @@ export function ControlledSubmission() {
     setDetail(body.data as Detail);
   }
 
-  async function load(preferredDocumentNumber?: string) {
+  async function load(preferredDocumentNumber?: string, preferredVersionId?: string) {
     setBusy(true);
     setError("");
     const [draftResponse, approverResponse] = await Promise.all([
@@ -71,23 +71,24 @@ export function ControlledSubmission() {
     const nextDrafts = (draftBody.data as DraftPage).items;
     setDrafts(nextDrafts);
     setApprovers((approverBody.data as ApprovalQueue).approvers);
-    const first = nextDrafts.find((draft) => draft.documentNumber === preferredDocumentNumber)?.id || nextDrafts[0]?.id || "";
+    const first = nextDrafts.find((draft) => draft.id === preferredVersionId)?.id || nextDrafts.find((draft) => draft.documentNumber === preferredDocumentNumber)?.id || nextDrafts[0]?.id || "";
     setSelectedId(first);
     await loadDetail(first);
   }
 
-  async function openPanel(preferredDocumentNumber?: string) {
+  async function openPanel(preferredDocumentNumber?: string, preferredVersionId?: string) {
     setOpen(true);
     setNotice("");
     setStages([{ reviewerUserId: "", dueAt: "" }]);
     setConfirmDirectApproval(false);
-    await load(preferredDocumentNumber);
+    await load(preferredDocumentNumber, preferredVersionId);
   }
 
   useEffect(() => {
     function handleCreatedDraft(event: Event) {
-      const documentNumber = (event as CustomEvent<{ documentNumber?: string }>).detail?.documentNumber;
-      void openPanel(documentNumber);
+      const documentNumber = (event as CustomEvent<{ documentNumber?: string; versionId?: string }>).detail?.documentNumber;
+      const versionId = (event as CustomEvent<{ versionId?: string }>).detail?.versionId;
+      void openPanel(documentNumber, versionId);
     }
     window.addEventListener("trace-qms:open-controlled-submission", handleCreatedDraft);
     return () => window.removeEventListener("trace-qms:open-controlled-submission", handleCreatedDraft);
