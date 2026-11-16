@@ -12,6 +12,7 @@ export interface WorkflowReviewStore {
     comment: string;
     occurredAt: Date;
   }): Promise<"NEXT_REVIEW" | "AWAITING_APPROVAL" | "RETURNED_TO_DRAFT" | null>;
+  correctLastReview(input: { organizationId: string; taskId: string; actorUserId: string; reason: string; occurredAt: Date }): Promise<boolean>;
   notifyOverdue(organizationId: string, occurredAt: Date): Promise<number>;
   notifyAllOverdue(occurredAt: Date): Promise<number>;
   transfer(input: {
@@ -52,6 +53,13 @@ export class WorkflowReviewService {
     });
     if (!result) throw new WorkflowReviewConflictError();
     return { result };
+  }
+  async correctLastReview(context: AuthorizationContext, input: { organizationId: string; taskId: string; reason: string }) {
+    requireAuthorization(context, { organizationId: input.organizationId, permission: "document.review.manage" });
+    if (!input.reason.trim()) throw new WorkflowReviewValidationError("A correction reason is required");
+    const changed = await this.store.correctLastReview({ ...input, reason: input.reason.trim(), actorUserId: context.userId, occurredAt: this.clock() });
+    if (!changed) throw new WorkflowReviewConflictError();
+    return { result: "AWAITING_APPROVAL" as const };
   }
   async notifyOverdue(context: AuthorizationContext, organizationId: string) {
     requireAuthorization(context, {

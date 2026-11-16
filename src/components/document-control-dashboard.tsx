@@ -671,6 +671,27 @@ export function DocumentControlDashboard({
         : "Revision returned to draft with the reviewer comment.",
     );
   }
+  async function correctLastReview(taskId: string) {
+    if (!detail || !live?.capabilities.canManageReviews) return;
+    if (!window.confirm("Cancel this outstanding review assignment and activate the existing final approval stage? Completed reviews will be preserved. This action is audited.")) return;
+    const reason = window.prompt("Required correction reason (recorded in the audit trail)");
+    if (!reason?.trim()) return;
+    setSubmitting(true);
+    const response = await fetch("/api/documents/workflow", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ operation: "CORRECT_LAST_REVIEW", taskId, reason: reason.trim() }),
+    });
+    const body = await response.json().catch(() => null);
+    setSubmitting(false);
+    if (!response.ok) {
+      setDetailError(body?.error || "Unable to correct the review assignment.");
+      return;
+    }
+    await loadDetail(detail.selected.id);
+    setDocumentReload((value) => value + 1);
+    setNotice("Review assignment correction audited. The designated final approver can now sign.");
+  }
   async function monitorWorkflowOverdue() {
     setSubmitting(true);
     const response = await fetch("/api/documents/workflow", {
@@ -1541,6 +1562,18 @@ export function DocumentControlDashboard({
                       {["PENDING", "IN_PROGRESS"].includes(item.status) &&
                         item.stepKey.startsWith("REVIEW_") &&
                         live?.capabilities.canManageReviews && (
+                          <>
+                          {item.status === "IN_PROGRESS" &&
+                            !detail.assignments.some((other) =>
+                              other.versionId === detail.selected.id &&
+                              other.id !== item.id &&
+                              other.stepKey.startsWith("REVIEW_") &&
+                              ["PENDING", "IN_PROGRESS"].includes(other.status)
+                            ) && (
+                              <button disabled={submitting} onClick={() => correctLastReview(item.id)}>
+                                Correct mistaken final review stage
+                              </button>
+                            )}
                           <select
                             aria-label="Reassign reviewer"
                             defaultValue=""
@@ -1554,6 +1587,7 @@ export function DocumentControlDashboard({
                             <option value="">Reassign…</option>
                             {detail.reviewers.filter((reviewer) => reviewer.id !== item.assignee?.id).map((reviewer) => <option key={reviewer.id} value={reviewer.id}>{reviewer.name}</option>)}
                           </select>
+                          </>
                         )}
                     </article>
                   ))}

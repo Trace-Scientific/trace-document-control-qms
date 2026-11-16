@@ -19,6 +19,7 @@ const service = new WorkflowReviewService(new PrismaWorkflowReviewStore()),
       comment: z.string().trim().min(1).max(4000),
     }),
     z.object({ operation: z.literal("MONITOR_OVERDUE") }),
+    z.object({ operation: z.literal("CORRECT_LAST_REVIEW"), taskId: z.string().uuid(), reason: z.string().trim().min(1).max(4000) }),
     z.object({
       operation: z.enum(["REASSIGN", "DELEGATE"]),
       taskId: z.string().uuid(),
@@ -35,6 +36,8 @@ export async function POST(request: NextRequest) {
               ...input,
               organizationId: context.organizationId,
             })
+          : input.operation === "CORRECT_LAST_REVIEW"
+            ? await service.correctLastReview(context, { organizationId: context.organizationId, taskId: input.taskId, reason: input.reason })
           : input.operation === "MONITOR_OVERDUE"
             ? await service.notifyOverdue(context, context.organizationId)
             : await service.transfer(context, {
