@@ -1474,6 +1474,7 @@ export function DocumentControlDashboard({
                           "No reviewer comment recorded."}
                       </p>
                       {item.status === "IN_PROGRESS" &&
+                        item.stepKey.startsWith("REVIEW_") &&
                         item.assignee?.id === live?.userId && (
                           <div className="review-decisions">
                             <select
