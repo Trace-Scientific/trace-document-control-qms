@@ -1514,7 +1514,9 @@ export function DocumentControlDashboard({
                     <article key={item.id}>
                       <div>
                         <strong>
-                          {item.assignee?.name || "Unassigned review"}
+                          {item.assignee?.name || "Unassigned workflow task"}
+                          {" · "}
+                          {item.stepKey === "APPROVAL" ? "Final approval" : item.stepKey.startsWith("REVIEW_") ? "Technical review" : item.stepKey}
                         </strong>
                         <span>
                           {item.status.replaceAll("_", " ")} · Due{" "}
@@ -1630,7 +1632,8 @@ export function DocumentControlDashboard({
                       (item) =>
                         item.versionId === detail.selected.id &&
                         item.stepKey === "APPROVAL" &&
-                        ["PENDING", "IN_PROGRESS"].includes(item.status),
+                        item.status === "IN_PROGRESS" &&
+                        item.assignee?.id === live?.userId,
                     ) &&
                     live?.capabilities.canApproveDocuments && (
                       <button
