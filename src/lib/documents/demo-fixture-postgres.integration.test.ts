@@ -382,6 +382,97 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     })).toBe(1);
     await expect(reviewService.decide(reviewerContext, reviewDecision))
       .rejects.toThrow("The review task is no longer actionable");
+    // Governed correction regression: preserve the completed first review,
+    // cancel only the mistaken final review, and activate existing approval.
+    const mistakenReviewer = await db.user.create({ data: {
+      organizationId: org.id, email: "fixture-mistaken-reviewer@example.invalid",
+      firstName: "Synthetic", lastName: "Mistaken", status: "ACTIVE",
+    } });
+    await db.userRole.create({ data: {
+      organizationId: org.id, userId: mistakenReviewer.id, roleId: reviewRole.id,
+    } });
+    const correctionSubmission = await service.transition(submitter, {
+      organizationId: org.id, versionId: ids[2], command: "SUBMIT",
+      expectedLockVersion: 0,
+      assigneeUserIds: [reviewer.id, mistakenReviewer.id],
+      approverUserId: finalApprover.id, dueAt,
+      comment: "Synthetic two-stage correction regression",
+    });
+    expect(correctionSubmission.status).toBe("IN_REVIEW");
+    const correctionWorkflow = await db.workflowInstance.findFirstOrThrow({
+      where: { organizationId: org.id, entityId: ids[2] },
+    });
+    const correctionTasks = await db.workflowTask.findMany({
+      where: { organizationId: org.id, workflowInstanceId: correctionWorkflow.id },
+    });
+    const firstStage = correctionTasks.find((task) => task.stepKey === "REVIEW_1")!;
+    const mistakenStage = correctionTasks.find((task) => task.stepKey === "REVIEW_2")!;
+    const approvalStage = correctionTasks.find((task) => task.stepKey === "APPROVAL")!;
+    expect(await reviewService.decide(reviewerContext, {
+      organizationId: org.id, taskId: firstStage.id,
+      decision: "ACCEPT", comment: "Verified technical review remains immutable",
+    })).toEqual({ result: "NEXT_REVIEW" });
+    const managerContext: AuthorizationContext = {
+      userId: actor.id, organizationId: org.id, userState: "ACTIVE",
+      grants: [{ permission: "document.review.manage", scopeType: "ORGANIZATION", scopeId: null }],
+    };
+    const correction = {
+      organizationId: org.id, taskId: mistakenStage.id,
+      reason: "Synthetic accidental second reviewer",
+    };
+    await expect(reviewService.correctLastReview({
+      ...managerContext, grants: [],
+    }, correction)).rejects.toThrow("Access denied");
+    await expect(reviewService.correctLastReview({
+      ...managerContext, organizationId: otherOrg.id,
+    }, correction)).rejects.toThrow("Access denied");
+    expect(await reviewService.correctLastReview(managerContext, correction))
+      .toEqual({ result: "AWAITING_APPROVAL" });
+    expect(await db.workflowTask.findUniqueOrThrow({
+      where: { id: firstStage.id },
+      select: { status: true, decision: true, comments: true },
+    })).toEqual({
+      status: "COMPLETED", decision: "ACCEPT",
+      comments: "Verified technical review remains immutable",
+    });
+    expect(await db.workflowTask.findUniqueOrThrow({
+      where: { id: mistakenStage.id }, select: { status: true },
+    })).toEqual({ status: "CANCELLED" });
+    expect(await db.workflowTask.findUniqueOrThrow({
+      where: { id: approvalStage.id }, select: { status: true, assigneeUserId: true },
+    })).toEqual({ status: "IN_PROGRESS", assigneeUserId: finalApprover.id });
+    expect(await db.workflowInstance.findUniqueOrThrow({
+      where: { id: correctionWorkflow.id }, select: { state: true },
+    })).toEqual({ state: "APPROVAL" });
+    const correctionAudit = await db.auditEvent.findFirstOrThrow({
+      where: {
+        organizationId: org.id, entityId: ids[2],
+        action: "DOCUMENT_REVIEW_ASSIGNMENT_CORRECTED",
+      },
+    });
+    expect(correctionAudit).toMatchObject({
+      actorUserId: actor.id, reason: correction.reason,
+    });
+    expect(correctionAudit.metadata).toMatchObject({
+      cancelledTaskId: mistakenStage.id,
+      activatedApprovalTaskId: approvalStage.id,
+    });
+    await expect(reviewService.correctLastReview(managerContext, correction))
+      .rejects.toThrow("The review task is no longer actionable");
+    expect(await db.auditEvent.count({ where: {
+      organizationId: org.id, entityId: ids[2],
+      action: "DOCUMENT_REVIEW_ASSIGNMENT_CORRECTED",
+    } })).toBe(1);
+    // A completed correction cannot be overwritten by a late review decision.
+    await expect(reviewService.decide({
+      ...reviewerContext, userId: mistakenReviewer.id,
+    }, {
+      organizationId: org.id, taskId: mistakenStage.id,
+      decision: "ACCEPT", comment: "Late conflicting decision",
+    })).rejects.toThrow("The review task is no longer actionable");
+    expect(await db.workflowTask.findUniqueOrThrow({
+      where: { id: firstStage.id }, select: { status: true },
+    })).toEqual({ status: "COMPLETED" });
     // The real service must verify the signer password and explicit signature
     // confirmation before the Prisma store is allowed to persist approval.
     const signingPassword = "Synthetic-approval-password-2026!";
