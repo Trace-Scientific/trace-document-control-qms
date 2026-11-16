@@ -1,8 +1,10 @@
 import type { ReactNode, SVGProps } from "react";
 
-export type IconName = "grid" | "file" | "review" | "users" | "chart" | "settings" | "search" | "bell" | "plus" | "clock" | "check" | "chevron" | "more" | "shield" | "menu" | "close";
+export type IconName = "grid" | "file" | "review" | "users" | "chart" | "settings" | "search" | "bell" | "plus" | "clock" | "check" | "chevron" | "more" | "shield" | "menu" | "close" | "eye" | "eye-off";
 
 const paths: Record<IconName, ReactNode> = {
+  eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></>,
+  "eye-off": <><path d="m3 3 18 18M10.6 5.1A11 11 0 0 1 12 5c6.5 0 10 7 10 7a15 15 0 0 1-3.1 4M6.2 6.2C3.5 8.1 2 12 2 12s3.5 7 10 7c1.4 0 2.7-.3 3.8-.8"/><path d="M10 10a3 3 0 0 0 4 4"/></>,
   grid: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
   file: <><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v5h5M9 12h6M9 16h6"/></>,
   review: <><path d="M9 11l2 2 4-5"/><path d="M19 12a7 7 0 1 1-3-5.7"/></>,
