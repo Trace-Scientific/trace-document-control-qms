@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 type DraftRow = {
   id: string;
@@ -46,7 +46,7 @@ export function ControlledSubmission() {
     setDetail(body.data as Detail);
   }
 
-  async function load() {
+  async function load(preferredDocumentNumber?: string) {
     setBusy(true);
     setError("");
     const [draftResponse, approverResponse] = await Promise.all([
@@ -71,18 +71,29 @@ export function ControlledSubmission() {
     const nextDrafts = (draftBody.data as DraftPage).items;
     setDrafts(nextDrafts);
     setApprovers((approverBody.data as ApprovalQueue).approvers);
-    const first = nextDrafts[0]?.id || "";
+    const first = nextDrafts.find((draft) => draft.documentNumber === preferredDocumentNumber)?.id || nextDrafts[0]?.id || "";
     setSelectedId(first);
     await loadDetail(first);
   }
 
-  async function openPanel() {
+  async function openPanel(preferredDocumentNumber?: string) {
     setOpen(true);
     setNotice("");
     setStages([{ reviewerUserId: "", dueAt: "" }]);
     setConfirmDirectApproval(false);
-    await load();
+    await load(preferredDocumentNumber);
   }
+
+  useEffect(() => {
+    function handleCreatedDraft(event: Event) {
+      const documentNumber = (event as CustomEvent<{ documentNumber?: string }>).detail?.documentNumber;
+      void openPanel(documentNumber);
+    }
+    window.addEventListener("trace-qms:open-controlled-submission", handleCreatedDraft);
+    return () => window.removeEventListener("trace-qms:open-controlled-submission", handleCreatedDraft);
+    // The event is dispatched only after the document creation command succeeds.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function updateStage(index: number, patch: Partial<Stage>) {
     setStages((current) =>
@@ -170,7 +181,7 @@ export function ControlledSubmission() {
       <button
         type="button"
         style={{ position: "fixed", right: 390, bottom: 24, zIndex: 80 }}
-        onClick={openPanel}
+        onClick={() => void openPanel()}
       >
         Controlled submission
       </button>
