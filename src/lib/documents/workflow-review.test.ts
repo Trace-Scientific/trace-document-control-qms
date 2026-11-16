@@ -98,6 +98,41 @@ describe("sequential workflow review", () => {
       organizationId: "org-1", taskId: "task-2", reason: " ",
     })).rejects.toThrow("reason");
   });
+  it("passes a trimmed correction reason and the authenticated actor to the store", async () => {
+    const received: unknown[] = [];
+    const base = fixture().store;
+    const store: WorkflowReviewStore = {
+      ...base,
+      async correctLastReview(input) {
+        received.push(input);
+        return true;
+      },
+    };
+    await new WorkflowReviewService(store, () => new Date("2026-11-16T00:00:00Z"))
+      .correctLastReview(context, {
+        organizationId: "org-1",
+        taskId: "task-2",
+        reason: "  Incorrect reviewer assignment  ",
+      });
+    expect(received).toEqual([{
+      organizationId: "org-1",
+      taskId: "task-2",
+      reason: "Incorrect reviewer assignment",
+      actorUserId: "reviewer-1",
+      occurredAt: new Date("2026-11-16T00:00:00Z"),
+    }]);
+  });
+  it("rejects stale or already-corrected review stages", async () => {
+    const store: WorkflowReviewStore = {
+      ...fixture().store,
+      async correctLastReview() { return false; },
+    };
+    await expect(new WorkflowReviewService(store).correctLastReview(context, {
+      organizationId: "org-1",
+      taskId: "task-2",
+      reason: "Correction",
+    })).rejects.toBeInstanceOf(WorkflowReviewConflictError);
+  });
   it("creates idempotent overdue notifications through a manager boundary", async () => {
     await expect(
       new WorkflowReviewService(fixture().store).notifyOverdue(
