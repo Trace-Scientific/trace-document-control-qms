@@ -263,9 +263,7 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
                       permissions: {
                         some: {
                           permission: {
-                            key: {
-                              in: ["document.review", "document.approve"],
-                            },
+                            key: "document.review",
                           },
                         },
                       },
