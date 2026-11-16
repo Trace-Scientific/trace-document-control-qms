@@ -49,12 +49,48 @@ function scopePayload(value: string) {
 export function AccessAdministration() {
   const [roleName, setRoleName] = useState(""), [rolePermissions, setRolePermissions] = useState<string[]>([]);
   const [showTemporaryPassword, setShowTemporaryPassword] = useState(false), [passwordMismatch, setPasswordMismatch] = useState(false);
+  const [pendingOperation, setPendingOperation] = useState<string | null>(null), [actionFeedback, setActionFeedback] = useState<{ kind: "success" | "error"; message: string } | null>(null);
   const [data, setData] = useState<AdminData | null>(null), [error, setError] = useState(""), [notice, setNotice] = useState(""), [section, setSection] = useState<AdminSection>("overview"), [platformAccess, setPlatformAccess] = useState(false);
   async function load() { const response = await fetch("/api/admin"); const body = await response.json().catch(() => null); if (response.ok) setData(body.data); else setError(body?.error ?? "Administration could not be loaded."); }
   useEffect(() => { let active = true; fetch("/api/admin").then(async (response) => ({ response, body: await response.json().catch(() => null) })).then(({ response, body }) => { if (!active) return; if (response.ok) setData(body.data); else setError(body?.error ?? "Administration could not be loaded."); }); return () => { active = false; }; }, []);
   useEffect(() => { let active = true; fetch("/api/platform/me", { cache: "no-store" }).then((response) => { if (active) setPlatformAccess(response.ok); }).catch(() => { if (active) setPlatformAccess(false); }); return () => { active = false; }; }, []);
-  async function command(payload: Record<string, unknown>) { setError(""); setNotice(""); const response = await fetch("/api/admin/commands", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }); const body = await response.json().catch(() => null); if (!response.ok) { const details = Array.isArray(body?.details) ? body.details.map((item: { field?: string; message?: string }) => `${item.field || "Request"}: ${item.message || "Invalid value"}`).join("; ") : ""; return setError([body?.error ?? "Change could not be completed.", details].filter(Boolean).join(" — ")); } setNotice("The controlled administration change was completed and audited."); await load(); }
-  function form(operation: string, fields: (form: FormData) => Record<string, unknown>) { return (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const formData = new FormData(event.currentTarget); void command({ operation, ...fields(formData) }); }; }
+  async function command(payload: Record<string, unknown>) {
+    const operation = String(payload.operation ?? "Change");
+    setPendingOperation(operation);
+    setActionFeedback(null);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/admin/commands", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        const details = Array.isArray(body?.details) ? body.details.map((item: { field?: string; message?: string }) => `${item.field || "Request"}: ${item.message || "Invalid value"}`).join("; ") : "";
+        const message = [body?.error ?? "Change could not be completed.", details].filter(Boolean).join(" — ");
+        setError(message);
+        setActionFeedback({ kind: "error", message });
+        return;
+      }
+      const label = operation.replaceAll("_", " ").toLowerCase();
+      const message = `Successfully completed: ${label}. The change was audited.`;
+      setNotice(message);
+      setActionFeedback({ kind: "success", message });
+      try { await load(); } catch { setActionFeedback({ kind: "error", message: `The ${label} request succeeded, but the administration list could not refresh. Reload to verify.` }); }
+    } catch {
+      const message = "Unable to confirm the result due to a connection error. Refresh the list before trying again to avoid duplicates.";
+      setError(message);
+      setActionFeedback({ kind: "error", message });
+    } finally {
+      setPendingOperation(null);
+    }
+  }
+  function form(operation: string, fields: (form: FormData) => Record<string, unknown>) {
+    return (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (pendingOperation) return;
+      const formData = new FormData(event.currentTarget);
+      void command({ operation, ...fields(formData) });
+    };
+  }
   if (!data) return <section className="panel documents-panel"><p>{error || "Loading access administration…"}</p></section>;
 
   const sections: Array<{ id: AdminSection; label: string; description: string }> = [
@@ -82,13 +118,18 @@ export function AccessAdministration() {
     <section className="panel documents-panel admin-hub">
       <div className="panel-header"><div><h2>Administration</h2><p>{data.organization.displayName} · {data.organization.loginCode}</p></div></div>
       {error && <div className="detail-error" role="alert">{error}</div>}{notice && <div className="detail-notice">{notice}</div>}
+      {(pendingOperation || actionFeedback) && <div role={actionFeedback?.kind === "error" ? "alert" : "status"} aria-live="polite" style={{ position: "fixed", right: 20, bottom: 20, zIndex: 1000, maxWidth: 420, padding: "14px 18px", borderRadius: 10, border: "1px solid #cbd5e1", boxShadow: "0 8px 24px #0002", background: actionFeedback?.kind === "error" ? "#fff1f2" : "#eff6ff", color: "#172554" }}>
+        <strong>{pendingOperation ? "Processing…" : actionFeedback?.kind === "error" ? "Action needs attention" : "Action completed"}</strong>
+        <p style={{ margin: "6px 0 0" }}>{pendingOperation ? "Please wait. Do not submit again." : actionFeedback?.message}</p>
+        {!pendingOperation && <button type="button" className="secondary-button" onClick={() => setActionFeedback(null)} style={{ marginTop: 8 }}>Dismiss</button>}
+      </div>}
       <nav className="section-nav" aria-label="Administration sections">{sections.map((item) => <button type="button" key={item.id} className={section === item.id ? "active" : ""} aria-current={section === item.id ? "page" : undefined} onClick={() => setSection(item.id)}>{item.label}</button>)}</nav>
 
       {section === "overview" && <div className="admin-overview-grid">{sections.filter((item) => item.id !== "overview").map((item) => <button type="button" className="admin-overview-card" key={item.id} onClick={() => setSection(item.id)}><strong>{item.label}</strong><span>{item.description}</span></button>)}{platformAccess ? <a className="admin-overview-card" href="/platform"><strong>Platform Administration</strong><span>Open the separate Trace control plane for Help &amp; User Manual and other platform-governed functions.</span></a> : null}</div>}
 
       {section === "organization" && <div className="admin-section-stack"><div className="section-heading"><h3>Organization</h3><p>Maintain the controlled site and department structure.</p></div><div className="template-layout">
-        <form className="template-form" onSubmit={form("CREATE_SITE", (f) => ({ name: String(f.get("name")) }))}><strong>Add site</strong><label>Name<input name="name" required /></label><button className="primary-button">Create site</button></form>
-        <form className="template-form" onSubmit={form("CREATE_DEPARTMENT", (f) => ({ name: String(f.get("name")), siteId: String(f.get("siteId")) || null }))}><strong>Add department</strong><label>Name<input name="name" required /></label><label>Site<select name="siteId"><option value="">Organization-wide</option>{data.sites.map((site) => <option value={site.id} key={site.id}>{site.name}</option>)}</select></label><button className="primary-button">Create department</button></form>
+        <form className="template-form" onSubmit={form("CREATE_SITE", (f) => ({ name: String(f.get("name")) }))}><strong>Add site</strong><label>Name<input name="name" required /></label><button type="submit" className="primary-button" disabled={pendingOperation !== null}>Create site</button></form>
+        <form className="template-form" onSubmit={form("CREATE_DEPARTMENT", (f) => ({ name: String(f.get("name")), siteId: String(f.get("siteId")) || null }))}><strong>Add department</strong><label>Name<input name="name" required /></label><label>Site<select name="siteId"><option value="">Organization-wide</option>{data.sites.map((site) => <option value={site.id} key={site.id}>{site.name}</option>)}</select></label><button type="submit" className="primary-button" disabled={pendingOperation !== null}>Create department</button></form>
       </div></div>}
 
       {section === "access" && <div className="admin-section-stack"><div className="section-heading"><h3>Users &amp; access</h3><p>Create accounts, define least-privilege roles, and assign scoped access.</p></div><div className="template-layout">
@@ -118,7 +159,7 @@ export function AccessAdministration() {
             <input name="confirmTemporaryPassword" type={showTemporaryPassword ? "text" : "password"} minLength={12} required autoComplete="new-password" aria-invalid={passwordMismatch} aria-describedby={passwordMismatch ? "temporary-password-error" : undefined} onChange={() => setPasswordMismatch(false)} />
           </label>
           {passwordMismatch && <p id="temporary-password-error" className="detail-error" role="alert">Passwords do not match. Please enter the same password in both fields.</p>}
-          <button className="primary-button">Create user</button>
+          <button type="submit" className="primary-button" disabled={pendingOperation !== null}>Create user</button>
         </form>
         <form className="template-form" onSubmit={form("CREATE_ROLE", (f) => ({ name: String(f.get("name")), permissionKeys: f.getAll("permissionKeys").map(String) }))}>
           <strong>Add role</strong>
@@ -153,15 +194,15 @@ export function AccessAdministration() {
                 </div>
               </div>
             ))}
-          </fieldset><button className="primary-button">Create role</button>
+          </fieldset><button type="submit" className="primary-button" disabled={pendingOperation !== null}>Create role</button>
         </form>
-        <form className="template-form" onSubmit={form("ASSIGN_ROLE", (f) => ({ userId: String(f.get("userId")), roleId: String(f.get("roleId")), ...scopePayload(String(f.get("scopeTarget"))) }))}><strong>Assign role</strong><p>Choose the smallest scope required. Reassigning the same role updates its scope.</p><label>User<select name="userId" required>{data.users.map((user) => <option value={user.id} key={user.id}>{user.firstName} {user.lastName} · {user.email}</option>)}</select></label><label>Role<select name="roleId" required>{data.roles.map((role) => <option value={role.id} key={role.id}>{role.name}</option>)}</select></label><label>Scope<select name="scopeTarget" required><option value="ORGANIZATION">Entire organization</option>{data.sites.map((site) => <option value={`SITE:${site.id}`} key={`site-${site.id}`}>Site · {site.name}</option>)}{data.departments.map((department) => <option value={`DEPARTMENT:${department.id}`} key={`department-${department.id}`}>Department · {department.name}</option>)}</select></label><button className="primary-button">Assign scoped role</button></form>
+        <form className="template-form" onSubmit={form("ASSIGN_ROLE", (f) => ({ userId: String(f.get("userId")), roleId: String(f.get("roleId")), ...scopePayload(String(f.get("scopeTarget"))) }))}><strong>Assign role</strong><p>Choose the smallest scope required. Reassigning the same role updates its scope.</p><label>User<select name="userId" required>{data.users.map((user) => <option value={user.id} key={user.id}>{user.firstName} {user.lastName} · {user.email}</option>)}</select></label><label>Role<select name="roleId" required>{data.roles.map((role) => <option value={role.id} key={role.id}>{role.name}</option>)}</select></label><label>Scope<select name="scopeTarget" required><option value="ORGANIZATION">Entire organization</option>{data.sites.map((site) => <option value={`SITE:${site.id}`} key={`site-${site.id}`}>Site · {site.name}</option>)}{data.departments.map((department) => <option value={`DEPARTMENT:${department.id}`} key={`department-${department.id}`}>Department · {department.name}</option>)}</select></label><button type="submit" className="primary-button" disabled={pendingOperation !== null}>Assign scoped role</button></form>
       </div><div className="detail-section"><h3>Existing role assignments &amp; effective access</h3><p>Review current scoped assignments before making access changes. Effective permissions are the union of assigned roles within their applicable scopes.</p>{data.users.map((user) => { const assignments = data.roleAssignments.filter((assignment) => assignment.userId === user.id); const effectivePermissions = [...new Set(assignments.flatMap((assignment) => roleById.get(assignment.roleId)?.permissions.map((item) => item.permission.key) ?? []))].sort(); return <div className="template-form" key={`access-${user.id}`}><strong>{user.firstName} {user.lastName} · {user.email}</strong><p>Status: {user.status}</p>{assignments.length === 0 ? <p>No role assignments.</p> : <div className="table-scroll"><table><thead><tr><th>Role</th><th>Scope</th><th>Assigned</th><th>Assigned by</th></tr></thead><tbody>{assignments.map((assignment) => { const assigner = assignment.assignedBy ? userById.get(assignment.assignedBy) : null; return <tr key={`${assignment.userId}-${assignment.roleId}`}><td>{roleById.get(assignment.roleId)?.name ?? "Unknown role"}</td><td>{scopeLabel(assignment)}</td><td>{new Date(assignment.assignedAt).toLocaleString()}</td><td>{assigner ? `${assigner.firstName} ${assigner.lastName}` : "System / historical"}</td></tr>; })}</tbody></table></div>}<details><summary>Effective permissions ({effectivePermissions.length})</summary>{effectivePermissions.length === 0 ? <p>No permissions granted.</p> : <p>{effectivePermissions.join(", ")}</p>}</details></div>; })}</div></div>}
 
       {section === "memberships" && <MembershipAdministration embedded />}
 
       {section === "documents" && <div className="admin-section-stack"><div className="section-heading"><h3>Document configuration</h3><p>Manage governed document types and their review intervals.</p></div><div className="template-layout">
-        <form className="template-form" onSubmit={form("CREATE_DOCUMENT_TYPE", (f) => ({ code: String(f.get("code")), name: String(f.get("name")), reviewMonths: String(f.get("reviewMonths") || "").trim() ? Number(f.get("reviewMonths")) : null }))}><strong>Add document type</strong><label>Code<input name="code" required maxLength={30} placeholder="SOP" /></label><label>Name<input name="name" required maxLength={120} placeholder="Procedure" /></label><label>Review interval (months)<input name="reviewMonths" type="number" min={1} max={120} /></label><button className="primary-button">Create document type</button></form>
+        <form className="template-form" onSubmit={form("CREATE_DOCUMENT_TYPE", (f) => ({ code: String(f.get("code")), name: String(f.get("name")), reviewMonths: String(f.get("reviewMonths") || "").trim() ? Number(f.get("reviewMonths")) : null }))}><strong>Add document type</strong><label>Code<input name="code" required maxLength={30} placeholder="SOP" /></label><label>Name<input name="name" required maxLength={120} placeholder="Procedure" /></label><label>Review interval (months)<input name="reviewMonths" type="number" min={1} max={120} /></label><button type="submit" className="primary-button" disabled={pendingOperation !== null}>Create document type</button></form>
       </div><div className="detail-section"><h3>Document types</h3>{data.documentTypes.length === 0 ? <p>No document types configured. Create one above before starting a controlled document.</p> : <div className="template-layout">{data.documentTypes.map((type) => <div className="template-form" key={type.id}><strong>{type.code} · {type.name}</strong><p>{type.reviewMonths ? `Review every ${type.reviewMonths} months` : "No default review interval"} · {type.active ? "Active" : "Inactive"}</p><form onSubmit={form("UPDATE_DOCUMENT_TYPE_REVIEW_INTERVAL", (f) => ({ documentTypeId: type.id, reviewMonths: Number(f.get("reviewMonths")) }))}><label>Review interval (months)<input name="reviewMonths" type="number" min={1} max={120} defaultValue={type.reviewMonths ?? ""} required /></label><button className="secondary-button">Save review interval</button></form><button type="button" className="secondary-button" onClick={() => command({ operation: "SET_DOCUMENT_TYPE_ACTIVE", documentTypeId: type.id, active: !type.active })}>{type.active ? "Deactivate" : "Activate"}</button></div>)}</div>}</div></div>}
 
       {section === "workflows" && <WorkflowTemplateAdministration />}
