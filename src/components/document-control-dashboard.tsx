@@ -138,7 +138,6 @@ type WorkflowTemplate = {
   active: boolean;
   stages: Array<{ name: string; dueDays: number }>;
 };
-type ReviewStageDraft = { reviewerUserId: string; dueAt: string };
 type View = "Documents" | "Review queue" | "Administration";
 
 const initialDocuments: DocumentRow[] = [
