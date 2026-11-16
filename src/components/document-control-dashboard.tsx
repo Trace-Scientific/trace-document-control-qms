@@ -716,7 +716,7 @@ export function DocumentControlDashboard({
     resetDocumentQuery("", "ALL");
     setDocumentReload((value) => value + 1);
     setNotice(
-      `${String(form.get("number"))} was saved as controlled draft version 0.1.`,
+      `${String(form.get("number"))} was saved as controlled draft version 0.1. Next: open Document operations → Controlled submission to select reviewers and a final approver.`,
     );
   }
   async function markRead(item: NotificationRow) {
@@ -1787,7 +1787,7 @@ export function DocumentControlDashboard({
                 </span>
                 <div>
                   <h2 id="new-title">Create controlled document</h2>
-                  <p>Start a new document at draft version 0.1.</p>
+                  <p>Step 1 of 2: save a controlled draft. Next, submit it for review and approval.</p>
                 </div>
               </div>
               <button
@@ -1799,6 +1799,12 @@ export function DocumentControlDashboard({
             </div>
             {live?.capabilities.canCreateDocuments ? (
               <form onSubmit={createDraft}>
+                <div className="form-note" role="note">
+                  <Icon name="file" />
+                  <span>
+                    <strong>Draft → Review → Approval.</strong> Enter the document details and content below. After saving, use Document operations → Controlled submission to choose the reviewer and final approver. Do not create the draft again.
+                  </span>
+                </div>
                 <label>
                   Document title
                   <input name="title" required maxLength={500} autoFocus />
