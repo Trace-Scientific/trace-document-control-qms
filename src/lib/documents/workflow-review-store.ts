@@ -26,6 +26,17 @@ export class PrismaWorkflowReviewStore implements WorkflowReviewStore {
         },
       });
       if (remaining !== 0) return false;
+      // Never permit a manager correction to bypass every technical review.
+      const completed = await transaction.workflowTask.count({
+        where: {
+          organizationId: input.organizationId,
+          workflowInstanceId: task.workflowInstanceId,
+          stepKey: { startsWith: "REVIEW_" },
+          status: "COMPLETED",
+          decision: "ACCEPT",
+        },
+      });
+      if (completed === 0) return false;
       const approval = await transaction.workflowTask.findFirst({
         where: {
           organizationId: input.organizationId,
