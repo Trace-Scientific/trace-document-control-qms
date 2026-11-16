@@ -30,6 +30,7 @@ export function ControlledSubmission() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [confirmDirectApproval, setConfirmDirectApproval] = useState(false);
 
   async function loadDetail(versionId: string) {
     setDetail(null);
@@ -79,6 +80,7 @@ export function ControlledSubmission() {
     setOpen(true);
     setNotice("");
     setStages([{ reviewerUserId: "", dueAt: "" }]);
+    setConfirmDirectApproval(false);
     await load();
   }
 
@@ -101,7 +103,7 @@ export function ControlledSubmission() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!detail) return;
+    if (!detail || busy) return;
     const form = new FormData(event.currentTarget);
     const approverUserId = String(form.get("approverUserId"));
     const comment = String(form.get("comment"));
@@ -112,6 +114,10 @@ export function ControlledSubmission() {
       populated.some((stage) => !stage.reviewerUserId.trim() || !stage.dueAt.trim())
     ) {
       setError("Each review stage requires both a reviewer and due date.");
+      return;
+    }
+    if (populated.length === 0 && !confirmDirectApproval) {
+      setError("Select a reviewer and due date, or explicitly confirm that this revision should bypass technical review.");
       return;
     }
     const reviewerIds = populated.map((stage) => stage.reviewerUserId);
@@ -152,7 +158,9 @@ export function ControlledSubmission() {
       return;
     }
     setNotice(
-      "Revision submitted with ordered review stages and a preassigned final approver.",
+      populated.length
+        ? "Revision submitted with ordered review stages and a preassigned final approver."
+        : "Revision submitted directly to final approval without a technical reviewer, as confirmed.",
     );
     await load();
   }
@@ -214,7 +222,7 @@ export function ControlledSubmission() {
                   </label>
                   <div>
                     <strong>Ordered review stages</strong>
-                    <small>Leave the single blank stage empty to route directly to final approval.</small>
+                    <small>Select a reviewer and due date for each stage. Direct-to-approval routing requires explicit confirmation below.</small>
                   </div>
                   {stages.map((stage, index) => (
                     <div key={`review-stage-${index}`} className="approval-box">
@@ -246,7 +254,13 @@ export function ControlledSubmission() {
                       )}
                     </div>
                   ))}
-                  <button type="button" disabled={stages.length >= 10} onClick={addStage}>Add review stage</button>
+                  <button type="button" disabled={busy || stages.length >= 10} onClick={addStage}>Add review stage</button>
+                  {stages.every((stage) => !stage.reviewerUserId && !stage.dueAt) && (
+                    <label>
+                      <input type="checkbox" checked={confirmDirectApproval} onChange={(event) => setConfirmDirectApproval(event.target.checked)} />
+                      I confirm this revision should go directly to final approval without technical review.
+                    </label>
+                  )}
                   <label>
                     Final approver
                     <select name="approverUserId" required defaultValue="">
@@ -260,7 +274,7 @@ export function ControlledSubmission() {
                     Submission comment
                     <textarea name="comment" maxLength={4000} required />
                   </label>
-                  <button className="primary-button" type="submit" disabled={busy}>Submit controlled revision</button>
+                  <button className="primary-button" type="submit" disabled={busy}>{busy ? "Submitting…" : "Submit controlled revision"}</button>
                 </form>
               )}
             </div>
