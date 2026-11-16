@@ -1612,7 +1612,14 @@ export function DocumentControlDashboard({
                     live?.capabilities.canSubmitDocuments && (
                       <button
                         disabled={submitting}
-                        onClick={() => setSubmitOpen(true)}
+                        onClick={() => {
+                          const versionId = detail.selected.id;
+                          setDetail(null);
+                          setSubmitOpen(false);
+                          window.dispatchEvent(new CustomEvent("trace-qms:open-controlled-submission", {
+                            detail: { versionId },
+                          }));
+                        }}
                       >
                         Submit for review
                       </button>
