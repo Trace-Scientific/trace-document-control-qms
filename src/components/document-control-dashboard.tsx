@@ -1502,7 +1502,7 @@ export function DocumentControlDashboard({
                               disabled={submitting}
                               onClick={() => decideReview(item.id, "ACCEPT")}
                             >
-                              Accept stage
+                              Complete technical review
                             </button>
                           </div>
                         )}
@@ -1559,7 +1559,7 @@ export function DocumentControlDashboard({
                         onClick={() => {
                           const versionId = detail.selected.id;
                           setDetail(null);
-                                  window.dispatchEvent(new CustomEvent("trace-qms:open-controlled-submission", {
+                          window.dispatchEvent(new CustomEvent("trace-qms:open-controlled-submission", {
                             detail: { versionId },
                           }));
                         }}
@@ -1746,7 +1746,7 @@ export function DocumentControlDashboard({
                 <div className="form-note" role="note">
                   <Icon name="file" />
                   <span>
-                    <strong>Draft → Review → Approval.</strong> Enter the document details and content below. After saving, use Document operations → Controlled submission to choose the reviewer and final approver. Do not create the draft again.
+                    <strong>Draft → Review → Approval.</strong> Enter the document details and content below. After saving, open the draft and select Submit for review. The submission form will let you choose the technical reviewer and final approver. Do not create the draft again.
                   </span>
                 </div>
                 <label>
