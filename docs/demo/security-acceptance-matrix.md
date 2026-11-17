@@ -28,6 +28,16 @@ For each case record exact commit SHA, environment identity, synthetic tenant ID
 - `docs/demo/one-time-provisioning-verified-contract-2026-11-07.md` — historical provisioning/restore evidence; check target and currency.
 - `docs/demo/operator-reset-recovery-runbook.md` — controlled recovery procedure.
 
+## Verified Railway demo evidence — November 17, 2026
+
+**Source:** Read-only Railway environment inventory, service configuration, and deployment/runtime logs. This is an evidence snapshot, not approval for external access.
+
+- Railway project `e6cc5f1e-3064-46d3-90bf-c763334f01a8`, separate `demo` environment `3bb1cae4-454f-4f6c-b2cb-fb38c8eb58a4`: six services reported healthy, no current issues. Demo app and preflight were successfully deployed from `e66d7516a26470340e37f7ec024b9616f06efb89`.
+- Backup service `trace-qms-demo-s3-backup` has cron schedule `0 9 * * *` (Railway schedule). Runtime logs show a November 17 backup uploaded at approximately 09:04:56 UTC to the private S3 backup bucket, with AES256 encryption reported. The upload log explicitly says an isolated restore is still required before recovery is verified for that backup.
+- Restore-validation service `trace-qms-demo-restore-validation` logged a November 14 checksum verification `OK`, a restore into disposable local-only PostgreSQL 18, and `PASS: isolated restore completed; application tables: 204`. The log explicitly says no running Railway database was contacted or modified.
+- **Evidence boundary:** The November 14 successful restore used a November 13 backup, **not** the November 17 backup. Thus REC-01 has historical isolated-restore evidence, but no verified isolated restore of the latest backup. REC-02 and live tenant-isolation and synthetic-data checks remain open.
+- No database writes, provisioning changes, permission changes, or restore execution were performed while collecting this evidence.
+
 ## Execution sequence
 
 1. Identify and attest the **separate** Railway demo project/environment/service/database. Stop if access or identity cannot be verified.
