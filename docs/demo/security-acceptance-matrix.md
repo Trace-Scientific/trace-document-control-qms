@@ -14,7 +14,7 @@ For each case record exact commit SHA, environment identity, synthetic tenant ID
 | ISO-04 | Provisioning rejects wrong environment, database, collision, and replay | Read-only preflight and approved isolated test evidence; no production data or role changes | Repository guards exist; live acceptance outstanding |
 | ISO-05 | Synthetic demo users cannot reach platform administrator or another organization's data | Role-based UI/API negative checks for each demo persona; support access only through separately governed process | Not verified for live demo |
 | ISO-06 | External demo contains no PHI or real customer records | Data-classification review of users, documents, attachments, notifications, audit metadata, and exports | Not verified |
-| REC-01 | Backup is usable and restore is isolated | Timestamped backup, checksum, isolated restore transcript, post-restore checks and named reviewer | Prior isolated restore reported in provisioning contract; current target evidence requires revalidation |
+| REC-01 | Backup is usable and restore is isolated | Timestamped backup, checksum, isolated restore transcript, post-restore checks and named reviewer | November 17 backup checksum and isolated restore verified (206 tables); named reviewer sign-off outstanding |
 | REC-02 | Demo reset cannot affect production | Independently verified environment/database identity and approved rollback/restore test | Not verified |
 | OPS-01 | External access is approved | Signed product/security go/no-go decision, credential distribution process, expiry/revocation and incident contact | Not approved |
 
@@ -35,7 +35,7 @@ For each case record exact commit SHA, environment identity, synthetic tenant ID
 - Railway project `e6cc5f1e-3064-46d3-90bf-c763334f01a8`, separate `demo` environment `3bb1cae4-454f-4f6c-b2cb-fb38c8eb58a4`: six services reported healthy, no current issues. Demo app and preflight were successfully deployed from `e66d7516a26470340e37f7ec024b9616f06efb89`.
 - Backup service `trace-qms-demo-s3-backup` has cron schedule `0 9 * * *` (Railway schedule). Runtime logs show a November 17 backup uploaded at approximately 09:04:56 UTC to the private S3 backup bucket, with AES256 encryption reported. The upload log explicitly says an isolated restore is still required before recovery is verified for that backup.
 - Restore-validation service `trace-qms-demo-restore-validation` logged a November 14 checksum verification `OK`, a restore into disposable local-only PostgreSQL 18, and `PASS: isolated restore completed; application tables: 204`. The log explicitly says no running Railway database was contacted or modified.
-- **Evidence boundary:** The November 14 successful restore used a November 13 backup, **not** the November 17 backup. Thus REC-01 has historical isolated-restore evidence, but no verified isolated restore of the latest backup. REC-02 and live tenant-isolation and synthetic-data checks remain open.
+- **Historical evidence boundary:** The November 14 successful restore used a November 13 backup, **not** the November 17 backup. The later November 17 restore verification is recorded below and supersedes this earlier evidence gap. REC-02 and live tenant-isolation and synthetic-data checks remain open.
 - No database writes, provisioning changes, permission changes, or restore execution were performed while collecting this evidence.
 
 ## Isolated CI security regression evidence — November 17, 2026
@@ -47,6 +47,15 @@ For each case record exact commit SHA, environment identity, synthetic tenant ID
 - Separate [Security workflow run 44155489153](https://github.com/Trace-Scientific/trace-document-control-qms/actions/runs/44155489153): **PASS**.
 - Original `verify` job: **FAIL** at `npm audit --audit-level=high` because of unresolved dependency advisories, tracked in [issue #454](https://github.com/Trace-Scientific/trace-document-control-qms/issues/454). No audit gate was bypassed.
 - **Disposition:** This supplies reproducible isolated fixture regression evidence relevant to ISO-01/ISO-02, **not** authenticated negative API or live Railway tenant-isolation acceptance. ISO-01 and ISO-02 remain **Not verified for live demo**. PR #457 remains unmerged pending full required CI success.
+
+## Updated isolated authorization regression evidence — November 17, 2026
+
+**Scope:** PR [#457](https://github.com/Trace-Scientific/trace-document-control-qms/pull/457), commit `23f0d9ca2f6ea44e42f7d14185032d74cc42bc33`; [CI run 44179278429](https://github.com/Trace-Scientific/trace-document-control-qms/actions/runs/44179278429) on disposable PostgreSQL, not the live Railway demo.
+
+- Demo fixture PostgreSQL integration: **PASS**. Covers cross-tenant draft overwrite denial with unchanged document content/lock version and audit counts, plus unauthorized reviewer decision denial with unchanged task, workflow, audit and notification state.
+- Independent code validation: **PASS**. [Security workflow 44179278658](https://github.com/Trace-Scientific/trace-document-control-qms/actions/runs/44179278658): **PASS**.
+- Main `verify`: **FAIL only** at `npm audit --audit-level=high`, tracked by issue #454. No bypass and no merge.
+- **Acceptance boundary:** These are isolated automated regression tests; they do not satisfy ISO-01–ISO-03 authenticated live-demo negative tests or independent security approval.
 
 ## Verified November 17 backup restore — November 17, 2026 at 20:13 UTC
 
