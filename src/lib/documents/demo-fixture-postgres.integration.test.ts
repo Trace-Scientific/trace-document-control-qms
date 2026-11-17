@@ -154,6 +154,34 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       orgAudits: await db.auditEvent.count({ where: { organizationId: org.id } }),
       otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
     };
+    // Direct Prisma-store mutation must also be tenant-scoped, even when a
+    // caller supplies a valid version ID from another organization.
+    const forbiddenUpdate = await new PrismaDocumentLifecycleStore().updateDraft({
+      organizationId: otherOrg.id,
+      versionId: ids[0],
+      actorUserId: actor.id,
+      expectedLockVersion: 0,
+      contentText: "Forbidden cross-tenant overwrite",
+      contentHash: "c".repeat(64),
+      changeSummary: "Must not be applied",
+      occurredAt: new Date(),
+    });
+    expect(forbiddenUpdate).toBe(false);
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[0] },
+      select: { status: true, lockVersion: true, contentHash: true },
+    })).toMatchObject({
+      status: "DRAFT", lockVersion: 0,
+      contentHash: versions.find((version) => version.id === ids[0])!.contentHash,
+    });
+    expect({
+      orgDocuments: await db.document.count({ where: { organizationId: org.id } }),
+      otherDocuments: await db.document.count({ where: { organizationId: otherOrg.id } }),
+      orgVersions: await db.documentVersion.count({ where: { organizationId: org.id } }),
+      otherVersions: await db.documentVersion.count({ where: { organizationId: otherOrg.id } }),
+      orgAudits: await db.auditEvent.count({ where: { organizationId: org.id } }),
+      otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
+    }).toEqual(crossTenantCountsBefore);
     await expect(service.createDraft({ ...context, organizationId: otherOrg.id }, {
       organizationId: org.id, documentTypeId: type.id,
       documentNumber: "CROSS-TENANT", title: "Forbidden",
