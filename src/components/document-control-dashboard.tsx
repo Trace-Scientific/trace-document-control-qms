@@ -681,7 +681,7 @@ export function DocumentControlDashboard({
     }
     setDialog(false);
     window.dispatchEvent(new CustomEvent("trace-qms:open-controlled-submission", {
-      detail: { documentNumber: String(form.get("number")) },
+      detail: { documentNumber: String(form.get("number")), versionId: body?.data?.id },
     }));
     resetDocumentQuery("", "ALL");
     setDocumentReload((value) => value + 1);
