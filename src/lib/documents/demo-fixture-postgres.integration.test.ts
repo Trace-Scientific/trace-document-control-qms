@@ -631,6 +631,29 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       userId: finalApprover.id, organizationId: org.id, userState: "ACTIVE",
       grants: [{ permission: "document.approve", scopeType: "ORGANIZATION", scopeId: null }],
     };
+    // Reviewer-only permissions must never authorize a final approval,
+    // even when the caller knows the document version and valid signer password.
+    const signaturesBeforeReviewerDenial = await db.electronicSignature.count({
+      where: { organizationId: org.id },
+    });
+    const approvalAuditsBeforeReviewerDenial = await db.auditEvent.count({
+      where: { organizationId: org.id, entityId: ids[0],
+        action: "DOCUMENT_VERSION_APPROVED_WITH_SIGNATURE" },
+    });
+    await expect(signatureService.signApproval(reviewerContext, {
+      organizationId: org.id, versionId: ids[0], expectedLockVersion: 1,
+      password: signingPassword, confirmed: true,
+    })).rejects.toThrow("Access denied");
+    expect(await db.electronicSignature.count({
+      where: { organizationId: org.id },
+    })).toBe(signaturesBeforeReviewerDenial);
+    expect(await db.auditEvent.count({
+      where: { organizationId: org.id, entityId: ids[0],
+        action: "DOCUMENT_VERSION_APPROVED_WITH_SIGNATURE" },
+    })).toBe(approvalAuditsBeforeReviewerDenial);
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[0] }, select: { status: true, lockVersion: true },
+    })).toEqual({ status: "IN_REVIEW", lockVersion: 1 });
     await expect(signatureService.signApproval(signingContext, {
       organizationId: org.id, versionId: ids[0], expectedLockVersion: 1,
       password: signingPassword, confirmed: false,
