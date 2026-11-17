@@ -38,6 +38,16 @@ For each case record exact commit SHA, environment identity, synthetic tenant ID
 - **Evidence boundary:** The November 14 successful restore used a November 13 backup, **not** the November 17 backup. Thus REC-01 has historical isolated-restore evidence, but no verified isolated restore of the latest backup. REC-02 and live tenant-isolation and synthetic-data checks remain open.
 - No database writes, provisioning changes, permission changes, or restore execution were performed while collecting this evidence.
 
+## Isolated CI security regression evidence — November 17, 2026
+
+**Scope:** PR [#457](https://github.com/Trace-Scientific/trace-document-control-qms/pull/457), commit `6d7362f80a08e6906c827aa95959e3752082e118`. GitHub Actions [CI run 44155489149](https://github.com/Trace-Scientific/trace-document-control-qms/actions/runs/44155489149) executed against a disposable PostgreSQL 17 service container, **not** the Railway demo database.
+
+- `Demo fixture PostgreSQL integration`: **PASS**; one test file and two tests passed, exercising bidirectional tenant-denial fixtures and unchanged-state checks for documents, versions, and audit records.
+- `Independent code validation`: **PASS**; typecheck, lint, tests, and build completed.
+- Separate [Security workflow run 44155489153](https://github.com/Trace-Scientific/trace-document-control-qms/actions/runs/44155489153): **PASS**.
+- Original `verify` job: **FAIL** at `npm audit --audit-level=high` because of unresolved dependency advisories, tracked in [issue #454](https://github.com/Trace-Scientific/trace-document-control-qms/issues/454). No audit gate was bypassed.
+- **Disposition:** This supplies reproducible isolated fixture regression evidence relevant to ISO-01/ISO-02, **not** authenticated negative API or live Railway tenant-isolation acceptance. ISO-01 and ISO-02 remain **Not verified for live demo**. PR #457 remains unmerged pending full required CI success.
+
 ## Execution sequence
 
 1. Identify and attest the **separate** Railway demo project/environment/service/database. Stop if access or identity cannot be verified.
