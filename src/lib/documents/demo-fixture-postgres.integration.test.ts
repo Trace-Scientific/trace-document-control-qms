@@ -410,6 +410,21 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       organizationId: org.id, taskId: reviewTask!.id,
       decision: "ACCEPT" as const, comment: "Synthetic reviewer accepted the controlled document",
     };
+    // Snapshot the actionable task and workflow before unauthorized attempts.
+    // A denial must not complete the task, advance approval, or append audit.
+    const reviewStateBeforeDenials = {
+      task: await db.workflowTask.findUniqueOrThrow({
+        where: { id: reviewTask!.id },
+        select: { status: true, decision: true, comments: true },
+      }),
+      workflow: await db.workflowInstance.findUniqueOrThrow({
+        where: { id: workflow.id }, select: { state: true, status: true },
+      }),
+      orgAudits: await db.auditEvent.count({ where: { organizationId: org.id } }),
+      otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
+      orgNotifications: await db.notificationOutbox.count({ where: { organizationId: org.id } }),
+      otherNotifications: await db.notificationOutbox.count({ where: { organizationId: otherOrg.id } }),
+    };
     await expect(reviewService.decide({
       ...reviewerContext, grants: [],
     }, reviewDecision)).rejects.toThrow("Access denied");
@@ -419,6 +434,20 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     await expect(reviewService.decide(reviewerContext, {
       ...reviewDecision, comment: " ",
     })).rejects.toThrow("A reviewer comment is required");
+    expect({
+      task: await db.workflowTask.findUniqueOrThrow({
+        where: { id: reviewTask!.id },
+        select: { status: true, decision: true, comments: true },
+      }),
+      workflow: await db.workflowInstance.findUniqueOrThrow({
+        where: { id: workflow.id }, select: { state: true, status: true },
+      }),
+      orgAudits: await db.auditEvent.count({ where: { organizationId: org.id } }),
+      otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
+      orgNotifications: await db.notificationOutbox.count({ where: { organizationId: org.id } }),
+      otherNotifications: await db.notificationOutbox.count({ where: { organizationId: otherOrg.id } }),
+    }).toEqual(reviewStateBeforeDenials);
+
     expect(await reviewService.decide(reviewerContext, reviewDecision))
       .toEqual({ result: "AWAITING_APPROVAL" });
     expect(await db.workflowTask.findUniqueOrThrow({
