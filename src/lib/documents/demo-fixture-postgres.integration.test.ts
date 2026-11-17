@@ -249,6 +249,12 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       select: { status: true, lockVersion: true },
     })).toEqual({ status: "DRAFT", lockVersion: 0 });
     expect(await db.auditEvent.count({ where: { organizationId: org.id } })).toBe(6);
+    // A direct approval command cannot create a workflow, signature, or
+    // notification as a side effect of the mandatory e-signature denial.
+    expect(await db.workflowInstance.count({ where: { organizationId: org.id } })).toBe(0);
+    expect(await db.workflowTask.count({ where: { organizationId: org.id } })).toBe(0);
+    expect(await db.notificationOutbox.count({ where: { organizationId: org.id } })).toBe(0);
+    expect(await db.auditEvent.count({ where: { organizationId: otherOrg.id } })).toBe(0);
     // Real tenant-scoped store reads must not disclose another tenant's document.
     const store = new PrismaDocumentLifecycleStore();
     expect(await store.findVersion(otherOrg.id, ids[0])).toBeNull();
