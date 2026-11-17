@@ -1,0 +1,37 @@
+name: Dependency remediation candidate
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/dependency-remediation-candidate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Generate candidate lockfile without modifying repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dependency-candidate
+          npm install --package-lock-only --ignore-scripts --no-audit --save-exact next@16.4.6 eslint-config-next@16.4.6
+          npm audit fix --package-lock-only --ignore-scripts --no-fund > dependency-candidate/audit-fix.log 2>&1 || true
+          npm audit --json > dependency-candidate/audit.json || true
+          npm ls picomatch minimatch next vite vitest eslint-config-next --all > dependency-candidate/dependency-tree.txt 2>&1 || true
+          cp package.json package-lock.json dependency-candidate/
+      - name: Upload candidate and audit evidence for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: qms-dependency-candidate
+          path: dependency-candidate/
+          retention-days: 7
