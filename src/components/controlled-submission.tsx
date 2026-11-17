@@ -11,7 +11,7 @@ type DraftRow = {
 type DraftPage = { items: DraftRow[] };
 type Reviewer = { id: string; name: string };
 type Detail = {
-  selected: { id: string; lockVersion: number };
+  selected: { id: string; lockVersion: number; status: string; documentNumber: string; title: string; revisionLabel: string };
   reviewers: Reviewer[];
   versions: { id: string; versionNumber: number }[];
   assignments: { versionId: string; stepKey: string; assignee: { id: string; name: string } | null }[];
@@ -90,6 +90,26 @@ export function ControlledSubmission() {
       return;
     }
     const nextDrafts = (draftBody.data as DraftPage).items;
+    // A newly created draft might not be in the first page of 50 results.
+    // Fetch only the explicitly requested version, and never substitute a different draft.
+    if (preferredVersionId && !nextDrafts.some((draft) => draft.id === preferredVersionId)) {
+      const exactResponse = await fetch(`/api/documents/${preferredVersionId}`, {
+        credentials: "same-origin",
+      });
+      const exactBody = await exactResponse.json().catch(() => null);
+      if (!exactResponse.ok || exactBody?.data?.selected?.status !== "DRAFT") {
+        setError(exactBody?.error || "The requested draft is no longer available for submission.");
+        setDrafts([]);
+        return;
+      }
+      const selected = exactBody.data.selected as Detail["selected"];
+      nextDrafts.unshift({
+        id: selected.id,
+        documentNumber: selected.documentNumber,
+        title: selected.title,
+        revisionLabel: selected.revisionLabel,
+      });
+    }
     setDrafts(nextDrafts);
     setApprovers((approverBody.data as ApprovalQueue).approvers);
     const first = nextDrafts.find((draft) => draft.id === preferredVersionId)?.id || nextDrafts.find((draft) => draft.documentNumber === preferredDocumentNumber)?.id || nextDrafts[0]?.id || "";
