@@ -161,6 +161,15 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       contentHash: "a".repeat(64), contentText: "Synthetic denied",
       changeSummary: "Denied",
     })).rejects.toThrow("Access denied");
+    const countsAfterFirstDenial = {
+      orgDocuments: await db.document.count({ where: { organizationId: org.id } }),
+      otherDocuments: await db.document.count({ where: { organizationId: otherOrg.id } }),
+      orgVersions: await db.documentVersion.count({ where: { organizationId: org.id } }),
+      otherVersions: await db.documentVersion.count({ where: { organizationId: otherOrg.id } }),
+      orgAudits: await db.auditEvent.count({ where: { organizationId: org.id } }),
+      otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
+    };
+    expect(countsAfterFirstDenial).toEqual(crossTenantCountsBefore);
     await expect(service.createDraft(context, {
       organizationId: otherOrg.id, documentTypeId: type.id,
       documentNumber: "CROSS-TENANT-REVERSE", title: "Forbidden reverse direction",
