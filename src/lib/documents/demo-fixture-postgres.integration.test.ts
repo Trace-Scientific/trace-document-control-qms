@@ -151,6 +151,27 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       contentHash: "a".repeat(64), contentText: "Synthetic denied",
       changeSummary: "Denied",
     })).rejects.toThrow("Access denied");
+    // Verify both directions at the real PostgreSQL-backed command boundary.
+    // Neither rejected attempt may create documents, versions, or audit events.
+    const crossTenantCountsBefore = {
+      orgDocuments: await db.document.count({ where: { organizationId: org.id } }),
+      otherDocuments: await db.document.count({ where: { organizationId: otherOrg.id } }),
+      orgAudits: await db.auditEvent.count({ where: { organizationId: org.id } }),
+      otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
+    };
+    await expect(service.createDraft(context, {
+      organizationId: otherOrg.id, documentTypeId: type.id,
+      documentNumber: "CROSS-TENANT-REVERSE", title: "Forbidden reverse direction",
+      versionNumber: 1, revisionLabel: "0.1",
+      contentHash: "b".repeat(64), contentText: "Synthetic denied",
+      changeSummary: "Denied",
+    })).rejects.toThrow("Access denied");
+    expect({
+      orgDocuments: await db.document.count({ where: { organizationId: org.id } }),
+      otherDocuments: await db.document.count({ where: { organizationId: otherOrg.id } }),
+      orgAudits: await db.auditEvent.count({ where: { organizationId: org.id } }),
+      otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
+    }).toEqual(crossTenantCountsBefore);
     expect(await db.document.count({ where: { organizationId: org.id } })).toBe(6);
     // A real store transition must fail atomically when the approval workflow is absent.
     const submitter: AuthorizationContext = {
