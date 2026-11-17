@@ -5,6 +5,36 @@ on:
   pull_request:
 
 jobs:
+  demo_fixture_integration:
+    name: Demo fixture PostgreSQL integration
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://trace_qms_test:local_integration_test_only@127.0.0.1:5433/trace_qms_integration_test?schema=public
+      RUN_DEMO_FIXTURE_INTEGRATION: "1"
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: trace_qms_test
+          POSTGRES_PASSWORD: local_integration_test_only
+          POSTGRES_DB: trace_qms_integration_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U trace_qms_test -d trace_qms_integration_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - name: Run guarded demo fixture integration tests
+        run: npx vitest run src/lib/documents/demo-fixture-postgres.integration.test.ts
+
   verify:
     runs-on: ubuntu-latest
     env:
