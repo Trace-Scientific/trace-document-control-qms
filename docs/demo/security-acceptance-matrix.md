@@ -48,6 +48,14 @@ For each case record exact commit SHA, environment identity, synthetic tenant ID
 - Original `verify` job: **FAIL** at `npm audit --audit-level=high` because of unresolved dependency advisories, tracked in [issue #454](https://github.com/Trace-Scientific/trace-document-control-qms/issues/454). No audit gate was bypassed.
 - **Disposition:** This supplies reproducible isolated fixture regression evidence relevant to ISO-01/ISO-02, **not** authenticated negative API or live Railway tenant-isolation acceptance. ISO-01 and ISO-02 remain **Not verified for live demo**. PR #457 remains unmerged pending full required CI success.
 
+## Verified November 17 backup restore — November 17, 2026 at 20:13 UTC
+
+- **Target:** Separate Railway project `e6cc5f1e-3064-46d3-90bf-c763334f01a8`, environment `demo` (`3bb1cae4-454f-4f6c-b2cb-fb38c8eb58a4`), restore-validation service `911b9c57-532d-48bd-972c-8cec81fc2bd9`.
+- **Backup:** `trace-qms-demo-20261117T090451Z.backup` in the demo-only private S3 backup bucket.
+- **Railway deployment:** `de5ef4f8-8acc-4a45-b218-f5c0b46afc37`, status **SUCCESS**. Deployment logs at 20:13:25 UTC show `trace-qms-demo-20261117T090451Z.backup: OK` (SHA-256 checksum); at 20:13:27 UTC show `PASS: isolated restore completed; application tables: 206`.
+- **Isolation:** The script unsets database connection variables and starts a disposable PostgreSQL 18 instance bound to a local Unix socket; logs explicitly report `No running Railway database was contacted or modified.`
+- **Disposition:** Recent demo backup restore and checksum are **verified by runtime logs** for REC-01's technical recovery evidence. Named independent reviewer acceptance is still outstanding, so do not treat REC-01 as fully signed off. REC-02 (demo reset/production boundary), ISO-01–06 live checks, and OPS-01 external-access approval remain open. No live database restore was performed.
+
 ## Execution sequence
 
 1. Identify and attest the **separate** Railway demo project/environment/service/database. Stop if access or identity cannot be verified.
