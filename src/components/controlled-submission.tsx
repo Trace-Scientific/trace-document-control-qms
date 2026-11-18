@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import { buildSubmissionReceipt } from "../lib/documents/submission-receipt";
 
 type DraftRow = {
   id: string;
@@ -33,7 +34,7 @@ export function ControlledSubmission() {
   ]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [receipt, setReceipt] = useState<ReturnType<typeof buildSubmissionReceipt> | null>(null);
   const [confirmDirectApproval, setConfirmDirectApproval] = useState(false);
 
   async function loadDetail(versionId: string, eligibleApprovers: Approver[] = approvers) {
@@ -119,7 +120,9 @@ export function ControlledSubmission() {
 
   async function openPanel(preferredDocumentNumber?: string, preferredVersionId?: string) {
     setOpen(true);
-    setNotice("");
+    setReceipt(null);
+    setDetail(null);
+    setDrafts([]);
     setStages([{ reviewerUserId: "", dueAt: "" }]);
     setConfirmDirectApproval(false);
     await load(preferredDocumentNumber, preferredVersionId);
@@ -210,12 +213,14 @@ export function ControlledSubmission() {
       setError(body?.error || "The controlled submission could not be completed.");
       return;
     }
-    setNotice(
-      populated.length
-        ? "Revision submitted with ordered review stages and a preassigned final approver."
-        : "Revision submitted directly to final approval without a technical reviewer, as confirmed.",
-    );
-    await load();
+    setReceipt(buildSubmissionReceipt({
+      revision: detail.selected,
+      firstReviewerId: populated[0]?.reviewerUserId,
+      reviewers: detail.reviewers,
+      approverId: approverUserId,
+      approvers,
+      stageCount: populated.length,
+    }));
   }
 
   return (
@@ -238,22 +243,37 @@ export function ControlledSubmission() {
             <div className="modal-head">
               <div>
                 <h2 id="controlled-submission-title">Controlled submission</h2>
-                <p>Establish ordered reviewers and the final approver before review begins.</p>
+                {!receipt && <p>Establish ordered reviewers and the final approver before review begins.</p>}
               </div>
               <button aria-label="Close controlled submission" onClick={() => setOpen(false)}>×</button>
             </div>
             <div className="detail-body">
-              {notice && <div className="notice" role="status"><span>{notice}</span></div>}
-              {error && <div className="detail-error" role="alert">{error}</div>}
-              {routingNotice && <div className="notice" role="status">{routingNotice}</div>}
-              {busy && !drafts.length && <p>Loading controlled submission data…</p>}
-              {!busy && drafts.length === 0 && (
+              {receipt && (
+                <>
+                  <div className="notice" role="status">
+                    <strong>Revision submitted</strong>
+                    <p>{receipt.revision}</p>
+                    <p>
+                      Next step · {receipt.nextStep}
+                      {receipt.nextAssignee && ` · ${receipt.nextAssignee}`}
+                    </p>
+                    {receipt.laterApprover && (
+                      <p>Final approval after {receipt.stageCount === 1 ? "technical review" : `${receipt.stageCount} review stages`} · {receipt.laterApprover}</p>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => void openPanel()}>Submit another revision</button>
+                </>
+              )}
+              {!receipt && error && <div className="detail-error" role="alert">{error}</div>}
+              {!receipt && routingNotice && <div className="notice" role="status">{routingNotice}</div>}
+              {!receipt && busy && !drafts.length && <p>Loading controlled submission data…</p>}
+              {!receipt && !busy && drafts.length === 0 && (
                 <div className="permission-state">
                   <strong>No draft revisions available</strong>
                   <span>Create or revise a controlled document before submission.</span>
                 </div>
               )}
-              {drafts.length > 0 && detail && (
+              {!receipt && drafts.length > 0 && detail && (
                 <form className="approval-box" onSubmit={submit}>
                   <label>
                     Draft revision
