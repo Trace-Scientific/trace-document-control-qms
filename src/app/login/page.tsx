@@ -1,8 +1,7 @@
-"use client";
-
-import { useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { LoginForm } from "./login-form";
 import styles from "./page.module.css";
+
+export const dynamic = "force-dynamic";
 
 const modules = [
   ["Policy & Documentation", "Controlled documents, review workflows, acknowledgments, controlled copies, folders, and retention."],
@@ -16,74 +15,7 @@ const modules = [
 ];
 
 export default function LoginPage() {
-  const router = useRouter();
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [challengeToken, setChallengeToken] = useState<string | null>(null);
-  const [challengeExpiresAt, setChallengeExpiresAt] = useState<string | null>(null);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (submitting) return;
-    const form = new FormData(event.currentTarget);
-    setSubmitting(true);
-    setError("");
-    try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ organizationCode: form.get("organizationCode"), email: form.get("email"), password: form.get("password") }),
-      });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) return setError(body?.error ?? "Sign-in failed.");
-      if (body?.data?.mfaRequired === true) {
-        if (typeof body.data.challengeToken !== "string" || typeof body.data.expiresAt !== "string") {
-          return setError("Verification is unavailable. Please sign in again.");
-        }
-        setChallengeToken(body.data.challengeToken);
-        setChallengeExpiresAt(body.data.expiresAt);
-        return;
-      }
-      router.replace("/");
-      router.refresh();
-    } catch {
-      setError("Unable to connect. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function verifyMfa(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (submitting || !challengeToken) return;
-    const form = new FormData(event.currentTarget);
-    setSubmitting(true);
-    setError("");
-    try {
-      const response = await fetch("/api/auth/mfa/verify", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ challengeToken, code: form.get("code") }),
-      });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) return setError(body?.error ?? "Verification failed.");
-      router.replace("/");
-      router.refresh();
-    } catch {
-      setError("Unable to connect. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  function restartLogin() {
-    setChallengeToken(null);
-    setChallengeExpiresAt(null);
-    setError("");
-  }
+  const developmentPreview = process.env.DEPLOYMENT_TIER === "development-preview";
 
   return <main className={styles.page}>
     <header className={styles.header}>
@@ -109,39 +41,7 @@ export default function LoginPage() {
         <p className={styles.trustLine}>Tenant-scoped workflows · Role-based access · Controlled history · Governed evidence</p>
       </div>
 
-      {challengeToken ? (
-        <form className={styles.loginCard} id="login" onSubmit={verifyMfa}>
-          <div className={styles.loginHeading}>
-            <p className={styles.eyebrow}>Secure workspace access</p>
-            <h2>Verify your identity</h2>
-            <p>Enter the six-digit code from your authenticator app.</p>
-          </div>
-          <div className={styles.loginFields}>
-            <label><span>Authenticator code</span><input name="code" type="text" inputMode="numeric" pattern="[0-9]{6}" minLength={6} maxLength={6} autoComplete="one-time-code" autoFocus required /></label>
-          </div>
-          {challengeExpiresAt && <p className={styles.previewNote}>This verification request expires in five minutes. If it expires, start again.</p>}
-          {error && <p className={styles.error} role="alert">{error}</p>}
-          <button type="submit" disabled={submitting}>{submitting ? "Verifying…" : "Verify and sign in"}</button>
-          <button type="button" onClick={restartLogin} disabled={submitting}>Start over</button>
-          <small className={styles.previewNote}>Never share your authenticator code with anyone.</small>
-        </form>
-      ) : (
-        <form className={styles.loginCard} id="login" onSubmit={submit}>
-          <div className={styles.loginHeading}>
-            <p className={styles.eyebrow}>Secure workspace access</p>
-            <h2>Log in to Trace QMS</h2>
-            <p>Use your assigned organization and account credentials.</p>
-          </div>
-          <div className={styles.loginFields}>
-            <label><span>Organization code</span><input name="organizationCode" placeholder="Enter your organization code" autoComplete="organization" required /></label>
-            <label><span>Email address</span><input name="email" type="email" autoComplete="username" required /></label>
-            <label><span>Password</span><span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}><input name="password" type={showPassword ? "text" : "password"} autoComplete="current-password" required style={{ flex: 1, minWidth: 0 }} /><button type="button" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword((current) => !current)} style={{ width: "auto", flexShrink: 0 }}>{showPassword ? "Hide" : "Show"}</button></span></label>
-          </div>
-          {error && <p className={styles.error} role="alert">{error}</p>}
-          <button type="submit" disabled={submitting}>{submitting ? "Signing in…" : "Log in securely"}</button>
-          <small className={styles.previewNote}>Development preview · Synthetic data only</small>
-        </form>
-      )}
+      <LoginForm developmentPreview={developmentPreview} />
     </section>
 
     <section className={styles.valueBand} aria-label="Trace QMS product benefits">
@@ -167,12 +67,12 @@ export default function LoginPage() {
           <p className={styles.eyebrow}>See Trace QMS in action</p>
           <h2>Request a guided product demonstration.</h2>
           <p>Explore the document, personnel, training, quality, laboratory operations, records, and reporting workflows with your organization&apos;s use cases in mind.</p>
-          <p className={styles.demoNote}>Demo-request intake will be connected as a separate commercial workflow before launch. No regulated tenant data is collected through this public preview.</p>
+          {developmentPreview && <p className={styles.demoNote}>This demo uses synthetic data only.</p>}
         </div>
-        <a className={styles.primaryButton} href="#login">Existing customer? Log In</a>
+        <a className={styles.primaryButton} href="mailto:info@tracescientific.com?subject=Trace%20QMS%20demo%20request">Email Trace Scientific</a>
       </div>
     </section>
 
-    <footer className={styles.footer}><strong>Trace QMS</strong><span>Quality management software by Trace Scientific</span><span>Development preview</span></footer>
+    <footer className={styles.footer}><strong>Trace QMS</strong><span>Quality management software by Trace Scientific</span>{developmentPreview && <span>Development preview</span>}</footer>
   </main>;
 }

@@ -8,6 +8,8 @@ const runbook = await readFile(
   "utf8",
 );
 const page = await readFile("src/app/page.tsx", "utf8");
+const loginPage = await readFile("src/app/login/page.tsx", "utf8");
+const loginForm = await readFile("src/app/login/login-form.tsx", "utf8");
 const previewDockerfile = await readFile("Dockerfile.preview", "utf8");
 const productionDockerfile = await readFile("Dockerfile", "utf8");
 const equipmentOverdueRunner = await readFile(
@@ -38,6 +40,15 @@ test("preview warning is derived from a server-side runtime boundary", () => {
   assert.match(page, /process\.env\.DEPLOYMENT_TIER === "development-preview"/);
   assert.match(page, /export const dynamic = "force-dynamic"/);
   assert.doesNotMatch(page, /NEXT_PUBLIC_/);
+});
+
+test("login and footer show the preview warning only for the runtime preview tier", () => {
+  assert.match(loginPage, /export const dynamic = "force-dynamic"/);
+  assert.match(loginPage, /developmentPreview = process\.env\.DEPLOYMENT_TIER === "development-preview"/);
+  assert.match(loginPage, /<LoginForm developmentPreview=\{developmentPreview\}/);
+  assert.match(loginPage, /developmentPreview && <span>Development preview<\/span>/);
+  assert.match(loginForm, /developmentPreview && <small[^>]*>Development preview · Synthetic data only<\/small>/);
+  assert.doesNotMatch(loginForm, /process\.env/);
 });
 
 test("preview image deploys migrations without changing the AWS runtime", () => {
