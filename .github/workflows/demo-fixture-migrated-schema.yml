@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'fixtures/demo/**'
+      - 'scripts/railway-demo-create-transaction.mjs'
       - 'prisma/schema.prisma'
       - 'prisma/migrations/**'
       - '.github/workflows/demo-fixture-migrated-schema.yml'
@@ -18,7 +19,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: trace_qms_test
           POSTGRES_PASSWORD: local_integration_test_only
@@ -46,3 +47,5 @@ jobs:
       - run: node fixtures/demo/migrated-schema-smoke.mjs
       - name: Verify actual document service, Prisma persistence and audit trail
         run: npx vitest run src/lib/documents/demo-fixture-postgres.integration.test.ts
+      - name: Verify second synthetic tenant provisioning against disposable PostgreSQL
+        run: node fixtures/demo/second-tenant-postgres.integration.mjs
