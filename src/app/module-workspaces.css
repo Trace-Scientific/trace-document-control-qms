@@ -317,6 +317,36 @@
   font-weight: 700;
 }
 
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+  gap: 10px;
+}
+
+.stat-grid > article {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 12px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+}
+
+.stat-grid > article > strong {
+  color: var(--heading);
+  font-size: 1.25rem;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-grid > article > span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .reporting-workspace .reporting-stat-grid {
   margin-top: 0;
 }
