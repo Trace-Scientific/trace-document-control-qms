@@ -144,6 +144,38 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       displayName: "Other Synthetic Lab", active: false,
     } });
     expect(await db.document.count({ where: { organizationId: otherOrg.id } })).toBe(0);
+    // Capture both tenant states before either rejected attempt.
+    // Both directions must preserve documents, versions and audit events.
+    const readTenantCounts = async () => ({
+      orgDocuments: await db.document.count({ where: { organizationId: org.id } }),
+      otherDocuments: await db.document.count({ where: { organizationId: otherOrg.id } }),
+      orgVersions: await db.documentVersion.count({ where: { organizationId: org.id } }),
+      otherVersions: await db.documentVersion.count({ where: { organizationId: otherOrg.id } }),
+      orgAudits: await db.auditEvent.count({ where: { organizationId: org.id } }),
+      otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
+    });
+    const crossTenantCountsBefore = await readTenantCounts();
+    // Direct Prisma-store mutation must also be tenant-scoped, even when a
+    // caller supplies a valid version ID from another organization.
+    const forbiddenUpdate = await new PrismaDocumentLifecycleStore().updateDraft({
+      organizationId: otherOrg.id,
+      versionId: ids[0],
+      actorUserId: actor.id,
+      expectedLockVersion: 0,
+      contentText: "Forbidden cross-tenant overwrite",
+      contentHash: "c".repeat(64),
+      changeSummary: "Must not be applied",
+      occurredAt: new Date(),
+    });
+    expect(forbiddenUpdate).toBe(false);
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[0] },
+      select: { status: true, lockVersion: true, contentHash: true },
+    })).toMatchObject({
+      status: "DRAFT", lockVersion: 0,
+      contentHash: versions.find((version) => version.id === ids[0])!.contentHash,
+    });
+    expect(await readTenantCounts()).toEqual(crossTenantCountsBefore);
     await expect(service.createDraft({ ...context, organizationId: otherOrg.id }, {
       organizationId: org.id, documentTypeId: type.id,
       documentNumber: "CROSS-TENANT", title: "Forbidden",
@@ -151,14 +183,7 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       contentHash: "a".repeat(64), contentText: "Synthetic denied",
       changeSummary: "Denied",
     })).rejects.toThrow("Access denied");
-    // Verify both directions at the real PostgreSQL-backed command boundary.
-    // Neither rejected attempt may create documents, versions, or audit events.
-    const crossTenantCountsBefore = {
-      orgDocuments: await db.document.count({ where: { organizationId: org.id } }),
-      otherDocuments: await db.document.count({ where: { organizationId: otherOrg.id } }),
-      orgAudits: await db.auditEvent.count({ where: { organizationId: org.id } }),
-      otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
-    };
+    expect(await readTenantCounts()).toEqual(crossTenantCountsBefore);
     await expect(service.createDraft(context, {
       organizationId: otherOrg.id, documentTypeId: type.id,
       documentNumber: "CROSS-TENANT-REVERSE", title: "Forbidden reverse direction",
@@ -166,12 +191,7 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       contentHash: "b".repeat(64), contentText: "Synthetic denied",
       changeSummary: "Denied",
     })).rejects.toThrow("Access denied");
-    expect({
-      orgDocuments: await db.document.count({ where: { organizationId: org.id } }),
-      otherDocuments: await db.document.count({ where: { organizationId: otherOrg.id } }),
-      orgAudits: await db.auditEvent.count({ where: { organizationId: org.id } }),
-      otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
-    }).toEqual(crossTenantCountsBefore);
+    expect(await readTenantCounts()).toEqual(crossTenantCountsBefore);
     expect(await db.document.count({ where: { organizationId: org.id } })).toBe(6);
     // A real store transition must fail atomically when the approval workflow is absent.
     const submitter: AuthorizationContext = {
@@ -208,6 +228,12 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       select: { status: true, lockVersion: true },
     })).toEqual({ status: "DRAFT", lockVersion: 0 });
     expect(await db.auditEvent.count({ where: { organizationId: org.id } })).toBe(6);
+    // A direct approval command cannot create a workflow, signature, or
+    // notification as a side effect of the mandatory e-signature denial.
+    expect(await db.workflowInstance.count({ where: { organizationId: org.id } })).toBe(0);
+    expect(await db.workflowTask.count({ where: { organizationId: org.id } })).toBe(0);
+    expect(await db.notificationOutbox.count({ where: { organizationId: org.id } })).toBe(0);
+    expect(await db.auditEvent.count({ where: { organizationId: otherOrg.id } })).toBe(0);
     // Real tenant-scoped store reads must not disclose another tenant's document.
     const store = new PrismaDocumentLifecycleStore();
     expect(await store.findVersion(otherOrg.id, ids[0])).toBeNull();
@@ -369,6 +395,22 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       organizationId: org.id, taskId: reviewTask!.id,
       decision: "ACCEPT" as const, comment: "Synthetic reviewer accepted the controlled document",
     };
+    // Snapshot the actionable task and workflow before unauthorized attempts.
+    // A denial must not complete the task, advance approval, or append audit.
+    const readReviewState = async () => ({
+      task: await db.workflowTask.findUniqueOrThrow({
+        where: { id: reviewTask!.id },
+        select: { status: true, decision: true, comments: true },
+      }),
+      workflow: await db.workflowInstance.findUniqueOrThrow({
+        where: { id: workflow.id }, select: { state: true, status: true },
+      }),
+      orgAudits: await db.auditEvent.count({ where: { organizationId: org.id } }),
+      otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
+      orgNotifications: await db.notificationOutbox.count({ where: { organizationId: org.id } }),
+      otherNotifications: await db.notificationOutbox.count({ where: { organizationId: otherOrg.id } }),
+    });
+    const reviewStateBeforeDenials = await readReviewState();
     await expect(reviewService.decide({
       ...reviewerContext, grants: [],
     }, reviewDecision)).rejects.toThrow("Access denied");
@@ -378,6 +420,8 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     await expect(reviewService.decide(reviewerContext, {
       ...reviewDecision, comment: " ",
     })).rejects.toThrow("A reviewer comment is required");
+    expect(await readReviewState()).toEqual(reviewStateBeforeDenials);
+
     expect(await reviewService.decide(reviewerContext, reviewDecision))
       .toEqual({ result: "AWAITING_APPROVAL" });
     expect(await db.workflowTask.findUniqueOrThrow({
@@ -555,6 +599,29 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       userId: finalApprover.id, organizationId: org.id, userState: "ACTIVE",
       grants: [{ permission: "document.approve", scopeType: "ORGANIZATION", scopeId: null }],
     };
+    // Reviewer-only permissions must never authorize a final approval,
+    // even when the caller supplies the document version and a fixture password.
+    const signaturesBeforeReviewerDenial = await db.electronicSignature.count({
+      where: { organizationId: org.id },
+    });
+    const approvalAuditsBeforeReviewerDenial = await db.auditEvent.count({
+      where: { organizationId: org.id, entityId: ids[0],
+        action: "DOCUMENT_VERSION_APPROVED_WITH_SIGNATURE" },
+    });
+    await expect(signatureService.signApproval(reviewerContext, {
+      organizationId: org.id, versionId: ids[0], expectedLockVersion: 1,
+      password: signingPassword, confirmed: true,
+    })).rejects.toThrow("Access denied");
+    expect(await db.electronicSignature.count({
+      where: { organizationId: org.id },
+    })).toBe(signaturesBeforeReviewerDenial);
+    expect(await db.auditEvent.count({
+      where: { organizationId: org.id, entityId: ids[0],
+        action: "DOCUMENT_VERSION_APPROVED_WITH_SIGNATURE" },
+    })).toBe(approvalAuditsBeforeReviewerDenial);
+    expect(await db.documentVersion.findUniqueOrThrow({
+      where: { id: ids[0] }, select: { status: true, lockVersion: true },
+    })).toEqual({ status: "IN_REVIEW", lockVersion: 1 });
     await expect(signatureService.signApproval(signingContext, {
       organizationId: org.id, versionId: ids[0], expectedLockVersion: 1,
       password: signingPassword, confirmed: false,
