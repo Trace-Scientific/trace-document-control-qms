@@ -1,0 +1,58 @@
+name: Verify preview image (temporary)
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  preview-image:
+    if: github.head_ref == 'codex/railway-preview-runtime-dependencies'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: qms_preview_smoke
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d qms_preview_smoke"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build Railway preview image
+        run: docker build --file Dockerfile.preview --tag qms-preview-smoke .
+      - name: Verify packages in final image
+        run: |
+          docker run --rm --entrypoint sh qms-preview-smoke -ec '
+            test -x node_modules/.bin/prisma
+            test -z "$(find node_modules -type d \( -name picomatch -o -name eslint -o -name vitest -o -name vite \) -print -quit)"
+          '
+      - name: Apply migrations and verify readiness on isolated PostgreSQL
+        run: |
+          docker run --detach --name qms-preview-smoke --network host \
+            --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/qms_preview_smoke \
+            --env DEPLOYMENT_TIER=development-preview --env PORT=3000 qms-preview-smoke
+          trap 'docker logs qms-preview-smoke; docker rm --force qms-preview-smoke > /dev/null' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3000/api/health/readiness; then
+              test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:3000/api/documents)" = "401"
+              exit 0
+            fi
+            if test "$(docker inspect --format '{{.State.Running}}' qms-preview-smoke)" != true; then
+              exit 1
+            fi
+            sleep 2
+          done
+          exit 1
