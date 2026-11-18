@@ -116,13 +116,13 @@ jobs:
               await page.getByRole('button', {name:'Controlled submission', exact:true}).click();
               const dialog=page.getByRole('dialog',{name:'Controlled submission'});
               await dialog.getByText('Prior-revision assignments suggested.',{exact:false}).waitFor();
-              const reviewers=dialog.getByLabel('Reviewer',{exact:true});
+              const reviewers=dialog.locator('form .approval-box select');
               const options=await reviewers.evaluateAll(nodes=>nodes.map(node=>node.selectedOptions[0].textContent));
               assert.deepEqual(options,['First Reviewer','Second Reviewer']);
-              const dates=dialog.getByLabel('Due date',{exact:true});
+              const dates=dialog.locator('form input[type=date]');
               assert.deepEqual(await dates.evaluateAll(nodes=>nodes.map(node=>node.value)),['','']);
               for(let i=0;i<2;i++) await dates.nth(i).fill(new Date(Date.now()+(7+i)*86400000).toISOString().slice(0,10));
-              await dialog.getByLabel('Submission comment').fill('Synthetic end-to-end acceptance check.');
+              await dialog.locator('textarea[name=comment]').fill('Synthetic end-to-end acceptance check.');
               const submitted=page.waitForResponse(response=>response.url().endsWith('/api/documents/commands') && response.request().method()==='POST');
               await dialog.getByRole('button',{name:'Submit controlled revision',exact:true}).click();
               const response=await submitted;
@@ -138,6 +138,22 @@ jobs:
             }
           })().catch(error => { console.error(error); process.exitCode = 1; });
           NODE
+          docker exec --interactive qms-combined-preview node <<'VERIFY'
+          const assert=require('node:assert/strict');
+          const {PrismaClient}=require('@prisma/client');
+          const db=new PrismaClient();
+          async function verify() {
+            const org=await db.organization.findUniqueOrThrow({where:{loginCode:'qms-ci-layout'}});
+            const doc=await db.document.findFirstOrThrow({where:{organizationId:org.id,documentNumber:'CI-SOP-001'}});
+            const version=await db.documentVersion.findFirstOrThrow({where:{organizationId:org.id,documentId:doc.id,versionNumber:2}});
+            assert.equal(version.status,'IN_REVIEW');
+            const workflow=await db.workflowInstance.findFirstOrThrow({where:{organizationId:org.id,entityId:version.id,entityType:'DocumentVersion'}});
+            const tasks=await db.workflowTask.findMany({where:{organizationId:org.id,workflowInstanceId:workflow.id},include:{assignee:true},orderBy:{stepKey:'asc'}});
+            assert.deepEqual(tasks.map(task=>[task.stepKey,task.status,task.assignee.firstName]),[['APPROVAL','PENDING','Final'],['REVIEW_1','IN_PROGRESS','First'],['REVIEW_2','PENDING','Second']]);
+            console.log('Persisted review assignments and their statuses verified.');
+          }
+          verify().finally(()=>db.$disconnect()).catch(error=>{ console.error(error); process.exitCode=1; });
+          VERIFY
       - name: Capture startup logs and clean up
         if: always()
         run: |
