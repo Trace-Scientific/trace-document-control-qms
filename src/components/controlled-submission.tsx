@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { buildSubmissionReceipt } from "../lib/documents/submission-receipt";
+import { suggestPriorReviewers } from "../lib/documents/prior-review-routing";
 
 type DraftRow = {
   id: string;
@@ -57,15 +58,18 @@ export function ControlledSubmission() {
       .sort((a, b) => b.versionNumber - a.versionNumber)[0];
     if (!previous) return;
     const tasks = next.assignments.filter((task) => task.versionId === previous.id);
-    const reviewer = tasks.find((task) => task.stepKey.startsWith("REVIEW_") &&
-      task.assignee && next.reviewers.some((user) => user.id === task.assignee?.id))?.assignee;
+    const previousReviewerIds = suggestPriorReviewers(tasks, next.reviewers);
     const approver = tasks.find((task) => task.stepKey === "APPROVAL" &&
       task.assignee && eligibleApprovers.some((user) => user.id === task.assignee?.id))?.assignee;
-    if (reviewer) setStages([{ reviewerUserId: reviewer.id, dueAt: "" }]);
+    if (previousReviewerIds?.length) {
+      setStages(previousReviewerIds.map((reviewerUserId) => ({ reviewerUserId, dueAt: "" })));
+    }
     if (approver) setApproverId(approver.id);
-    if (reviewer || approver) setRoutingNotice(
-      "Eligible prior-revision assignments suggested. Confirm both people and enter a fresh review deadline before submitting."
-    );
+    if (previousReviewerIds === null) {
+      setRoutingNotice("The prior review route could not be reused. Select reviewers and due dates for this revision.");
+    } else if (previousReviewerIds.length || approver) {
+      setRoutingNotice("Prior-revision assignments suggested. Confirm the assignments and enter new review due dates.");
+    }
   }
 
   async function load(preferredDocumentNumber?: string, preferredVersionId?: string) {
@@ -358,3 +362,4 @@ export function ControlledSubmission() {
     </>
   );
 }
+
