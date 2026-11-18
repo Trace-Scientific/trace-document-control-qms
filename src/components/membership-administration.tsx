@@ -114,21 +114,25 @@ export function MembershipAdministration({ embedded = false }: { embedded?: bool
               {options.users.map((user) => <option key={user.id} value={user.id}>{user.name} · {user.status}</option>)}
             </select>
           </label>
-          <fieldset>
+          <fieldset className="membership-options">
             <legend>Sites</legend>
-            {options.sites.filter((site) => site.active).map((site) => (
-              <label key={site.id}><input type="checkbox" checked={siteIds.includes(site.id)} onChange={() => {
-                const nextSites = siteIds.includes(site.id) ? siteIds.filter((id) => id !== site.id) : [...siteIds, site.id];
-                setSiteIds(nextSites);
-                if (!nextSites.includes(site.id)) setDepartmentIds(departmentIds.filter((departmentId) => options.departments.find((department) => department.id === departmentId)?.siteId !== site.id));
-              }} /> {site.name}</label>
-            ))}
+            <div className="qms-two-column-list">
+              {options.sites.filter((site) => site.active).map((site) => (
+                <label key={site.id}><input type="checkbox" checked={siteIds.includes(site.id)} onChange={() => {
+                  const nextSites = siteIds.includes(site.id) ? siteIds.filter((id) => id !== site.id) : [...siteIds, site.id];
+                  setSiteIds(nextSites);
+                  if (!nextSites.includes(site.id)) setDepartmentIds(departmentIds.filter((departmentId) => options.departments.find((department) => department.id === departmentId)?.siteId !== site.id));
+                }} /> {site.name}</label>
+              ))}
+            </div>
           </fieldset>
-          <fieldset>
+          <fieldset className="membership-options">
             <legend>Departments</legend>
-            {eligibleDepartments.filter((department) => department.active).map((department) => (
-              <label key={department.id}><input type="checkbox" checked={departmentIds.includes(department.id)} onChange={() => toggle(department.id, departmentIds, setDepartmentIds)} /> {department.name}</label>
-            ))}
+            <div className="qms-two-column-list">
+              {eligibleDepartments.filter((department) => department.active).map((department) => (
+                <label key={department.id}><input type="checkbox" checked={departmentIds.includes(department.id)} onChange={() => toggle(department.id, departmentIds, setDepartmentIds)} /> {department.name}</label>
+              ))}
+            </div>
           </fieldset>
           <label>
             Controlled reason

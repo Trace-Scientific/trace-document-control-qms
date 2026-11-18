@@ -20,6 +20,7 @@ type DraftRow = {
 
 export function ControlledFiles({ canCreate }: { canCreate: boolean }) {
   const [rows, setRows] = useState<Row[]>([]),
+    [filesLoaded, setFilesLoaded] = useState(false),
     [drafts, setDrafts] = useState<DraftRow[]>([]),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
@@ -29,8 +30,10 @@ export function ControlledFiles({ canCreate }: { canCreate: boolean }) {
   async function loadFiles() {
     const response = await fetch("/api/files");
     const body = await response.json().catch(() => null);
-    if (response.ok) setRows(body.data);
-    else setError(body?.error ?? "Files could not be loaded.");
+    if (response.ok) {
+      setRows(body.data);
+      setFilesLoaded(true);
+    } else setError(body?.error ?? "Files could not be loaded.");
   }
 
   async function loadDrafts() {
@@ -53,10 +56,14 @@ export function ControlledFiles({ canCreate }: { canCreate: boolean }) {
       })),
     ]).then(([fileResult, draftResult]) => {
       if (!active) return;
-      if (fileResult.response.ok) setRows(fileResult.body.data);
-      else setError(fileResult.body?.error ?? "Files could not be loaded.");
+      if (fileResult.response.ok) {
+        setRows(fileResult.body.data);
+        setFilesLoaded(true);
+      } else setError(fileResult.body?.error ?? "Files could not be loaded.");
       if (draftResult.response.ok) setDrafts(draftResult.body.data?.items ?? []);
       else setError(draftResult.body?.error ?? "Draft documents could not be loaded.");
+    }).catch(() => {
+      if (active) setError("Files and drafts could not be loaded.");
     });
     return () => {
       active = false;
@@ -65,17 +72,18 @@ export function ControlledFiles({ canCreate }: { canCreate: boolean }) {
 
   async function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
     setUploading(true);
     setError("");
     setNotice("");
     const response = await fetch("/api/files", {
       method: "POST",
-      body: new FormData(event.currentTarget),
+      body: new FormData(form),
     });
     const body = await response.json().catch(() => null);
     setUploading(false);
     if (!response.ok) return setError(body?.error ?? "Upload failed.");
-    event.currentTarget.reset();
+    form.reset();
     await loadFiles();
   }
 
@@ -127,8 +135,14 @@ export function ControlledFiles({ canCreate }: { canCreate: boolean }) {
         <span className="count-pill">{rows.length}</span>
       </div>
       {canCreate && (
-        <form className="file-upload" onSubmit={upload}>
-          <input name="file" type="file" accept=".pdf,.docx,.xlsx,.txt" required />
+        <form className="controlled-file-upload" onSubmit={upload}>
+          <input
+            name="file"
+            type="file"
+            aria-label="Choose a controlled file"
+            accept=".pdf,.docx,.xlsx,.txt"
+            required
+          />
           <button className="primary-button" disabled={uploading}>
             {uploading ? "Uploading…" : "Upload file"}
           </button>
@@ -148,6 +162,13 @@ export function ControlledFiles({ canCreate }: { canCreate: boolean }) {
             </tr>
           </thead>
           <tbody>
+            {filesLoaded && rows.length === 0 && (
+              <tr>
+                <td colSpan={canCreate ? 5 : 4}>
+                  <div className="empty-state"><strong>No files uploaded</strong></div>
+                </td>
+              </tr>
+            )}
             {rows.map((row) => (
               <tr key={row.id}>
                 <td>
