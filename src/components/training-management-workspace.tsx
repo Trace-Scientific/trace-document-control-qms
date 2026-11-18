@@ -34,6 +34,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [busy, setBusy] = useState(false);
   const [section, setSection] = useState<Section>("assignments");
   const [preselectedCourseId, setPreselectedCourseId] = useState("");
+  const [preselectedAssignmentId, setPreselectedAssignmentId] = useState("");
 
   async function load() {
     const [employeeResponse, courseResponse, assignmentResponse, completionResponse] = await Promise.all([
@@ -94,6 +95,12 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     setSection("assign");
   }
 
+  function startCompletion(assignment: Assignment) {
+    setPreselectedAssignmentId(assignment.id);
+    setNotice("");
+    setSection("complete");
+  }
+
   async function submit(path: string, payload: unknown, form: HTMLFormElement) {
     setBusy(true); setNotice("");
     const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
@@ -134,19 +141,38 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     { id: "history" as const, label: "Completion history", description: "Review immutable completion results, timestamps, and evidence." },
     { id: "lifecycle" as const, label: "Lifecycle actions", description: "Cancel or reassign active training with a controlled reason." },
     { id: "courses" as const, label: "Course configuration", description: "Browse courses and start new assignments." },
-  ];
+  ].filter((item) => canManage || item.id === "assignments" || item.id === "history" || item.id === "courses");
 
   return <section className="workspace-section" aria-labelledby="training-heading">
     <div className="section-heading"><div><p className="eyebrow">Training & competency</p><h2 id="training-heading">Training management</h2><p>Open one governed training function at a time while preserving assignment, completion, and lifecycle history.</p></div></div>
-    <nav className="module-subnav" aria-label="Training management sections">{sections.map((item) => <button key={item.id} type="button" className={section === item.id ? "active" : ""} onClick={() => { setPreselectedCourseId(""); setSection(item.id); setNotice(""); void load(); }}><strong>{item.label}</strong><span>{item.description}</span></button>)}</nav>
+    <nav className="module-subnav" aria-label="Training management sections">{sections.map((item) => <button key={item.id} type="button" className={section === item.id ? "active" : ""} aria-current={section === item.id ? "page" : undefined} onClick={() => { setPreselectedCourseId(""); setPreselectedAssignmentId(""); setSection(item.id); setNotice(""); void load(); }}><strong>{item.label}</strong><span>{item.description}</span></button>)}</nav>
     {notice && <p role="status">{notice}</p>}
 
-    {section === "assignments" && <div className="module-section-stack"><div className="section-heading"><div><h3>Training assignments</h3><p>Browse governed training assignments and their current lifecycle state.</p></div></div><div className="table-wrap"><table><thead><tr><th>Employee</th><th>Course</th><th>Assigned</th><th>Due</th><th>Status</th><th>Lifecycle evidence</th></tr></thead><tbody>{assignments.map((assignment) => {
-      const dueTime = dateOnlyTime(assignment.dueAt);
-      const overdue = assignment.status === "ASSIGNED" && dueTime !== null ? dueTime < todayStart : false;
-      const employee = employeeById.get(assignment.employeeId); const course = courseById.get(assignment.courseId);
-      return <tr key={assignment.id}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assignment.employeeId}</td><td>{course ? `${course.code} · ${course.title}` : assignment.courseId}</td><td>{formatDateOnly(assignment.assignedAt)}</td><td>{formatDateOnly(assignment.dueAt)}</td><td>{overdue ? "OVERDUE" : assignment.status}</td><td>{assignment.cancelReason ?? "—"}</td></tr>;
-    })}{!assignments.length && <tr><td colSpan={6}>No training assignments have been recorded.</td></tr>}</tbody></table></div></div>}
+    {section === "assignments" && <div className="module-section-stack">
+      <div className="section-heading"><div><h3>Training assignments</h3><p>Browse governed training assignments and their current lifecycle state.</p></div></div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Employee</th><th>Course</th><th>Assigned</th><th>Due</th><th>Status</th><th>Lifecycle evidence</th>{canManage && <th>Action</th>}</tr></thead>
+          <tbody>{assignments.map((assignment) => {
+            const dueTime = dateOnlyTime(assignment.dueAt);
+            const overdue = assignment.status === "ASSIGNED" && dueTime !== null && dueTime < todayStart;
+            const employee = employeeById.get(assignment.employeeId);
+            const course = courseById.get(assignment.courseId);
+            const employeeLabel = employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assignment.employeeId;
+            const courseLabel = course ? `${course.code} · ${course.title}` : assignment.courseId;
+            return <tr key={assignment.id}>
+              <td>{employeeLabel}</td><td>{courseLabel}</td>
+              <td>{formatDateOnly(assignment.assignedAt)}</td><td>{formatDateOnly(assignment.dueAt)}</td>
+              <td>{overdue ? "OVERDUE" : assignment.status}</td><td>{assignment.cancelReason ?? "—"}</td>
+              {canManage && <td>{assignment.status === "ASSIGNED" && (
+                <button type="button" disabled={busy} aria-label={`Record completion for ${courseLabel} assigned to ${employeeLabel}`} onClick={() => startCompletion(assignment)}>Record completion</button>
+              )}</td>}
+            </tr>;
+          })}
+          {!assignments.length && <tr><td colSpan={canManage ? 7 : 6}>No training assignments have been recorded.</td></tr>}</tbody>
+        </table>
+      </div>
+    </div>}
 
     {section === "assign" && canManage && <div className="module-section-stack">
       <div className="section-heading"><div><h3>Assign training</h3><p>Assign an active course to an eligible employee with governed dates.</p></div></div>
@@ -164,7 +190,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
       </form>
     </div>}
 
-    {section === "complete" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record completion</h3><p>Record completion results with optional governed supporting evidence.</p></div></div><form onSubmit={complete} className="admin-form"><label>Assignment<select name="assignmentId" defaultValue="" required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label><label>Completed at<input name="completedAt" type="datetime-local" required /></label><label>Result<input name="result" maxLength={500} /></label><GovernedEvidenceFilePicker domain="training" disabled={busy} /><button type="submit" disabled={busy}>Record completion</button></form></div>}
+    {section === "complete" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record completion</h3><p>Record completion results with optional governed supporting evidence.</p></div></div><form onSubmit={complete} className="admin-form"><label>Assignment<select name="assignmentId" defaultValue={preselectedAssignmentId} required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label><label>Completed at<input name="completedAt" type="datetime-local" required /></label><label>Result<input name="result" maxLength={500} /></label><GovernedEvidenceFilePicker domain="training" disabled={busy} /><button type="submit" disabled={busy}>Record completion</button></form></div>}
 
     {section === "history" && <div className="module-section-stack"><div className="section-heading"><div><h3>Completion history</h3><p>Review immutable training completion results, event timestamps, and governed evidence references.</p></div></div><div className="table-wrap"><table><thead><tr><th>Employee</th><th>Course</th><th>Completed at</th><th>Result</th><th>Evidence</th></tr></thead><tbody>{completions.map((completion) => {
       const employee = employeeById.get(completion.employeeId); const course = courseById.get(completion.courseId);
