@@ -33,6 +33,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [section, setSection] = useState<Section>("assignments");
+  const [preselectedCourseId, setPreselectedCourseId] = useState("");
 
   async function load() {
     const [employeeResponse, courseResponse, assignmentResponse, completionResponse] = await Promise.all([
@@ -41,12 +42,12 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
       fetch("/api/training/assignments", { credentials: "same-origin", cache: "no-store" }),
       fetch("/api/training/completions", { credentials: "same-origin", cache: "no-store" }),
     ]);
-    if (!employeeResponse.ok || !courseResponse.ok || !assignmentResponse.ok || !completionResponse.ok) {
+    if ((!employeeResponse.ok && employeeResponse.status !== 403) || !courseResponse.ok || !assignmentResponse.ok || !completionResponse.ok) {
       setNotice("Training data could not be refreshed. Reload before making governed changes.");
       return;
     }
     const [employeeBody, courseBody, assignmentBody, completionBody] = await Promise.all([
-      employeeResponse.json(), courseResponse.json(), assignmentResponse.json(), completionResponse.json(),
+      employeeResponse.ok ? employeeResponse.json() : { data: [] }, courseResponse.json(), assignmentResponse.json(), completionResponse.json(),
     ]);
     setEmployees(employeeBody.data ?? []);
     setCourses(courseBody.data ?? []);
@@ -63,12 +64,12 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
       fetch("/api/training/completions", { credentials: "same-origin", cache: "no-store" }),
     ]).then(async ([employeeResponse, courseResponse, assignmentResponse, completionResponse]) => {
       if (cancelled) return;
-      if (!employeeResponse.ok || !courseResponse.ok || !assignmentResponse.ok || !completionResponse.ok) {
+      if ((!employeeResponse.ok && employeeResponse.status !== 403) || !courseResponse.ok || !assignmentResponse.ok || !completionResponse.ok) {
         if (!cancelled) setNotice("Training data could not be refreshed. Reload before making governed changes.");
         return;
       }
       const [employeeBody, courseBody, assignmentBody, completionBody] = await Promise.all([
-        employeeResponse.json(), courseResponse.json(), assignmentResponse.json(), completionResponse.json(),
+        employeeResponse.ok ? employeeResponse.json() : { data: [] }, courseResponse.json(), assignmentResponse.json(), completionResponse.json(),
       ]);
       if (!cancelled) {
         setEmployees(employeeBody.data ?? []);
@@ -84,6 +85,14 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const courseById = useMemo(() => new Map(courses.map((course) => [course.id, course])), [courses]);
   const todayStart = useMemo(() => dateOnlyTime(today) ?? 0, [today]);
   const activeAssignments = assignments.filter((assignment) => assignment.status === "ASSIGNED");
+  const activeCourses = courses.filter((course) => course.active);
+  const eligibleEmployees = employees.filter((employee) => employee.status !== "TERMINATED");
+
+  function startAssignment(course: Course) {
+    setPreselectedCourseId(course.id);
+    setNotice("");
+    setSection("assign");
+  }
 
   async function submit(path: string, payload: unknown, form: HTMLFormElement) {
     setBusy(true); setNotice("");
@@ -124,12 +133,12 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     { id: "complete" as const, label: "Record completion", description: "Record completion results and governed supporting evidence." },
     { id: "history" as const, label: "Completion history", description: "Review immutable completion results, timestamps, and evidence." },
     { id: "lifecycle" as const, label: "Lifecycle actions", description: "Cancel or reassign active training with a controlled reason." },
-    { id: "courses" as const, label: "Course configuration", description: "Create governed training courses." },
+    { id: "courses" as const, label: "Course configuration", description: "Browse courses and start new assignments." },
   ];
 
   return <section className="workspace-section" aria-labelledby="training-heading">
     <div className="section-heading"><div><p className="eyebrow">Training & competency</p><h2 id="training-heading">Training management</h2><p>Open one governed training function at a time while preserving assignment, completion, and lifecycle history.</p></div></div>
-    <nav className="module-subnav" aria-label="Training management sections">{sections.map((item) => <button key={item.id} type="button" className={section === item.id ? "active" : ""} onClick={() => { setSection(item.id); setNotice(""); void load(); }}><strong>{item.label}</strong><span>{item.description}</span></button>)}</nav>
+    <nav className="module-subnav" aria-label="Training management sections">{sections.map((item) => <button key={item.id} type="button" className={section === item.id ? "active" : ""} onClick={() => { setPreselectedCourseId(""); setSection(item.id); setNotice(""); void load(); }}><strong>{item.label}</strong><span>{item.description}</span></button>)}</nav>
     {notice && <p role="status">{notice}</p>}
 
     {section === "assignments" && <div className="module-section-stack"><div className="section-heading"><div><h3>Training assignments</h3><p>Browse governed training assignments and their current lifecycle state.</p></div></div><div className="table-wrap"><table><thead><tr><th>Employee</th><th>Course</th><th>Assigned</th><th>Due</th><th>Status</th><th>Lifecycle evidence</th></tr></thead><tbody>{assignments.map((assignment) => {
@@ -139,7 +148,21 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
       return <tr key={assignment.id}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assignment.employeeId}</td><td>{course ? `${course.code} · ${course.title}` : assignment.courseId}</td><td>{formatDateOnly(assignment.assignedAt)}</td><td>{formatDateOnly(assignment.dueAt)}</td><td>{overdue ? "OVERDUE" : assignment.status}</td><td>{assignment.cancelReason ?? "—"}</td></tr>;
     })}{!assignments.length && <tr><td colSpan={6}>No training assignments have been recorded.</td></tr>}</tbody></table></div></div>}
 
-    {section === "assign" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Assign training</h3><p>Assign an active course to an eligible employee with governed dates.</p></div></div><form onSubmit={createAssignment} className="admin-form"><label>Employee<select name="employeeId" defaultValue="" required><option value="" disabled>Select employee</option>{employees.filter((employee) => employee.status !== "TERMINATED").map((employee) => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.lastName}, {employee.firstName}</option>)}</select></label><label>Course<select name="courseId" defaultValue="" required><option value="" disabled>Select course</option>{courses.filter((course) => course.active).map((course) => <option key={course.id} value={course.id}>{course.code} · {course.title}</option>)}</select></label><label>Assigned date<input name="assignedAt" type="date" required /></label><label>Due date<input name="dueAt" type="date" /></label><button type="submit" disabled={busy}>Assign training</button></form></div>}
+    {section === "assign" && canManage && <div className="module-section-stack">
+      <div className="section-heading"><div><h3>Assign training</h3><p>Assign an active course to an eligible employee with governed dates.</p></div></div>
+      {!eligibleEmployees.length && <p>No eligible employees are available. Check Personnel and your access to employee records.</p>}
+      <form onSubmit={createAssignment} className="admin-form">
+        <label>Employee<select name="employeeId" defaultValue="" required><option value="" disabled>Select employee</option>{eligibleEmployees.map((employee) => (
+          <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.lastName}, {employee.firstName}</option>
+        ))}</select></label>
+        <label>Course<select name="courseId" defaultValue={preselectedCourseId} required><option value="" disabled>Select course</option>{activeCourses.map((course) => (
+          <option key={course.id} value={course.id}>{course.code} · {course.title}</option>
+        ))}</select></label>
+        <label>Assigned date<input name="assignedAt" type="date" required /></label>
+        <label>Due date<input name="dueAt" type="date" /></label>
+        <button type="submit" disabled={busy || !eligibleEmployees.length || !activeCourses.length}>Assign training</button>
+      </form>
+    </div>}
 
     {section === "complete" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record completion</h3><p>Record completion results with optional governed supporting evidence.</p></div></div><form onSubmit={complete} className="admin-form"><label>Assignment<select name="assignmentId" defaultValue="" required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label><label>Completed at<input name="completedAt" type="datetime-local" required /></label><label>Result<input name="result" maxLength={500} /></label><GovernedEvidenceFilePicker domain="training" disabled={busy} /><button type="submit" disabled={busy}>Record completion</button></form></div>}
 
@@ -150,6 +173,30 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
 
     {section === "lifecycle" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Lifecycle actions</h3><p>Cancel or reassign active training without rewriting assignment history.</p></div></div><form onSubmit={lifecycle} className="admin-form"><label>Assignment<select name="assignmentId" defaultValue="" required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label><label>Action<select name="action" defaultValue="cancel"><option value="cancel">Cancel</option><option value="reassign">Reassign</option></select></label><label>Reason<input name="reason" maxLength={500} required /></label><label>New assigned date<input name="assignedAt" type="date" /></label><label>New due date<input name="dueAt" type="date" /></label><button type="submit" disabled={busy}>Apply lifecycle action</button></form></div>}
 
-    {section === "courses" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Course configuration</h3><p>Create governed courses used for future training assignments.</p></div></div><form onSubmit={createCourse} className="admin-form"><label>Course code<input name="code" maxLength={80} required /></label><label>Course title<input name="title" maxLength={240} required /></label><label>Description<textarea name="description" maxLength={2000} /></label><button type="submit" disabled={busy}>Create course</button></form></div>}
+    {section === "courses" && <div className="module-section-stack">
+      <div className="section-heading"><div><h3>Course configuration</h3></div></div>
+      <div className="table-wrap">
+        <table aria-label="Training courses">
+          <thead><tr><th>Course code</th><th>Course title</th><th>Status</th>{canManage && <th>Action</th>}</tr></thead>
+          <tbody>
+            {courses.map((course) => <tr key={course.id}>
+              <td>{course.code}</td>
+              <td>{course.title}</td>
+              <td>{course.active ? "Active" : "Inactive"}</td>
+              {canManage && <td>{course.active && (
+                <button type="button" disabled={busy} aria-label={`Assign ${course.title}`} onClick={() => startAssignment(course)}>Assign course</button>
+              )}</td>}
+            </tr>)}
+            {!courses.length && <tr><td colSpan={canManage ? 4 : 3}>No training courses have been created.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {canManage && <form onSubmit={createCourse} className="admin-form">
+        <label>Course code<input name="code" maxLength={80} required /></label>
+        <label>Course title<input name="title" maxLength={240} required /></label>
+        <label>Description<textarea name="description" maxLength={2000} /></label>
+        <button type="submit" disabled={busy}>Create course</button>
+      </form>}
+    </div>}
   </section>;
 }
