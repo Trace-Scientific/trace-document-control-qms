@@ -58,9 +58,7 @@ export function DocumentsContentTabs({ active }: { active: boolean }) {
     <section className="document-content-navigation" aria-labelledby="document-content-navigation-heading">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">DOCUMENT CONTENT</p>
           <h2 id="document-content-navigation-heading">Library &amp; files</h2>
-          <p>Open one controlled-content surface at a time.</p>
         </div>
       </div>
       <nav className="qms-subsection-nav" aria-label="Document content sections">
