@@ -101,7 +101,7 @@ export function WorkflowTemplateAdministration() {
       {error && <div className="detail-error" role="alert">{error}</div>}
       {notice && <div className="detail-notice" role="status">{notice}</div>}
       <div className="template-layout">
-        <div className="template-list">
+        <div className="template-list qms-two-column-list">
           {templates.map((template) => (
             <article key={template.id}>
               <div><strong>{template.name}</strong><span>{template.key} · v{template.version}</span></div>

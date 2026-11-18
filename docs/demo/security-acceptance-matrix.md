@@ -14,7 +14,7 @@ For each case record exact commit SHA, environment identity, synthetic tenant ID
 | ISO-04 | Provisioning rejects wrong environment, database, collision, and replay | Read-only preflight and approved isolated test evidence; no production data or role changes | Repository guards exist; live acceptance outstanding |
 | ISO-05 | Synthetic demo users cannot reach platform administrator or another organization's data | Role-based UI/API negative checks for each demo persona; support access only through separately governed process | Not verified for live demo |
 | ISO-06 | External demo contains no PHI or real customer records | Data-classification review of users, documents, attachments, notifications, audit metadata, and exports | Not verified |
-| REC-01 | Backup is usable and restore is isolated | Timestamped backup, checksum, isolated restore transcript, post-restore checks and named reviewer | November 17 backup checksum and isolated restore verified (206 tables); named reviewer sign-off outstanding |
+| REC-01 | Backup is usable and restore is isolated | Timestamped backup, checksum, isolated restore transcript, post-restore checks and named reviewer | Prior isolated restore reported in provisioning contract; current target evidence requires revalidation |
 | REC-02 | Demo reset cannot affect production | Independently verified environment/database identity and approved rollback/restore test | Not verified |
 | OPS-01 | External access is approved | Signed product/security go/no-go decision, credential distribution process, expiry/revocation and incident contact | Not approved |
 
@@ -46,7 +46,7 @@ For each case record exact commit SHA, environment identity, synthetic tenant ID
 - `Independent code validation`: **PASS**; typecheck, lint, tests, and build completed.
 - Separate [Security workflow run 44155489153](https://github.com/Trace-Scientific/trace-document-control-qms/actions/runs/44155489153): **PASS**.
 - Original `verify` job: **FAIL** at `npm audit --audit-level=high` because of unresolved dependency advisories, tracked in [issue #454](https://github.com/Trace-Scientific/trace-document-control-qms/issues/454). No audit gate was bypassed.
-- **Disposition:** This supplies reproducible isolated fixture regression evidence relevant to ISO-01/ISO-02, **not** authenticated negative API or live Railway tenant-isolation acceptance. ISO-01 and ISO-02 remain **Not verified for live demo**. PR #457 remains unmerged pending full required CI success.
+- **Disposition:** This supplies reproducible isolated fixture regression evidence relevant to ISO-01/ISO-02, **not** authenticated negative API or live Railway tenant-isolation acceptance. ISO-01 and ISO-02 remain **Not verified for live demo**. PR #457 remains unmerged. The dependency audit issue was subsequently closed after the full audit passed on `main`.
 
 ## Updated isolated authorization regression evidence — November 17, 2026
 
@@ -61,7 +61,7 @@ For each case record exact commit SHA, environment identity, synthetic tenant ID
 
 - **Target:** Separate Railway project `e6cc5f1e-3064-46d3-90bf-c763334f01a8`, environment `demo` (`3bb1cae4-454f-4f6c-b2cb-fb38c8eb58a4`), restore-validation service `911b9c57-532d-48bd-972c-8cec81fc2bd9`.
 - **Backup:** `trace-qms-demo-20261117T090451Z.backup` in the demo-only private S3 backup bucket.
-- **Railway deployment:** `de5ef4f8-8acc-4a45-b218-f5c0b46afc37`, status **SUCCESS**. Deployment logs at 20:13:25 UTC show `trace-qms-demo-20261117T090451Z.backup: OK` (SHA-256 checksum); at 20:13:27 UTC show `PASS: isolated restore completed; application tables: 206`.
+- **Railway deployment:** `de5ef4f8-8acc-4a45-b218-f5c0b46afc37`, completed its restore-validation run. Deployment logs at 20:13:25 UTC show `trace-qms-demo-20261117T090451Z.backup: OK` (SHA-256 checksum); at 20:13:27 UTC show `PASS: isolated restore completed; application tables: 206`.
 - **Isolation:** The script unsets database connection variables and starts a disposable PostgreSQL 18 instance bound to a local Unix socket; logs explicitly report `No running Railway database was contacted or modified.`
 - **Disposition:** Recent demo backup restore and checksum are **verified by runtime logs** for REC-01's technical recovery evidence. Named independent reviewer acceptance is still outstanding, so do not treat REC-01 as fully signed off. REC-02 (demo reset/production boundary), ISO-01–06 live checks, and OPS-01 external-access approval remain open. No live database restore was performed.
 

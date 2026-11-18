@@ -8,6 +8,8 @@ const runbook = await readFile(
   "utf8",
 );
 const page = await readFile("src/app/page.tsx", "utf8");
+const loginPage = await readFile("src/app/login/page.tsx", "utf8");
+const loginForm = await readFile("src/app/login/login-form.tsx", "utf8");
 const previewDockerfile = await readFile("Dockerfile.preview", "utf8");
 const productionDockerfile = await readFile("Dockerfile", "utf8");
 const equipmentOverdueRunner = await readFile(
@@ -40,6 +42,17 @@ test("preview warning is derived from a server-side runtime boundary", () => {
   assert.doesNotMatch(page, /NEXT_PUBLIC_/);
 });
 
+test("login and footer label demo and preview tiers using server-side runtime configuration", () => {
+  assert.match(loginPage, /export const dynamic = "force-dynamic"/);
+  assert.match(loginPage, /\["demo", "Demo environment"\]/);
+  assert.match(loginPage, /\["development-preview", "Development preview"\]/);
+  assert.match(loginPage, /const environmentLabel = previewLabels\.get\(process\.env\.DEPLOYMENT_TIER/);
+  assert.match(loginPage, /<LoginForm environmentLabel=\{environmentLabel\}/);
+  assert.match(loginPage, /environmentLabel && <span>\{environmentLabel\}<\/span>/);
+  assert.match(loginForm, /environmentLabel && <small[^>]*>\{environmentLabel\} · Synthetic data only<\/small>/);
+  assert.doesNotMatch(loginForm, /process\.env/);
+});
+
 test("preview image deploys migrations without changing the AWS runtime", () => {
   assert.match(
     previewDockerfile,
@@ -49,6 +62,16 @@ test("preview image deploys migrations without changing the AWS runtime", () => 
   assert.match(previewDockerfile, /\/api\/health\/readiness/);
   assert.doesNotMatch(productionDockerfile, /prisma migrate deploy && node server\.js/);
   assert.match(runbook, /\/Dockerfile\.preview/);
+});
+
+test("preview runtime excludes development tools and retains Prisma for startup migrations", () => {
+  const [dependencies, runtime] = previewDockerfile.split("FROM node:22-alpine AS preview\n");
+  assert.ok(runtime);
+  assert.match(dependencies, /FROM dependencies AS preview-dependencies/);
+  assert.match(dependencies, /npm pkg set "dependencies\.prisma=/);
+  assert.match(dependencies, /npm prune --omit=dev --ignore-scripts --offline/);
+  assert.match(runtime, /COPY --from=preview-dependencies --chown=qms:qms \/app\/node_modules \.\/node_modules/);
+  assert.doesNotMatch(runtime, /COPY --from=dependencies .*\/app\/node_modules/);
 });
 
 test("preview image packages the controlled first-administrator bootstrap only in preview", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Icon, type IconName } from "./icon";
 import {
@@ -246,7 +246,8 @@ function mapDocument(row: DocumentApiRow): DocumentRow {
 
 export function DocumentControlDashboard({
   developmentPreview = false,
-}: Readonly<{ developmentPreview?: boolean }>) {
+  operationalWorkspaces,
+}: Readonly<{ developmentPreview?: boolean; operationalWorkspaces?: ReactNode }>) {
   const router = useRouter();
   const [documents, setDocuments] = useState(initialDocuments),
     [documentTypes, setDocumentTypes] = useState<DocumentTypeOption[]>([]),
@@ -801,7 +802,9 @@ export function DocumentControlDashboard({
               <strong>{live ? `${live.user.firstName} ${live.user.lastName}` : "Loading account"}</strong>
               <span>{live?.user.email ?? "Authenticated user"}</span>
             </div>
-            <button type="button" onClick={logout}>Sign out</button>
+            <button type="button" className="sidebar-sign-out" onClick={logout}>
+              Sign out
+            </button>
           </div>
         </div>
       </aside>
@@ -892,14 +895,14 @@ export function DocumentControlDashboard({
           </div>
           <div className="page-heading">
             <div>
-              <p className="eyebrow">POLICY &amp; DOCUMENTATION</p>
+              <p className="eyebrow">QMS WORKSPACE</p>
               <h1>{view}</h1>
               <p>
                 {view === "Documents"
                   ? "Manage controlled content, approvals, effective versions, and review schedules."
                   : view === "Review queue"
                     ? "Monitor current-version periodic reviews and overdue work."
-                    : "Monitor notification delivery failures and controlled recovery."}
+                    : "Manage your organization, access, workflow templates, and audit history."}
               </p>
             </div>
             {view === "Documents" && (
@@ -1303,6 +1306,7 @@ export function DocumentControlDashboard({
             </section>
             </div>
           )}
+          {operationalWorkspaces}
         </main>
       </div>
       {detail && (
