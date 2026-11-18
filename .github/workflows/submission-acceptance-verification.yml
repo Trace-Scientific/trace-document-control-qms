@@ -1,0 +1,147 @@
+name: Verify end-to-end controlled submission (temporary)
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize]
+permissions:
+  contents: read
+jobs:
+  combined-preview:
+    if: github.head_ref == 'codex/controlled-submission-receipt'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: qms_combined_smoke
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d qms_combined_smoke"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Apply reviewed layout and dependency drafts to the build tree
+        run: |
+          git restore --source=49bb18a8da3811cec7c8163567bc8b1ef03a0342 -- src/app/page.tsx src/app/sidebar-overlap-fix.css src/components/access-administration.tsx src/components/controlled-files.tsx src/components/document-control-dashboard.tsx src/components/documents-content-tabs.tsx src/components/membership-administration.tsx src/components/qms-module-shell.tsx src/components/workflow-template-administration.tsx
+          git restore --source=15c98f322b5965c7f211b14262fec3bd1d36b106 -- package.json package-lock.json
+          git restore --source=814efcef03889a3c98afee7f510867d4dbab05fe -- Dockerfile.preview next.config.ts
+      - name: Build combined preview image
+        run: docker build --file Dockerfile.preview --tag qms-combined-preview .
+      - name: Verify hardened image and start against disposable PostgreSQL
+        run: |
+          docker run --rm --entrypoint sh qms-combined-preview -ec '
+            test -x node_modules/.bin/prisma
+            installed=$(find ./node_modules -type d \( -path "*/node_modules/picomatch" -o -path "*/node_modules/eslint" -o -path "*/node_modules/vitest" -o -path "*/node_modules/vite" \) -print)
+            test -z "$installed"
+          '
+          docker run --detach --name qms-combined-preview --network host \
+            --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/qms_combined_smoke \
+            --env DEPLOYMENT_TIER=development-preview --env PORT=3000 qms-combined-preview
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://localhost:3000/api/health/readiness; then
+              test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://localhost:3000/api/documents)" = "401"
+              test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://localhost:3000/_next/image)" = "404"
+              exit 0
+            fi
+            if test "$(docker inspect --format '{{.State.Running}}' qms-combined-preview)" != true; then exit 1; fi
+            sleep 2
+          done
+          exit 1
+      - name: Verify controlled submission with synthetic browser fixtures
+        env:
+          BOOTSTRAP_ORGANIZATION_CODE: qms-ci-layout
+          BOOTSTRAP_ADMIN_EMAIL: layout-admin@example.com
+          BOOTSTRAP_ADMIN_FIRST_NAME: CI
+          BOOTSTRAP_ADMIN_LAST_NAME: Fixture
+          BOOTSTRAP_ADMIN_CONFIRM: CREATE-FIRST-ADMIN
+        run: |
+          export BOOTSTRAP_ADMIN_PASSWORD="$(openssl rand -hex 24)"
+          docker exec qms-combined-preview node -e '
+            const {PrismaClient}=require("@prisma/client");
+            const db=new PrismaClient();
+            db.organization.create({data:{loginCode:"qms-ci-layout",legalName:"Synthetic CI Fixture",displayName:"Synthetic CI Fixture"}}).finally(()=>db.$disconnect()).catch(error=>{console.error(error);process.exitCode=1});
+          '
+          docker exec --env BOOTSTRAP_ORGANIZATION_CODE --env BOOTSTRAP_ADMIN_EMAIL --env BOOTSTRAP_ADMIN_FIRST_NAME --env BOOTSTRAP_ADMIN_LAST_NAME --env BOOTSTRAP_ADMIN_CONFIRM --env BOOTSTRAP_ADMIN_PASSWORD qms-combined-preview node scripts/bootstrap-admin.mjs
+          docker exec --interactive qms-combined-preview node <<'SEED'
+          const {PrismaClient}=require('@prisma/client');
+          const {createHash}=require('node:crypto');
+          const db=new PrismaClient();
+          async function seed() {
+            const org=await db.organization.findUniqueOrThrow({where:{loginCode:'qms-ci-layout'}});
+            const organizationId=org.id;
+            const author=await db.user.findFirstOrThrow({where:{organizationId,email:'layout-admin@example.com'}});
+            const role=await db.role.findFirstOrThrow({where:{organizationId,name:'System Administrator'}});
+            const assignees=[];
+            for(const [name,lastName] of [['First','Reviewer'],['Second','Reviewer'],['Final','Approver']]){
+              const user=await db.user.create({data:{organizationId,firstName:name,lastName,email:name.toLowerCase()+'@example.com',status:'ACTIVE'}});
+              await db.userRole.create({data:{organizationId,roleId:role.id,userId:user.id}});
+              assignees.push(user);
+            }
+            const type=await db.documentType.create({data:{organizationId,code:'SOP',name:'Synthetic procedure',reviewMonths:12}});
+            const document=await db.document.create({data:{organizationId,documentTypeId:type.id,documentNumber:'CI-SOP-001',title:'Synthetic submission fixture'}});
+            const base={organizationId,documentId:document.id,authoredByUserId:author.id,changeSummary:'Synthetic workflow verification'};
+            const prior=await db.documentVersion.create({data:{...base,versionNumber:1,revisionLabel:'0.1',status:'EFFECTIVE',effectiveAt:new Date(),reviewDueAt:new Date(Date.now()+86400000*365),contentText:'Prior synthetic content',contentHash:createHash('sha256').update('Prior synthetic content').digest('hex')}});
+            await db.document.update({where:{id:document.id},data:{currentVersionId:prior.id}});
+            await db.documentVersion.create({data:{...base,versionNumber:2,revisionLabel:'0.2',contentText:'Updated synthetic content',contentHash:createHash('sha256').update('Updated synthetic content').digest('hex')}});
+            const definition=await db.workflowDefinition.create({data:{organizationId,key:'document-approval',version:1,name:'Synthetic document approval',definition:{}}});
+            const workflow=await db.workflowInstance.create({data:{organizationId,workflowDefinitionId:definition.id,entityType:'DocumentVersion',entityId:prior.id,state:'EFFECTIVE',status:'COMPLETED',completedAt:new Date()}});
+            await db.workflowTask.createMany({data:['REVIEW_1','REVIEW_2','APPROVAL'].map((stepKey,index)=>({organizationId,workflowInstanceId:workflow.id,stepKey,assigneeUserId:assignees[index].id,status:'COMPLETED',completedAt:new Date()}))});
+          }
+          seed().finally(()=>db.$disconnect()).catch(error=>{ console.error(error); process.exitCode=1; });
+          SEED
+          npm install --prefix "$RUNNER_TEMP/qms-browser" --no-audit --no-fund playwright-core@1.58.2
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const {execFileSync} = require('node:child_process');
+          const {chromium} = require(process.env.RUNNER_TEMP + '/qms-browser/node_modules/playwright-core');
+          (async () => {
+            const executablePath = execFileSync('which', ['google-chrome'], {encoding: 'utf8'}).trim();
+            const browser = await chromium.launch({executablePath, headless: true});
+            try {
+              const page = await browser.newPage({viewport: {width: 1440, height: 960}});
+              await page.goto('http://localhost:3000/login');
+              await page.locator('input[name=organizationCode]').fill(process.env.BOOTSTRAP_ORGANIZATION_CODE);
+              await page.locator('input[name=email]').fill(process.env.BOOTSTRAP_ADMIN_EMAIL);
+              await page.locator('input[name=password]').fill(process.env.BOOTSTRAP_ADMIN_PASSWORD);
+              await page.locator('button[type=submit]').click();
+              await page.getByRole('button', {name:'Controlled submission', exact:true}).click();
+              const dialog=page.getByRole('dialog',{name:'Controlled submission'});
+              await dialog.getByText('Prior-revision assignments suggested.',{exact:false}).waitFor();
+              const reviewers=dialog.getByLabel('Reviewer',{exact:true});
+              const options=await reviewers.evaluateAll(nodes=>nodes.map(node=>node.selectedOptions[0].textContent));
+              assert.deepEqual(options,['First Reviewer','Second Reviewer']);
+              const dates=dialog.getByLabel('Due date',{exact:true});
+              assert.deepEqual(await dates.evaluateAll(nodes=>nodes.map(node=>node.value)),['','']);
+              for(let i=0;i<2;i++) await dates.nth(i).fill(new Date(Date.now()+(7+i)*86400000).toISOString().slice(0,10));
+              await dialog.getByLabel('Submission comment').fill('Synthetic end-to-end acceptance check.');
+              const submitted=page.waitForResponse(response=>response.url().endsWith('/api/documents/commands') && response.request().method()==='POST');
+              await dialog.getByRole('button',{name:'Submit controlled revision',exact:true}).click();
+              const response=await submitted;
+              assert.equal(response.status(),200,await response.text());
+              await dialog.getByText('Revision submitted',{exact:true}).waitFor();
+              const receipt=await dialog.getByRole('status').innerText();
+              assert.match(receipt,/CI-SOP-001 .*v0.2/);
+              assert.match(receipt,/Technical review .*First Reviewer/);
+              assert.match(receipt,/Final approval after 2 review stages .*Final Approver/);
+              console.log('Ordered reviewers and receipt verified on a real database submission.');
+            } finally {
+              await browser.close();
+            }
+          })().catch(error => { console.error(error); process.exitCode = 1; });
+          NODE
+      - name: Capture startup logs and clean up
+        if: always()
+        run: |
+          if docker inspect qms-combined-preview >/dev/null 2>&1; then
+            docker logs qms-combined-preview
+            docker rm --force qms-combined-preview >/dev/null
+          fi
