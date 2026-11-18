@@ -146,14 +146,15 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     expect(await db.document.count({ where: { organizationId: otherOrg.id } })).toBe(0);
     // Capture both tenant states before either rejected attempt.
     // Both directions must preserve documents, versions and audit events.
-    const crossTenantCountsBefore = {
+    const readTenantCounts = async () => ({
       orgDocuments: await db.document.count({ where: { organizationId: org.id } }),
       otherDocuments: await db.document.count({ where: { organizationId: otherOrg.id } }),
       orgVersions: await db.documentVersion.count({ where: { organizationId: org.id } }),
       otherVersions: await db.documentVersion.count({ where: { organizationId: otherOrg.id } }),
       orgAudits: await db.auditEvent.count({ where: { organizationId: org.id } }),
       otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
-    };
+    });
+    const crossTenantCountsBefore = await readTenantCounts();
     // Direct Prisma-store mutation must also be tenant-scoped, even when a
     // caller supplies a valid version ID from another organization.
     const forbiddenUpdate = await new PrismaDocumentLifecycleStore().updateDraft({
@@ -174,14 +175,7 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       status: "DRAFT", lockVersion: 0,
       contentHash: versions.find((version) => version.id === ids[0])!.contentHash,
     });
-    expect({
-      orgDocuments: await db.document.count({ where: { organizationId: org.id } }),
-      otherDocuments: await db.document.count({ where: { organizationId: otherOrg.id } }),
-      orgVersions: await db.documentVersion.count({ where: { organizationId: org.id } }),
-      otherVersions: await db.documentVersion.count({ where: { organizationId: otherOrg.id } }),
-      orgAudits: await db.auditEvent.count({ where: { organizationId: org.id } }),
-      otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
-    }).toEqual(crossTenantCountsBefore);
+    expect(await readTenantCounts()).toEqual(crossTenantCountsBefore);
     await expect(service.createDraft({ ...context, organizationId: otherOrg.id }, {
       organizationId: org.id, documentTypeId: type.id,
       documentNumber: "CROSS-TENANT", title: "Forbidden",
@@ -189,15 +183,7 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       contentHash: "a".repeat(64), contentText: "Synthetic denied",
       changeSummary: "Denied",
     })).rejects.toThrow("Access denied");
-    const countsAfterFirstDenial = {
-      orgDocuments: await db.document.count({ where: { organizationId: org.id } }),
-      otherDocuments: await db.document.count({ where: { organizationId: otherOrg.id } }),
-      orgVersions: await db.documentVersion.count({ where: { organizationId: org.id } }),
-      otherVersions: await db.documentVersion.count({ where: { organizationId: otherOrg.id } }),
-      orgAudits: await db.auditEvent.count({ where: { organizationId: org.id } }),
-      otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
-    };
-    expect(countsAfterFirstDenial).toEqual(crossTenantCountsBefore);
+    expect(await readTenantCounts()).toEqual(crossTenantCountsBefore);
     await expect(service.createDraft(context, {
       organizationId: otherOrg.id, documentTypeId: type.id,
       documentNumber: "CROSS-TENANT-REVERSE", title: "Forbidden reverse direction",
@@ -205,14 +191,7 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       contentHash: "b".repeat(64), contentText: "Synthetic denied",
       changeSummary: "Denied",
     })).rejects.toThrow("Access denied");
-    expect({
-      orgDocuments: await db.document.count({ where: { organizationId: org.id } }),
-      otherDocuments: await db.document.count({ where: { organizationId: otherOrg.id } }),
-      orgVersions: await db.documentVersion.count({ where: { organizationId: org.id } }),
-      otherVersions: await db.documentVersion.count({ where: { organizationId: otherOrg.id } }),
-      orgAudits: await db.auditEvent.count({ where: { organizationId: org.id } }),
-      otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
-    }).toEqual(crossTenantCountsBefore);
+    expect(await readTenantCounts()).toEqual(crossTenantCountsBefore);
     expect(await db.document.count({ where: { organizationId: org.id } })).toBe(6);
     // A real store transition must fail atomically when the approval workflow is absent.
     const submitter: AuthorizationContext = {
@@ -418,7 +397,7 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     };
     // Snapshot the actionable task and workflow before unauthorized attempts.
     // A denial must not complete the task, advance approval, or append audit.
-    const reviewStateBeforeDenials = {
+    const readReviewState = async () => ({
       task: await db.workflowTask.findUniqueOrThrow({
         where: { id: reviewTask!.id },
         select: { status: true, decision: true, comments: true },
@@ -430,7 +409,8 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
       orgNotifications: await db.notificationOutbox.count({ where: { organizationId: org.id } }),
       otherNotifications: await db.notificationOutbox.count({ where: { organizationId: otherOrg.id } }),
-    };
+    });
+    const reviewStateBeforeDenials = await readReviewState();
     await expect(reviewService.decide({
       ...reviewerContext, grants: [],
     }, reviewDecision)).rejects.toThrow("Access denied");
@@ -440,19 +420,7 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     await expect(reviewService.decide(reviewerContext, {
       ...reviewDecision, comment: " ",
     })).rejects.toThrow("A reviewer comment is required");
-    expect({
-      task: await db.workflowTask.findUniqueOrThrow({
-        where: { id: reviewTask!.id },
-        select: { status: true, decision: true, comments: true },
-      }),
-      workflow: await db.workflowInstance.findUniqueOrThrow({
-        where: { id: workflow.id }, select: { state: true, status: true },
-      }),
-      orgAudits: await db.auditEvent.count({ where: { organizationId: org.id } }),
-      otherAudits: await db.auditEvent.count({ where: { organizationId: otherOrg.id } }),
-      orgNotifications: await db.notificationOutbox.count({ where: { organizationId: org.id } }),
-      otherNotifications: await db.notificationOutbox.count({ where: { organizationId: otherOrg.id } }),
-    }).toEqual(reviewStateBeforeDenials);
+    expect(await readReviewState()).toEqual(reviewStateBeforeDenials);
 
     expect(await reviewService.decide(reviewerContext, reviewDecision))
       .toEqual({ result: "AWAITING_APPROVAL" });
@@ -632,7 +600,7 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       grants: [{ permission: "document.approve", scopeType: "ORGANIZATION", scopeId: null }],
     };
     // Reviewer-only permissions must never authorize a final approval,
-    // even when the caller knows the document version and valid signer password.
+    // even when the caller supplies the document version and a fixture password.
     const signaturesBeforeReviewerDenial = await db.electronicSignature.count({
       where: { organizationId: org.id },
     });
