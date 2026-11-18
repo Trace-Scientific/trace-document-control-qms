@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { DEMO_RAILWAY } from "./railway-demo-identity.mjs";
 import { DEMO_PROVISIONER_SERVICE_ID } from "./railway-demo-provisioning-plan.mjs";
-import { prepareGuardedDemoCreation } from "./railway-demo-guarded-create.mjs";
+import { prepareGuardedDemoCreation, prepareGuardedIsolationDemoCreation } from "./railway-demo-guarded-create.mjs";
 
 const env = {
   RAILWAY_PROJECT_ID: DEMO_RAILWAY.projectId,
@@ -70,4 +70,27 @@ test("refuses write-enabled database session before organization lookup", async 
   await assert.rejects(prepareGuardedDemoCreation({ env, createClient: () => db }), /not approved/);
   assert.equal(calls.reads, 1);
   assert.equal(calls.disconnected, true);
+});
+
+test("second tenant preparation inspects only its fixed login code and remains read-only", async () => {
+  const { db, calls } = fakeDb();
+  const lookups = [];
+  db.organization.findUnique = async ({ where }) => {
+    lookups.push(where.loginCode);
+    return where.loginCode === "trace-demo-lab" ? { loginCode: "trace-demo-lab", active: true } : null;
+  };
+  const result = await prepareGuardedIsolationDemoCreation({ env, createClient: () => db });
+  assert.deepEqual(lookups, ["trace-demo-lab-b"]);
+  assert.equal(result.targetLoginCode, "trace-demo-lab-b");
+  assert.equal(result.applyAvailable, false);
+  assert.equal(result.writesPerformed, 0);
+  assert.equal(calls.disconnected, true);
+});
+
+test("second tenant preparation refuses apply and wrong environment before connecting", async () => {
+  let connections = 0;
+  const createClient = () => { connections++; };
+  await assert.rejects(prepareGuardedIsolationDemoCreation({ env, createClient, apply: true }), /READ_ONLY/);
+  await assert.rejects(prepareGuardedIsolationDemoCreation({ env: { ...env, DEPLOYMENT_TIER: "production" }, createClient }), /deployment tier/);
+  assert.equal(connections, 0);
 });
