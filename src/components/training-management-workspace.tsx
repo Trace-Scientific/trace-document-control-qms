@@ -35,6 +35,8 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [section, setSection] = useState<Section>("assignments");
   const [preselectedCourseId, setPreselectedCourseId] = useState("");
   const [preselectedAssignmentId, setPreselectedAssignmentId] = useState("");
+  const [assignmentQuery, setAssignmentQuery] = useState("");
+  const [assignmentStatus, setAssignmentStatus] = useState("ALL");
 
   async function load() {
     const [employeeResponse, courseResponse, assignmentResponse, completionResponse] = await Promise.all([
@@ -88,6 +90,21 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const activeAssignments = assignments.filter((assignment) => assignment.status === "ASSIGNED");
   const activeCourses = courses.filter((course) => course.active);
   const eligibleEmployees = employees.filter((employee) => employee.status !== "TERMINATED");
+
+  const queryWords = assignmentQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const visibleAssignments = assignments.map((assignment) => {
+    const dueTime = dateOnlyTime(assignment.dueAt);
+    const status = assignment.status === "ASSIGNED" && dueTime !== null && dueTime < todayStart ? "OVERDUE" : assignment.status;
+    const employee = employeeById.get(assignment.employeeId);
+    const course = courseById.get(assignment.courseId);
+    const employeeLabel = employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assignment.employeeId;
+    const courseLabel = course ? `${course.code} · ${course.title}` : assignment.courseId;
+    return { assignment, status, employeeLabel, courseLabel };
+  }).filter(({ status, employeeLabel, courseLabel }) => {
+    if (assignmentStatus !== "ALL" && status !== assignmentStatus) return false;
+    const searchText = `${employeeLabel} ${courseLabel}`.toLowerCase();
+    return queryWords.every((word) => searchText.includes(word));
+  });
 
   function startAssignment(course: Course) {
     setPreselectedCourseId(course.id);
@@ -150,26 +167,32 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
 
     {section === "assignments" && <div className="module-section-stack">
       <div className="section-heading"><div><h3>Training assignments</h3><p>Browse governed training assignments and their current lifecycle state.</p></div></div>
+      <div className="admin-form">
+        <label>Search assignments<input type="search" value={assignmentQuery} onChange={(event) => setAssignmentQuery(event.target.value)} placeholder="Employee name, number, or course" /></label>
+        <label>Assignment status<select value={assignmentStatus} onChange={(event) => setAssignmentStatus(event.target.value)}>
+          <option value="ALL">All statuses</option>
+          <option value="ASSIGNED">Assigned</option>
+          <option value="OVERDUE">Overdue</option>
+          <option value="COMPLETED">Completed</option>
+          <option value="CANCELLED">Cancelled</option>
+        </select></label>
+      </div>
       <div className="table-wrap">
         <table>
           <thead><tr><th>Employee</th><th>Course</th><th>Assigned</th><th>Due</th><th>Status</th><th>Lifecycle evidence</th>{canManage && <th>Action</th>}</tr></thead>
-          <tbody>{assignments.map((assignment) => {
-            const dueTime = dateOnlyTime(assignment.dueAt);
-            const overdue = assignment.status === "ASSIGNED" && dueTime !== null && dueTime < todayStart;
-            const employee = employeeById.get(assignment.employeeId);
-            const course = courseById.get(assignment.courseId);
-            const employeeLabel = employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assignment.employeeId;
-            const courseLabel = course ? `${course.code} · ${course.title}` : assignment.courseId;
-            return <tr key={assignment.id}>
+          <tbody>{visibleAssignments.map(({ assignment, status, employeeLabel, courseLabel }) => (
+            <tr key={assignment.id}>
               <td>{employeeLabel}</td><td>{courseLabel}</td>
               <td>{formatDateOnly(assignment.assignedAt)}</td><td>{formatDateOnly(assignment.dueAt)}</td>
-              <td>{overdue ? "OVERDUE" : assignment.status}</td><td>{assignment.cancelReason ?? "—"}</td>
+              <td>{status}</td><td>{assignment.cancelReason ?? "—"}</td>
               {canManage && <td>{assignment.status === "ASSIGNED" && (
                 <button type="button" disabled={busy} aria-label={`Record completion for ${courseLabel} assigned to ${employeeLabel}`} onClick={() => startCompletion(assignment)}>Record completion</button>
               )}</td>}
-            </tr>;
-          })}
-          {!assignments.length && <tr><td colSpan={canManage ? 7 : 6}>No training assignments have been recorded.</td></tr>}</tbody>
+            </tr>
+          ))}
+          {!visibleAssignments.length && <tr><td colSpan={canManage ? 7 : 6}>
+            {assignments.length ? "No training assignments match these filters." : "No training assignments have been recorded."}
+          </td></tr>}</tbody>
         </table>
       </div>
     </div>}
