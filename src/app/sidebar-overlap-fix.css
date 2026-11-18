@@ -56,22 +56,126 @@
   border-bottom: 1px solid var(--line);
 }
 
-.section-nav button {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: #fff;
-  color: #344054;
+.section-nav > button,
+.qms-module-nav > button,
+.qms-subsection-nav > button,
+.module-subnav > button {
+  min-width: 0;
+  min-height: 38px;
   padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--heading);
   font: inherit;
-  font-weight: 650;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: left;
+  overflow-wrap: anywhere;
   cursor: pointer;
 }
 
-.section-nav button.active {
-  border-color: #9bb8dc;
+.section-nav > button {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  width: auto;
+}
+
+:is(.section-nav, .qms-module-nav, .qms-subsection-nav, .module-subnav) > button:hover,
+:is(.section-nav, .qms-module-nav, .qms-subsection-nav, .module-subnav) > button.active {
+  border-color: var(--blue);
   background: var(--surface-accent);
-  color: #173f67;
+}
+
+:is(.section-nav, .qms-module-nav, .qms-subsection-nav, .module-subnav) > button.active {
+  box-shadow: inset 0 -2px var(--blue);
+}
+
+:is(.section-nav, .qms-module-nav, .qms-subsection-nav, .module-subnav) > button:focus-visible,
+.sidebar-sign-out:focus-visible,
+.controlled-file-upload input:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.sidebar-sign-out {
+  flex: none;
+  min-height: 32px;
+  margin-left: auto;
+  padding: 4px 8px;
+  border: 1px solid #59718d;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--surface);
+  font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
+}
+
+.sidebar-sign-out:hover,
+.sidebar-sign-out:focus-visible {
+  background: #305b8c;
+}
+
+.sidebar-sign-out:focus-visible {
+  outline-color: var(--surface);
+}
+
+.document-content-navigation {
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius);
+  background: var(--surface);
+}
+
+.document-content-navigation .section-heading {
+  padding: 14px 18px 0;
+}
+
+.document-content-navigation .qms-subsection-nav {
+  border-bottom: 0;
+  border-radius: inherit;
+}
+
+.controlled-file-upload {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+}
+
+.controlled-file-upload input {
+  flex: 0 1 22rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--heading);
+  font-size: 13px;
+}
+
+.controlled-file-upload input::file-selector-button {
+  min-height: 32px;
+  margin-right: 8px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: var(--surface-accent);
+  color: var(--heading);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.controlled-file-upload .primary-button {
+  min-height: 38px;
+  font-size: 13px;
 }
 
 .admin-overview-grid {
@@ -126,110 +230,70 @@
    module is presented at a time so the home page no longer becomes a continuous
    wall of unrelated governed workspaces. */
 .qms-module-shell {
-  width: min(100% - 36px, 1280px);
-  margin: 24px auto 40px;
+  width: 100%;
+  margin: 24px 0 0;
   border: 1px solid var(--line);
   border-radius: var(--panel-radius);
-  background: #fff;
-  overflow: hidden;
+  background: var(--surface);
+  box-shadow: var(--panel-shadow);
 }
 
 .qms-module-shell-header {
-  padding: 20px 22px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 15px 18px;
   border-bottom: 1px solid var(--line);
 }
 
-.qms-module-shell-header h2,
-.qms-module-shell-header p {
+.qms-module-shell-header h2 {
   margin: 0;
+  color: var(--heading);
+  font: 500 18px / 1.3 var(--heading-font);
 }
 
-.qms-module-shell-header p {
-  color: #475467;
+.qms-module-shell-header a {
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.qms-module-shell-header > div {
+.qms-module-nav,
+.qms-subsection-nav,
+.module-subnav {
   display: grid;
-  gap: 5px;
+  gap: 8px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
 }
 
 .qms-module-nav {
-  display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  padding: 14px;
-  border-bottom: 1px solid var(--line);
   background: var(--surface-subtle);
 }
 
-.qms-module-nav button {
-  display: grid;
-  gap: 4px;
-  min-height: 74px;
-  padding: 12px;
-  text-align: left;
-  border: 1px solid var(--line);
-  border-radius: var(--panel-radius);
-  background: #fff;
-  color: var(--heading);
-  cursor: pointer;
+.qms-subsection-nav,
+.module-subnav {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr));
 }
 
-.qms-module-nav button.active {
-  border-color: #9bb8dc;
-  background: var(--surface-accent);
-  color: #173f67;
+.qms-module-nav > button,
+.qms-subsection-nav > button,
+.module-subnav > button {
+  display: grid;
+  align-content: start;
+  gap: 4px;
 }
 
 .qms-module-nav button span,
 .qms-subsection-nav button span,
 .module-subnav button span {
-  color: #475467;
+  color: var(--muted);
   font-size: 12px;
+  font-weight: 400;
   line-height: 1.4;
-}
-
-.qms-module-nav button strong,
-.qms-subsection-nav button strong,
-.module-subnav button strong {
-  color: var(--heading);
-}
-
-.qms-subsection-nav,
-.module-subnav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--line);
-  background: #fff;
-}
-
-.qms-subsection-nav button,
-.module-subnav button {
-  display: grid;
-  gap: 3px;
-  min-width: 170px;
-  padding: 10px 12px;
-  text-align: left;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--surface-subtle);
-  color: var(--heading);
-  font: inherit;
-  cursor: pointer;
-}
-
-.qms-subsection-nav button.active,
-.module-subnav button.active {
-  border-color: #9bb8dc;
-  background: var(--surface-accent);
-  color: #173f67;
-}
-
-.qms-subsection-nav button.active strong,
-.module-subnav button.active strong {
-  color: #173f67;
 }
 
 .qms-module-content {
@@ -315,35 +379,8 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .section-nav,
-  .qms-subsection-nav,
-  .module-subnav {
-    overflow-x: auto;
-    flex-wrap: nowrap;
-  }
-
-  .section-nav button {
-    white-space: nowrap;
-  }
-
-  .qms-subsection-nav button,
-  .module-subnav button {
-    flex: 0 0 210px;
-  }
-
   .qms-module-shell {
-    width: calc(100% - 24px);
-    margin: 16px auto 28px;
-  }
-
-  .qms-module-nav {
-    display: flex;
-    overflow-x: auto;
-    gap: 8px;
-  }
-
-  .qms-module-nav button {
-    flex: 0 0 220px;
+    margin-top: 16px;
   }
 
   .qms-module-content {
