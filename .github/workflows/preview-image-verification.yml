@@ -37,7 +37,12 @@ jobs:
         run: |
           docker run --rm --entrypoint sh qms-preview-smoke -ec '
             test -x node_modules/.bin/prisma
-            test -z "$(find node_modules -type d \( -name picomatch -o -name eslint -o -name vitest -o -name vite \) -print -quit)"
+            installed=$(find ./node_modules -type d \( -path "*/node_modules/picomatch" -o -path "*/node_modules/eslint" -o -path "*/node_modules/vitest" -o -path "*/node_modules/vite" \) -print)
+            printf "Installed tooling packages: %s\n" "$installed"
+            test -z "$installed"
+            if test -d node_modules/next/dist/compiled/picomatch; then
+              echo "Bundled picomatch is present inside Next.js and remains separate from the npm dependency check."
+            fi
           '
       - name: Apply migrations and verify readiness on isolated PostgreSQL
         run: |
