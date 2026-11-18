@@ -87,6 +87,7 @@
 :is(.section-nav, .qms-module-nav, .qms-subsection-nav, .module-subnav) > button.active {
   border-color: var(--blue);
   background: var(--surface-accent);
+  color: var(--heading);
 }
 
 :is(.section-nav, .qms-module-nav, .qms-subsection-nav, .module-subnav) > button.active {
