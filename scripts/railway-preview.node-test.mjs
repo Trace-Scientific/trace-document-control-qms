@@ -51,6 +51,16 @@ test("preview image deploys migrations without changing the AWS runtime", () => 
   assert.match(runbook, /\/Dockerfile\.preview/);
 });
 
+test("preview runtime excludes development tools and retains Prisma for startup migrations", () => {
+  const [dependencies, runtime] = previewDockerfile.split("FROM node:22-alpine AS preview\n");
+  assert.ok(runtime);
+  assert.match(dependencies, /FROM dependencies AS preview-dependencies/);
+  assert.match(dependencies, /npm pkg set "dependencies\.prisma=/);
+  assert.match(dependencies, /npm prune --omit=dev --ignore-scripts --offline/);
+  assert.match(runtime, /COPY --from=preview-dependencies --chown=qms:qms \/app\/node_modules \.\/node_modules/);
+  assert.doesNotMatch(runtime, /COPY --from=dependencies .*\/app\/node_modules/);
+});
+
 test("preview image packages the controlled first-administrator bootstrap only in preview", () => {
   assert.match(
     previewDockerfile,
