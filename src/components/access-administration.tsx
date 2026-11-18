@@ -176,25 +176,35 @@ export function AccessAdministration() {
           </label>
           <p>Presets only fill this form. Review the selected permissions and click Create role to save. Existing roles are not modified.</p>
           <label>Name<input name="name" value={roleName} onChange={(event) => setRoleName(event.target.value)} required /></label>
-          <fieldset style={{ minWidth: 0 }}><legend>Permissions</legend>
-            <p style={{ margin: "0 0 12px" }}>Select only the permissions this role needs. Click anywhere on a row to select it.</p>
-            {Array.from(new Set(data.permissions.map((permission) => permission.key.split(".")[0]))).map((category) => (
-              <div key={category} style={{ marginBottom: 16 }}>
-                <h4 style={{ margin: "12px 0 8px", textTransform: "capitalize" }}>{category.replaceAll("_", " ")}</h4>
-                <div style={{ border: "1px solid #dbe2ea", borderRadius: 8, overflow: "hidden" }}>
-                  {data.permissions.filter((permission) => permission.key.split(".")[0] === category).map((permission, index) => (
-                    <label key={permission.key} style={{ display: "grid", gridTemplateColumns: "22px minmax(0, 1fr)", alignItems: "center", gap: 12, padding: "12px 14px", background: index % 2 ? "#f1f4f8" : "#fff", cursor: "pointer", borderBottom: "1px solid #e3e8ee", margin: 0 }}>
-                      <input type="checkbox" name="permissionKeys" value={permission.key} checked={rolePermissions.includes(permission.key)} onChange={(event) => setRolePermissions((current) => event.target.checked ? [...current, permission.key] : current.filter((key) => key !== permission.key))} style={{ margin: 0, width: 16, height: 16, justifySelf: "center" }} />
-                      <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-                        <strong style={{ overflowWrap: "anywhere" }}>{permission.key}</strong>
-                        <small style={{ overflowWrap: "anywhere" }}>{permissionDescription(permission)}</small>
-                      </span>
-                    </label>
-                  ))}
+          <fieldset className="role-permissions">
+            <legend>Permissions</legend>
+            <p>Select only the permissions this role needs. Click a row to select it.</p>
+            <div className="role-permission-columns">
+              {Array.from(new Set(data.permissions.map((permission) => permission.key.split(".")[0]))).map((category) => (
+                <div key={category} className="role-permission-group">
+                  <h4>{category.replaceAll("_", " ")}</h4>
+                  <div className="role-permission-options">
+                    {data.permissions.filter((permission) => permission.key.split(".")[0] === category).map((permission) => (
+                      <label key={permission.key} className="role-permission-option">
+                        <input
+                          type="checkbox"
+                          name="permissionKeys"
+                          value={permission.key}
+                          checked={rolePermissions.includes(permission.key)}
+                          onChange={(event) => setRolePermissions((current) => event.target.checked ? [...current, permission.key] : current.filter((key) => key !== permission.key))}
+                        />
+                        <span>
+                          <strong>{permission.key}</strong>
+                          <small>{permissionDescription(permission)}</small>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </fieldset><button type="submit" className="primary-button" disabled={pendingOperation !== null}>Create role</button>
+              ))}
+            </div>
+          </fieldset>
+          <button type="submit" className="primary-button" disabled={pendingOperation !== null}>Create role</button>
         </form>
         <form className="template-form" onSubmit={form("ASSIGN_ROLE", (f) => ({ userId: String(f.get("userId")), roleId: String(f.get("roleId")), ...scopePayload(String(f.get("scopeTarget"))) }))}><strong>Assign role</strong><p>Choose the smallest scope required. Reassigning the same role updates its scope.</p><label>User<select name="userId" required>{data.users.map((user) => <option value={user.id} key={user.id}>{user.firstName} {user.lastName} · {user.email}</option>)}</select></label><label>Role<select name="roleId" required>{data.roles.map((role) => <option value={role.id} key={role.id}>{role.name}</option>)}</select></label><label>Scope<select name="scopeTarget" required><option value="ORGANIZATION">Entire organization</option>{data.sites.map((site) => <option value={`SITE:${site.id}`} key={`site-${site.id}`}>Site · {site.name}</option>)}{data.departments.map((department) => <option value={`DEPARTMENT:${department.id}`} key={`department-${department.id}`}>Department · {department.name}</option>)}</select></label><button type="submit" className="primary-button" disabled={pendingOperation !== null}>Assign scoped role</button></form>
       </div><div className="detail-section"><h3>Existing role assignments &amp; effective access</h3><p>Review current scoped assignments before making access changes. Effective permissions are the union of assigned roles within their applicable scopes.</p>{data.users.map((user) => { const assignments = data.roleAssignments.filter((assignment) => assignment.userId === user.id); const effectivePermissions = [...new Set(assignments.flatMap((assignment) => roleById.get(assignment.roleId)?.permissions.map((item) => item.permission.key) ?? []))].sort(); return <div className="template-form" key={`access-${user.id}`}><strong>{user.firstName} {user.lastName} · {user.email}</strong><p>Status: {user.status}</p>{assignments.length === 0 ? <p>No role assignments.</p> : <div className="table-scroll"><table><thead><tr><th>Role</th><th>Scope</th><th>Assigned</th><th>Assigned by</th></tr></thead><tbody>{assignments.map((assignment) => { const assigner = assignment.assignedBy ? userById.get(assignment.assignedBy) : null; return <tr key={`${assignment.userId}-${assignment.roleId}`}><td>{roleById.get(assignment.roleId)?.name ?? "Unknown role"}</td><td>{scopeLabel(assignment)}</td><td>{new Date(assignment.assignedAt).toLocaleString()}</td><td>{assigner ? `${assigner.firstName} ${assigner.lastName}` : "System / historical"}</td></tr>; })}</tbody></table></div>}<details><summary>Effective permissions ({effectivePermissions.length})</summary>{effectivePermissions.length === 0 ? <p>No permissions granted.</p> : <p>{effectivePermissions.join(", ")}</p>}</details></div>; })}</div></div>}
