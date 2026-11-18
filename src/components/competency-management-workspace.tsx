@@ -133,8 +133,13 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     {notice && <p role="status">{notice}</p>}
 
     {section === "status" && <div className="module-section-stack">
-      <div className="stats-grid">
-        <article><strong>{dashboard.total}</strong><span>Tracked</span></article><article><strong>{dashboard.current}</strong><span>Current</span></article><article><strong>{dashboard.dueSoon}</strong><span>Due within 30 days</span></article><article><strong>{dashboard.expired}</strong><span>Expired</span></article><article><strong>{dashboard.notQualified}</strong><span>Not qualified</span></article><article><strong>{dashboard.conditional}</strong><span>Conditional</span></article>
+      <div className="stat-grid">
+        <article><strong>{dashboard.total}</strong><span>Tracked</span></article>
+        <article><strong>{dashboard.current}</strong><span>Current</span></article>
+        <article><strong>{dashboard.dueSoon}</strong><span>Due within 30 days</span></article>
+        <article><strong>{dashboard.expired}</strong><span>Expired</span></article>
+        <article><strong>{dashboard.notQualified}</strong><span>Not qualified</span></article>
+        <article><strong>{dashboard.conditional}</strong><span>Conditional</span></article>
       </div>
       <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Latest assessment</th><th>Expires</th><th>Status</th></tr></thead><tbody>{rollups.map((rollup) => { const employee = employeeById.get(rollup.employeeId); const program = programById.get(rollup.programId); return <tr key={`${rollup.employeeId}:${rollup.programId}`}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : rollup.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : rollup.programId}</td><td>{new Date(rollup.assessedAt).toLocaleDateString()}</td><td>{formatDateOnly(rollup.expiresAt)}</td><td>{rollup.status}</td></tr>; })}{!rollups.length && <tr><td colSpan={5}>No competency assessments have been recorded.</td></tr>}</tbody></table></div>
     </div>}
