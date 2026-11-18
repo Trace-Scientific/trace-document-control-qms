@@ -3,6 +3,11 @@ import styles from "./page.module.css";
 
 export const dynamic = "force-dynamic";
 
+const previewLabels = new Map([
+  ["demo", "Demo environment"],
+  ["development-preview", "Development preview"],
+]);
+
 const modules = [
   ["Policy & Documentation", "Controlled documents, review workflows, acknowledgments, controlled copies, folders, and retention."],
   ["Personnel", "Governed employee records, job assignments, credentials, qualifications, and supporting evidence."],
@@ -15,7 +20,7 @@ const modules = [
 ];
 
 export default function LoginPage() {
-  const developmentPreview = process.env.DEPLOYMENT_TIER === "development-preview";
+  const environmentLabel = previewLabels.get(process.env.DEPLOYMENT_TIER ?? "");
 
   return <main className={styles.page}>
     <header className={styles.header}>
@@ -41,7 +46,7 @@ export default function LoginPage() {
         <p className={styles.trustLine}>Tenant-scoped workflows · Role-based access · Controlled history · Governed evidence</p>
       </div>
 
-      <LoginForm developmentPreview={developmentPreview} />
+      <LoginForm environmentLabel={environmentLabel} />
     </section>
 
     <section className={styles.valueBand} aria-label="Trace QMS product benefits">
@@ -67,12 +72,12 @@ export default function LoginPage() {
           <p className={styles.eyebrow}>See Trace QMS in action</p>
           <h2>Request a guided product demonstration.</h2>
           <p>Explore the document, personnel, training, quality, laboratory operations, records, and reporting workflows with your organization&apos;s use cases in mind.</p>
-          {developmentPreview && <p className={styles.demoNote}>This demo uses synthetic data only.</p>}
+          {environmentLabel && <p className={styles.demoNote}>This demo uses synthetic data only.</p>}
         </div>
         <a className={styles.primaryButton} href="mailto:info@tracescientific.com?subject=Trace%20QMS%20demo%20request">Email Trace Scientific</a>
       </div>
     </section>
 
-    <footer className={styles.footer}><strong>Trace QMS</strong><span>Quality management software by Trace Scientific</span>{developmentPreview && <span>Development preview</span>}</footer>
+    <footer className={styles.footer}><strong>Trace QMS</strong><span>Quality management software by Trace Scientific</span>{environmentLabel && <span>{environmentLabel}</span>}</footer>
   </main>;
 }

@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./page.module.css";
 
-export function LoginForm({ developmentPreview }: { developmentPreview: boolean }) {
+export function LoginForm({ environmentLabel }: { environmentLabel?: string }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -104,7 +104,7 @@ export function LoginForm({ developmentPreview }: { developmentPreview: boolean 
       </div>
       {error && <p className={styles.error} role="alert">{error}</p>}
       <button type="submit" disabled={submitting}>{submitting ? "Signing in…" : "Log in securely"}</button>
-      {developmentPreview && <small className={styles.previewNote}>Development preview · Synthetic data only</small>}
+      {environmentLabel && <small className={styles.previewNote}>{environmentLabel} · Synthetic data only</small>}
     </form>
   );
 }

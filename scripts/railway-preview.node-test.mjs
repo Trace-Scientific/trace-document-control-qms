@@ -42,12 +42,14 @@ test("preview warning is derived from a server-side runtime boundary", () => {
   assert.doesNotMatch(page, /NEXT_PUBLIC_/);
 });
 
-test("login and footer show the preview warning only for the runtime preview tier", () => {
+test("login and footer label demo and preview tiers using server-side runtime configuration", () => {
   assert.match(loginPage, /export const dynamic = "force-dynamic"/);
-  assert.match(loginPage, /developmentPreview = process\.env\.DEPLOYMENT_TIER === "development-preview"/);
-  assert.match(loginPage, /<LoginForm developmentPreview=\{developmentPreview\}/);
-  assert.match(loginPage, /developmentPreview && <span>Development preview<\/span>/);
-  assert.match(loginForm, /developmentPreview && <small[^>]*>Development preview · Synthetic data only<\/small>/);
+  assert.match(loginPage, /\["demo", "Demo environment"\]/);
+  assert.match(loginPage, /\["development-preview", "Development preview"\]/);
+  assert.match(loginPage, /const environmentLabel = previewLabels\.get\(process\.env\.DEPLOYMENT_TIER/);
+  assert.match(loginPage, /<LoginForm environmentLabel=\{environmentLabel\}/);
+  assert.match(loginPage, /environmentLabel && <span>\{environmentLabel\}<\/span>/);
+  assert.match(loginForm, /environmentLabel && <small[^>]*>\{environmentLabel\} · Synthetic data only<\/small>/);
   assert.doesNotMatch(loginForm, /process\.env/);
 });
 
