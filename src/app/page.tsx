@@ -128,6 +128,106 @@ export default async function HomePage() {
     <ReportingWorkspace canManage={visibility.reportingManage} canExport={visibility.reportingExport} />
   ) : null;
 
+  const operationalWorkspaces = (
+    <QmsModuleShell
+      modules={[
+        {
+          id: "documents",
+          label: "Document operations",
+          description: "Submission, lifecycle, acknowledgments, copies, folders, and retention.",
+          sections: [
+            {
+              id: "tools",
+              label: "Document tools",
+              description: "Submission, lifecycle, acknowledgments, folders, and retention actions.",
+              content: documentLaunchers,
+            },
+            {
+              id: "copies",
+              label: "Controlled copies",
+              description: "Issue and reconcile numbered controlled copies.",
+              content: visibility.controlledCopies ? <ControlledCopyAdministration /> : null,
+            },
+          ],
+        },
+        {
+          id: "reviews",
+          label: "Review management",
+          description: "Approval assignments and governed review actions.",
+          content: reviewManagement,
+        },
+        {
+          id: "records",
+          label: "Records",
+          description: "Governed regulated-record management.",
+          content: records,
+        },
+        {
+          id: "personnel",
+          label: "Personnel",
+          description: "Employees, credentials, and qualifications.",
+          sections: [
+            {
+              id: "people",
+              label: "People & assignments",
+              description: "Employees, job descriptions, and job assignments.",
+              content: visibility.personnelManagement ? <PersonnelManagementWorkspace canManage={visibility.personnelManage} /> : null,
+            },
+            {
+              id: "credentials",
+              label: "Credentials",
+              description: "Licenses, certifications, registrations, and expiration tracking.",
+              content: visibility.personnelManagement ? <PersonnelCredentialWorkspace canManage={visibility.personnelManage} today={today} /> : null,
+            },
+            {
+              id: "qualifications",
+              label: "Qualifications",
+              description: "Qualification decisions and supporting evidence.",
+              content: visibility.personnelManagement ? <PersonnelQualificationWorkspace canManage={visibility.personnelManage} today={today} /> : null,
+            },
+          ],
+        },
+        {
+          id: "training",
+          label: "Training & competency",
+          description: "Training assignments and competency evidence.",
+          sections: [
+            {
+              id: "training",
+              label: "Training",
+              description: "Courses, assignments, completions, and lifecycle evidence.",
+              content: visibility.trainingManagement ? <TrainingManagementWorkspace canManage={visibility.trainingManage} today={today} /> : null,
+            },
+            {
+              id: "competency",
+              label: "Competency",
+              description: "Programs, assessments, qualification status, and reassessment tracking.",
+              content: visibility.trainingManagement ? <CompetencyManagementWorkspace canManage={visibility.trainingManage} today={today} /> : null,
+            },
+          ],
+        },
+        {
+          id: "quality",
+          label: "Quality",
+          description: "Quality-event management and trending.",
+          content: quality,
+        },
+        {
+          id: "laboratory",
+          label: "Laboratory operations",
+          description: "Equipment and operational controls.",
+          content: laboratory,
+        },
+        {
+          id: "reporting",
+          label: "Reporting & analytics",
+          description: "Governed reporting, execution history, and exports.",
+          content: reporting,
+        },
+      ]}
+    />
+  );
+
   return (
     <>
       {process.env.QMS_MFA_ENROLLMENT_ENABLED === "true" && (
@@ -138,103 +238,7 @@ export default async function HomePage() {
       <DashboardVisibilityGate />
       <DocumentControlDashboard
         developmentPreview={process.env.DEPLOYMENT_TIER === "development-preview"}
-      />
-      <QmsModuleShell
-        modules={[
-          {
-            id: "documents",
-            label: "Document operations",
-            description: "Submission, lifecycle, acknowledgments, copies, folders, and retention.",
-            sections: [
-              {
-                id: "tools",
-                label: "Document tools",
-                description: "Submission, lifecycle, acknowledgments, folders, and retention actions.",
-                content: documentLaunchers,
-              },
-              {
-                id: "copies",
-                label: "Controlled copies",
-                description: "Issue and reconcile numbered controlled copies.",
-                content: visibility.controlledCopies ? <ControlledCopyAdministration /> : null,
-              },
-            ],
-          },
-          {
-            id: "reviews",
-            label: "Review management",
-            description: "Approval assignments and governed review actions.",
-            content: reviewManagement,
-          },
-          {
-            id: "records",
-            label: "Records",
-            description: "Governed regulated-record management.",
-            content: records,
-          },
-          {
-            id: "personnel",
-            label: "Personnel",
-            description: "Employees, credentials, and qualifications.",
-            sections: [
-              {
-                id: "people",
-                label: "People & assignments",
-                description: "Employees, job descriptions, and job assignments.",
-                content: visibility.personnelManagement ? <PersonnelManagementWorkspace canManage={visibility.personnelManage} /> : null,
-              },
-              {
-                id: "credentials",
-                label: "Credentials",
-                description: "Licenses, certifications, registrations, and expiration tracking.",
-                content: visibility.personnelManagement ? <PersonnelCredentialWorkspace canManage={visibility.personnelManage} today={today} /> : null,
-              },
-              {
-                id: "qualifications",
-                label: "Qualifications",
-                description: "Qualification decisions and supporting evidence.",
-                content: visibility.personnelManagement ? <PersonnelQualificationWorkspace canManage={visibility.personnelManage} today={today} /> : null,
-              },
-            ],
-          },
-          {
-            id: "training",
-            label: "Training & competency",
-            description: "Training assignments and competency evidence.",
-            sections: [
-              {
-                id: "training",
-                label: "Training",
-                description: "Courses, assignments, completions, and lifecycle evidence.",
-                content: visibility.trainingManagement ? <TrainingManagementWorkspace canManage={visibility.trainingManage} today={today} /> : null,
-              },
-              {
-                id: "competency",
-                label: "Competency",
-                description: "Programs, assessments, qualification status, and reassessment tracking.",
-                content: visibility.trainingManagement ? <CompetencyManagementWorkspace canManage={visibility.trainingManage} today={today} /> : null,
-              },
-            ],
-          },
-          {
-            id: "quality",
-            label: "Quality",
-            description: "Quality-event management and trending.",
-            content: quality,
-          },
-          {
-            id: "laboratory",
-            label: "Laboratory operations",
-            description: "Equipment and operational controls.",
-            content: laboratory,
-          },
-          {
-            id: "reporting",
-            label: "Reporting & analytics",
-            description: "Governed reporting, execution history, and exports.",
-            content: reporting,
-          },
-        ]}
+        operationalWorkspaces={operationalWorkspaces}
       />
     </>
   );
