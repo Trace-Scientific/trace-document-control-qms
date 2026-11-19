@@ -1516,6 +1516,12 @@ export function DocumentControlDashboard({
                         live?.capabilities.canManageReviews && (
                           <>
                           {item.status === "IN_PROGRESS" &&
+                            detail.assignments.some((other) =>
+                              other.versionId === detail.selected.id &&
+                              other.stepKey.startsWith("REVIEW_") &&
+                              other.status === "COMPLETED" &&
+                              other.decision === "ACCEPT"
+                            ) &&
                             !detail.assignments.some((other) =>
                               other.versionId === detail.selected.id &&
                               other.id !== item.id &&
