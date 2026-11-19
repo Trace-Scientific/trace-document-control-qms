@@ -486,6 +486,14 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       otherNotifications: await db.notificationOutbox.count({ where: { organizationId: otherOrg.id } }),
     });
     const reviewStateBeforeDenials = await readReviewState();
+    // Final approval permission does not confer technical review authority.
+    const approverOnlyContext: AuthorizationContext = {
+      userId: finalApprover.id, organizationId: org.id, userState: "ACTIVE",
+      grants: [{ permission: "document.approve", scopeType: "ORGANIZATION", scopeId: null }],
+    };
+    await expect(reviewService.decide(approverOnlyContext, reviewDecision))
+      .rejects.toThrow("Access denied");
+    expect(await readReviewState()).toEqual(reviewStateBeforeDenials);
     await expect(reviewService.decide({
       ...reviewerContext, grants: [],
     }, reviewDecision)).rejects.toThrow("Access denied");
