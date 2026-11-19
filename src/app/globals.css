@@ -1742,3 +1742,23 @@ td.due {
 .login-card button:disabled { opacity: .65; cursor: wait; }
 .login-error { color: #a51d2d; font-weight: 650; }
 .login-card small { color: #5a6c72; }
+
+/* Demo training course lesson actions use the QMS primary blue and aligned table cells. */
+.training-lesson-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 140px;
+  min-height: 38px;
+  padding: 9px 14px;
+  border: 1px solid var(--blue);
+  border-radius: var(--control-radius);
+  background: var(--blue);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.training-lesson-button:hover { background: #1d4ed8; }
+.training-lesson-button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
