@@ -135,6 +135,18 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
         occurredAt: new Date(),
       })).toBe(false);
       expect(await snapshot()).toEqual(before);
+      const foreignSubmitter: AuthorizationContext = {
+        userId: tenant.actor.id, organizationId: tenant.org.id, userState: "ACTIVE",
+        grants: [{ permission: "document.submit", scopeType: "ORGANIZATION", scopeId: null }],
+      };
+      await expect(service.transition(foreignSubmitter, {
+        organizationId: other.org.id,
+        versionId: other.version.id,
+        command: "SUBMIT",
+        expectedLockVersion: 0,
+        approverUserId: tenant.actor.id,
+      })).rejects.toThrow("Access denied");
+      expect(await snapshot()).toEqual(before);
     }
   });
 
