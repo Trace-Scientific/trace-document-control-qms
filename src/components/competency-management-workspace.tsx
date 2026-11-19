@@ -8,7 +8,7 @@ type Employee = { id: string; employeeNumber: string; firstName: string; lastNam
 type Program = { id: string; code: string; title: string; active: boolean; validityDays: number | null };
 type Element = { id: string; programId: string; code: string; title: string; required: boolean; sortOrder: number };
 type Assessment = CompetencyAssessmentSummary & { fileId: string | null; notes: string | null };
-type Section = "status" | "assessment" | "programs" | "elements";
+type Section = "status" | "history" | "assessment" | "programs" | "elements";
 
 function formatDateOnly(value: string | null) {
   if (!value) return "—";
@@ -33,6 +33,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [section, setSection] = useState<Section>("status");
+  const [historyQuery, setHistoryQuery] = useState("");
 
   async function load() {
     const [employeeResponse, programResponse, assessmentResponse] = await Promise.all([
@@ -82,6 +83,16 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
   const programById = useMemo(() => new Map(programs.map((program) => [program.id, program])), [programs]);
   const rollups = useMemo(() => competencyRollups(assessments, today), [assessments, today]);
   const dashboard = useMemo(() => competencyDashboard(rollups), [rollups]);
+  const historyWords = historyQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const visibleHistory = [...assessments].filter((assessment) => {
+    const employee = employeeById.get(assessment.employeeId);
+    const program = programById.get(assessment.programId);
+    const searchText = [
+      employee?.employeeNumber, employee?.firstName, employee?.lastName,
+      program?.code, program?.title, assessment.outcome,
+    ].filter(Boolean).join(" ").toLowerCase();
+    return historyWords.every((word) => searchText.includes(word));
+  }).sort((a, b) => b.assessedAt.localeCompare(a.assessedAt));
 
   async function submit(path: string, payload: unknown, form: HTMLFormElement) {
     setBusy(true); setNotice("");
@@ -143,6 +154,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
 
   const sections = [
     { id: "status" as const, label: "Competency status", description: "Review current qualification status, expirations, and reassessment needs.", visible: true },
+    { id: "history" as const, label: "Assessment history", description: "Search previous competency decisions without changing records.", visible: true },
     { id: "assessment" as const, label: "Record assessment", description: "Record an append-only competency assessment with governed supporting evidence.", visible: canManage },
     { id: "programs" as const, label: "Programs", description: "Create governed competency programs and validity periods.", visible: canManage },
     { id: "elements" as const, label: "Program elements", description: "Configure required assessment elements and methods for each program.", visible: canManage },
@@ -165,6 +177,15 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
         <article><strong>{dashboard.conditional}</strong><span>Conditional</span></article>
       </div>
       <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Latest assessment</th><th>Expires</th><th>Status</th>{canManage && <th>Action</th>}</tr></thead><tbody>{rollups.map((rollup) => { const employee = employeeById.get(rollup.employeeId); const program = programById.get(rollup.programId); return <tr key={`${rollup.employeeId}:${rollup.programId}`}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : rollup.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : rollup.programId}</td><td>{new Date(rollup.assessedAt).toLocaleDateString()}</td><td>{formatDateOnly(rollup.expiresAt)}</td><td>{rollup.status}</td>{canManage && <td>{employee?.status === "ACTIVE" && program?.active && <button type="button" disabled={busy} onClick={() => startReassessment(rollup.employeeId, rollup.programId)}>Reassess</button>}</td>}</tr>; })}{!rollups.length && <tr><td colSpan={canManage ? 6 : 5}>No competency assessments have been recorded.</td></tr>}</tbody></table></div>
+    </div>}
+
+    {section === "history" && <div className="module-section-stack">
+      <div className="section-heading"><div><h3>Competency assessment history</h3><p>Review recorded assessments in newest-first order. Historical decisions remain unchanged when reassessments are added.</p></div></div>
+      <label>Search assessment history<input type="search" value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Employee, program, or outcome" /></label>
+      <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Assessed at</th><th>Outcome</th><th>Expires</th><th>Evidence</th></tr></thead><tbody>
+        {visibleHistory.map((assessment) => { const employee = employeeById.get(assessment.employeeId); const program = programById.get(assessment.programId); return <tr key={assessment.id}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assessment.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : assessment.programId}</td><td>{new Date(assessment.assessedAt).toLocaleString()}</td><td>{assessment.outcome}</td><td>{formatDateOnly(assessment.expiresAt)}</td><td>{assessment.fileId ? "Attached" : "—"}</td></tr>; })}
+        {!visibleHistory.length && <tr><td colSpan={6}>{assessments.length ? "No assessments match this search." : "No competency assessments have been recorded."}</td></tr>}
+      </tbody></table></div>
     </div>}
 
     {section === "assessment" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record competency assessment</h3><p>Record an append-only assessment decision and supporting evidence.</p></div></div><form onSubmit={createAssessment} className="admin-form">
