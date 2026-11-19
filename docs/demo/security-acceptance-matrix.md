@@ -77,3 +77,18 @@ For each case record exact commit SHA, environment identity, synthetic tenant ID
 ## Go/no-go
 
 **NO-GO** if any cross-tenant access succeeds, environment identity is ambiguous, data classification is unknown, recovery evidence is missing, or access authorization is absent. Only mark a row passed with reproducible, target-specific evidence reviewed by the designated owner.
+
+## Current reconciliation — November 18, 2026 (after PR #472)
+
+The historical snapshots above remain preserved as dated evidence, including older CI failures and older backup gaps. Do not interpret those historical statements as current blockers without consulting the later evidence.
+
+- **Latest repository baseline at reconciliation:** `3a4fd0caaecceb5acf6a48e647fe4a2789d21dfb` (PR #472). This is a documentation change; it does not establish a newer live Railway deployment or live authenticated security result.
+- **Lab B:** PR #458 reports that an inactive synthetic Lab B was provisioned, with one linked audit event, no users or documents, and temporary execution access revoked. It is **not** an authenticated second-tenant test fixture. No additional provisioning or activation is authorized by this matrix.
+- **REC-01:** PR #457 records a later checksum-verified isolated restore of the November 18 archive into disposable PostgreSQL, with 206 application tables. Technical restore evidence exists; independent named acceptance remains outstanding.
+- **ISO-06:** Issue #459 documents a scoped read-only review of five document versions, 55 displayed audit events, the operator inbox and private-file listing, plus training/competency sample records. It does not cover every possible account inbox, export or attachment storage location. Extend only if those surfaces are part of the planned demonstration.
+- **ISO-01/02/03/05:** Disposable database service tests and an end-to-end password/TOTP/session test exist in `src/lib/documents/demo-fixture-postgres.integration.test.ts`; they do not substitute for authenticated live Railway tenant-boundary checks. The test suite requires `RUN_DEMO_FIXTURE_INTEGRATION=1` and asserts a fixed local integration database URL.
+- **OPS-01:** Still NO-GO for prospect credentials. A distinct approval must specify approved recipients, credential handling, expiration/revocation and incident contact.
+
+**Minimum next test decision:** First inventory whether two approved synthetic authenticated tenant personas already exist. The original demo is preserved; Lab B currently has no users or documents. If a second authenticated tenant fixture is necessary, obtain separately recorded authorization for activation, accounts, permissions and test data before making live writes. Until then, continue isolated CI regression and read-only evidence work only.
+
+See [detailed evidence reconciliation](acceptance-evidence-reconciliation-2026-11-18.md), [PR #458](https://github.com/Trace-Scientific/trace-document-control-qms/pull/458), [PR #457](https://github.com/Trace-Scientific/trace-document-control-qms/pull/457), and [issue #459](https://github.com/Trace-Scientific/trace-document-control-qms/issues/459).
