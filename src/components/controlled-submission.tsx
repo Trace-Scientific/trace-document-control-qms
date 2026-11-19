@@ -42,6 +42,8 @@ export function ControlledSubmission() {
     setDetail(null);
     setRoutingNotice("");
     setApproverId("");
+    setConfirmDirectApproval(false);
+    setError("");
     setStages([{ reviewerUserId: "", dueAt: "" }]);
     if (!versionId) return;
     const response = await fetch(`/api/documents/${versionId}`, {
