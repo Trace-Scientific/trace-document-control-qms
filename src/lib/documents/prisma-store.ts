@@ -186,6 +186,10 @@ export class PrismaDocumentLifecycleStore implements DocumentLifecycleStore {
         if (input.command === "SUBMIT") {
           if (!input.approverUserId)
             throw new DocumentConfigurationError("A final approver is required");
+          if (new Set(reviewers).size !== reviewers.length)
+            throw new DocumentConfigurationError("Reviewers must be unique across ordered stages");
+          if (reviewers.includes(input.approverUserId))
+            throw new DocumentConfigurationError("The final approver must be different from every reviewer");
           const definition = await transaction.workflowDefinition.findFirst({
             where: {
               organizationId: input.organizationId,
