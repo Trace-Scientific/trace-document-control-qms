@@ -126,4 +126,53 @@ describe("training service", () => {
     const service = new TrainingService(store());
     expect(() => service.completeAssignment(context("training.read"), { organizationId, assignmentId, completedAt: new Date("2026-09-07T12:00:00Z") })).toThrow("Access denied");
   });
+  it("supports an isolated synthetic course-to-assignment-to-completion workflow", async () => {
+    const courses: Awaited<ReturnType<TrainingStore["listCourses"]>> = [];
+    const assignments: Awaited<ReturnType<TrainingStore["listAssignments"]>> = [];
+    const completions: Awaited<ReturnType<TrainingStore["listCompletions"]>> = [];
+    const backing: TrainingStore = {
+      ...store(),
+      async listCourses() { return [...courses]; },
+      async createCourse(input) {
+        const created = await store().createCourse(input);
+        courses.push(created);
+        return created;
+      },
+      async listAssignments() { return [...assignments]; },
+      async createAssignment(input) {
+        const created = assignment(input);
+        assignments.push(created);
+        return created;
+      },
+      async listCompletions() { return [...completions]; },
+      async completeAssignment(input) {
+        const created = await store().completeAssignment(input);
+        completions.push(created);
+        return created;
+      },
+    };
+    const service = new TrainingService(backing);
+    const manager = context("training.manage");
+    const reader = context("training.read");
+    const course = await service.createCourse(manager, {
+      organizationId, code: "DEMO-TRN-HIPAA-001",
+      title: "HIPAA Privacy and Security Awareness (Demonstration)",
+    });
+    const assignedAt = new Date("2026-11-19T10:00:00.000Z");
+    const createdAssignment = await service.createAssignment(manager, {
+      organizationId, employeeId, courseId: course.id, assignedAt,
+      dueAt: new Date("2026-12-19T10:00:00.000Z"),
+    });
+    const completedAt = new Date("2026-11-20T10:00:00.000Z");
+    const completion = await service.completeAssignment(manager, {
+      organizationId, assignmentId: createdAssignment.id, completedAt,
+    });
+    expect(course.code).toBe("DEMO-TRN-HIPAA-001");
+    expect(createdAssignment).toMatchObject({ employeeId, courseId: course.id, createdByUserId: userId });
+    expect(completion).toMatchObject({ assignmentId: createdAssignment.id, employeeId, courseId: course.id, createdByUserId: userId });
+    expect(await service.listCourses(reader, organizationId)).toHaveLength(1);
+    expect(await service.listAssignments(reader, organizationId)).toHaveLength(1);
+    expect(await service.listCompletions(reader, organizationId)).toHaveLength(1);
+  });
+
 });
