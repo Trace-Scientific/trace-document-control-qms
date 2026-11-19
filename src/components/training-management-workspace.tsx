@@ -242,17 +242,18 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
       <div className="section-heading"><div><h3>Course configuration</h3></div></div>
       <div className="table-wrap">
         <table aria-label="Training courses">
-          <thead><tr><th>Course code</th><th>Course title</th><th>Status</th>{canManage && <th>Action</th>}</tr></thead>
+          <thead><tr><th>Course code</th><th>Course title</th><th>Lessons</th><th>Status</th>{canManage && <th>Action</th>}</tr></thead>
           <tbody>
             {courses.map((course) => <tr key={course.id}>
               <td>{course.code}</td>
-              <td>{course.title}{["DEMO-HIPAA", "DEMO-BBP"].includes(course.code) && <button type="button" onClick={() => setPreviewCourseCode(previewCourseCode === course.code ? "" : course.code)}>{previewCourseCode === course.code ? "Hide lessons" : "View lessons & quiz"}</button>}</td>
+              <td>{course.title}</td>
+              <td>{["DEMO-HIPAA", "DEMO-BBP"].includes(course.code) && <button type="button" className="training-lesson-button" aria-expanded={previewCourseCode === course.code} onClick={() => setPreviewCourseCode(previewCourseCode === course.code ? "" : course.code)}>{previewCourseCode === course.code ? "Hide lessons" : "View lessons & quiz"}</button>}</td>
               <td>{course.active ? "Active" : "Inactive"}</td>
               {canManage && <td>{course.active && (
                 <button type="button" disabled={busy} aria-label={`Assign ${course.title}`} onClick={() => startAssignment(course)}>Assign course</button>
               )}</td>}
             </tr>)}
-            {!courses.length && <tr><td colSpan={canManage ? 4 : 3}>No training courses have been created.</td></tr>}
+            {!courses.length && <tr><td colSpan={canManage ? 5 : 4}>No training courses have been created.</td></tr>}
           </tbody>
         </table>
       </div>
