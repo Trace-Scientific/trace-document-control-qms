@@ -605,6 +605,26 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
       cancelledTaskId: mistakenStage.id,
       activatedApprovalTaskId: approvalStage.id,
     });
+    // Correction must enqueue exactly one approval notification for the existing approver.
+    const correctedApprovalNotifications = await db.notificationOutbox.findMany({
+      where: {
+        organizationId: org.id,
+        recipientUserId: finalApprover.id,
+        eventKey: `document-approval-ready:corrected:${approvalStage.id}`,
+      },
+      select: { templateKey: true, payload: true },
+    });
+    expect(correctedApprovalNotifications).toHaveLength(1);
+    expect(correctedApprovalNotifications[0]).toMatchObject({
+      templateKey: "DOCUMENT_APPROVAL_ASSIGNED",
+      payload: { documentVersionId: ids[2], taskId: approvalStage.id },
+    });
+    expect(await db.notificationOutbox.count({
+      where: {
+        organizationId: otherOrg.id,
+        eventKey: `document-approval-ready:corrected:${approvalStage.id}`,
+      },
+    })).toBe(0);
     await expect(reviewService.correctLastReview(managerContext, correction))
       .rejects.toThrow("The review task is no longer actionable");
     expect(await db.auditEvent.count({ where: {
