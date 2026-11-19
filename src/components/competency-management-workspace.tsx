@@ -144,6 +144,10 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     const programId = String(form.get("programId"));
     const programElements = elements.filter((element) => element.programId === programId);
     const elementResults = programElements.map((element) => ({ elementId: element.id, outcome: String(form.get(`outcome:${element.id}`)) as "PASS" | "FAIL" | "NOT_APPLICABLE", notes: null }));
+    if (!programElements.length || !form.get("outcome") || elementResults.some((result) => !["PASS", "FAIL", "NOT_APPLICABLE"].includes(result.outcome))) {
+      setNotice("Select an overall decision and explicitly assess every program element before recording.");
+      return;
+    }
     await submit("/api/training/competency/assessments", {
       employeeId: String(form.get("employeeId")), programId, assessedAt: new Date(String(form.get("assessedAt"))).toISOString(),
       outcome: String(form.get("outcome")), expiresAt: String(form.get("expiresAt")) || null,
@@ -198,8 +202,8 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     {section === "assessment" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record competency assessment</h3><p>Record an append-only assessment decision and supporting evidence.</p></div></div><form onSubmit={createAssessment} className="admin-form">
       <label>Employee<select name="employeeId" value={selectedEmployeeId} onChange={(event) => setSelectedEmployeeId(event.target.value)} required><option value="" disabled>Select employee</option>{employees.filter((employee) => employee.status === "ACTIVE").map((employee) => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.lastName}, {employee.firstName}</option>)}</select></label>
       <label>Program<select name="programId" value={selectedProgramId} onChange={(event) => { setElements([]); setSelectedProgramId(event.target.value); }} required><option value="" disabled>Select program</option>{programs.filter((program) => program.active).map((program) => <option key={program.id} value={program.id}>{program.code} · {program.title}</option>)}</select></label>
-      <label>Assessed at<input name="assessedAt" type="datetime-local" defaultValue={localDateTimeInputValue(new Date())} required /></label><label>Overall outcome<select name="outcome" defaultValue="QUALIFIED"><option value="QUALIFIED">Qualified</option><option value="CONDITIONAL">Conditional</option><option value="NOT_QUALIFIED">Not qualified</option></select></label><label>Explicit expiration<input name="expiresAt" type="date" /></label><label>Notes<textarea name="notes" maxLength={2000} /></label>
-      {elements.map((element) => <label key={element.id}>{element.code} · {element.title}{element.required ? " *" : ""}<select name={`outcome:${element.id}`} defaultValue="PASS" required><option value="PASS">Pass</option><option value="FAIL">Fail</option>{!element.required && <option value="NOT_APPLICABLE">Not applicable</option>}</select></label>)}
+      <label>Assessed at<input name="assessedAt" type="datetime-local" defaultValue={localDateTimeInputValue(new Date())} required /></label><label>Overall outcome<select name="outcome" defaultValue="" required><option value="" disabled>Select overall decision</option><option value="QUALIFIED">Qualified</option><option value="CONDITIONAL">Conditional</option><option value="NOT_QUALIFIED">Not qualified</option></select></label><label>Explicit expiration<input name="expiresAt" type="date" /></label><label>Notes<textarea name="notes" maxLength={2000} /></label>
+      {elements.map((element) => <label key={element.id}>{element.code} · {element.title}{element.required ? " *" : ""}<select name={`outcome:${element.id}`} defaultValue="" required><option value="" disabled>Select assessment result</option><option value="PASS">Pass</option><option value="FAIL">Fail</option>{!element.required && <option value="NOT_APPLICABLE">Not applicable</option>}</select></label>)}
       <GovernedEvidenceFilePicker domain="training" disabled={busy} />
       <button type="submit" disabled={busy || !selectedProgramId || elements.length === 0}>Record competency assessment</button>
     </form></div>}
