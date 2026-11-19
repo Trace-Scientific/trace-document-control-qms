@@ -30,6 +30,32 @@ export function previewDemoTraining() {
     completionsCreated: 0,
     coordinator: { personaKey: coordinator.key, role: coordinator.role },
     scenarios,
+    completionWalkthrough: [
+      {
+        step: 1,
+        action: "Select a synthetic learner and an active demonstration course",
+        expectedResult: "Training coordinator can review learner and course eligibility",
+        recordCreated: false,
+      },
+      {
+        step: 2,
+        action: "Assign the course with an appropriate due date",
+        expectedResult: "In an authorized demo only, an assignment would appear as ASSIGNED",
+        recordCreated: false,
+      },
+      {
+        step: 3,
+        action: "Record completion with a date, result, and optional AVAILABLE evidence file",
+        expectedResult: "In an authorized demo only, completion would create an immutable TrainingRecord and mark the assignment COMPLETED",
+        recordCreated: false,
+      },
+      {
+        step: 4,
+        action: "Review completion history and verify tenant-scoped evidence visibility",
+        expectedResult: "Only authorized same-tenant users may view the completion and evidence",
+        recordCreated: false,
+      },
+    ],
     courses: DEMO_TRAINING_COURSES.map(({ code, title, description, topics }) => ({
       code, title, description, topics: [...topics],
     })),
