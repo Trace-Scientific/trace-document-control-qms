@@ -82,7 +82,7 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
 
     const service = new DocumentCommandService(new PrismaDocumentLifecycleStore());
     const store = new PrismaDocumentLifecycleStore();
-    const tenants = [];
+    const tenants: Array<{ org: { id: string }; actor: { id: string }; version: { id: string } }> = [];
     for (const code of ["synthetic-isolation-a", "synthetic-isolation-b"]) {
       const org = await db.organization.create({ data: {
         loginCode: code, legalName: code, displayName: code, active: false,
