@@ -17,6 +17,11 @@ function formatDateOnly(value: string | null) {
   return `${month}/${day}/${year}`;
 }
 
+function localDateTimeInputValue(date: Date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
 function dateOnlyTime(value: string | null) {
   if (!value) return null;
   const calendar = value.slice(0, 10);
@@ -120,12 +125,21 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
 
   async function submit(path: string, payload: unknown, form: HTMLFormElement) {
     setBusy(true); setNotice("");
-    const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-    const body = await response.json().catch(() => null); setBusy(false);
-    if (!response.ok) return setNotice(body?.error || "Training operation failed.");
-    form.reset();
-    setNotice("Training operation recorded with audit evidence.");
-    await load();
+    try {
+      const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        setNotice(body?.error || "Training operation failed.");
+        return;
+      }
+      form.reset();
+      setNotice("Training operation recorded with audit evidence.");
+      await load();
+    } catch {
+      setNotice("Unable to reach the training service. Check your connection and retry.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function createCourse(event: FormEvent<HTMLFormElement>) {
@@ -213,7 +227,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
       </form>
     </div>}
 
-    {section === "complete" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record completion</h3><p>Record completion results with optional governed supporting evidence.</p></div></div><form onSubmit={complete} className="admin-form"><label>Assignment<select name="assignmentId" defaultValue={preselectedAssignmentId} required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label><label>Completed at<input name="completedAt" type="datetime-local" required /></label><label>Result<input name="result" maxLength={500} /></label><GovernedEvidenceFilePicker domain="training" disabled={busy} /><button type="submit" disabled={busy}>Record completion</button></form></div>}
+    {section === "complete" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record completion</h3><p>Record completion results with optional governed supporting evidence.</p></div></div><form onSubmit={complete} className="admin-form"><label>Assignment<select name="assignmentId" defaultValue={preselectedAssignmentId} required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label><label>Completed at<input name="completedAt" type="datetime-local" defaultValue={localDateTimeInputValue(new Date())} required /></label><label>Result<input name="result" maxLength={500} /></label><GovernedEvidenceFilePicker domain="training" disabled={busy} /><button type="submit" disabled={busy}>Record completion</button></form></div>}
 
     {section === "history" && <div className="module-section-stack"><div className="section-heading"><div><h3>Completion history</h3><p>Review immutable training completion results, event timestamps, and governed evidence references.</p></div></div><div className="table-wrap"><table><thead><tr><th>Employee</th><th>Course</th><th>Completed at</th><th>Result</th><th>Evidence</th></tr></thead><tbody>{completions.map((completion) => {
       const employee = employeeById.get(completion.employeeId); const course = courseById.get(completion.courseId);
