@@ -75,6 +75,69 @@ describe.skipIf(!enabled)("demo fixtures through real service and migrated Postg
     }
   });
 
+  it("denies bidirectional cross-tenant reads and draft overwrites without changing either tenant", async () => {
+    expect(process.env.DATABASE_URL).toBe(expected);
+    const identity = await db.$queryRaw<Array<{ name: string; username: string }>>`SELECT current_database() AS name, current_user AS username`;
+    expect(identity[0]).toMatchObject({ name: "trace_qms_integration_test", username: "trace_qms_test" });
+
+    const service = new DocumentCommandService(new PrismaDocumentLifecycleStore());
+    const store = new PrismaDocumentLifecycleStore();
+    const tenants = [];
+    for (const code of ["synthetic-isolation-a", "synthetic-isolation-b"]) {
+      const org = await db.organization.create({ data: {
+        loginCode: code, legalName: code, displayName: code, active: false,
+      } });
+      const actor = await db.user.create({ data: {
+        organizationId: org.id, email: `${code}@example.invalid`,
+        firstName: "Synthetic", lastName: "Tester", status: "ACTIVE",
+      } });
+      const type = await db.documentType.create({ data: {
+        organizationId: org.id, code: "ISO", name: "Synthetic isolation",
+      } });
+      const context: AuthorizationContext = {
+        userId: actor.id, organizationId: org.id, userState: "ACTIVE",
+        grants: [{ permission: "document.create", scopeType: "ORGANIZATION", scopeId: null }],
+      };
+      const version = await service.createDraft(context, {
+        organizationId: org.id, documentTypeId: type.id,
+        documentNumber: "ISO-001", title: "Synthetic isolation fixture",
+        versionNumber: 1, revisionLabel: "0.1",
+        contentHash: "a".repeat(64), contentText: `Synthetic content for ${code}`,
+        changeSummary: "Disposable test fixture",
+      });
+      tenants.push({ org, actor, version });
+    }
+
+    const snapshot = async () => Promise.all(tenants.map(async ({ org, version }) => ({
+      documents: await db.document.count({ where: { organizationId: org.id } }),
+      versions: await db.documentVersion.count({ where: { organizationId: org.id } }),
+      audits: await db.auditEvent.count({ where: { organizationId: org.id } }),
+      record: await db.documentVersion.findUniqueOrThrow({
+        where: { id: version.id },
+        select: { status: true, lockVersion: true, contentText: true, contentHash: true },
+      }),
+    })));
+    const before = await snapshot();
+    for (const [index, tenant] of tenants.entries()) {
+      const other = tenants[1 - index];
+      expect(await store.findVersion(tenant.org.id, tenant.version.id)).toMatchObject({
+        id: tenant.version.id, organizationId: tenant.org.id,
+      });
+      expect(await store.findVersion(tenant.org.id, other.version.id)).toBeNull();
+      expect(await store.updateDraft({
+        organizationId: tenant.org.id,
+        versionId: other.version.id,
+        actorUserId: tenant.actor.id,
+        expectedLockVersion: 0,
+        contentText: "Forbidden cross-tenant change",
+        contentHash: "b".repeat(64),
+        changeSummary: "Must not persist",
+        occurredAt: new Date(),
+      })).toBe(false);
+      expect(await snapshot()).toEqual(before);
+    }
+  });
+
   it("creates six synthetic drafts and authentic audit records in a disposable database", async () => {
     expect(process.env.DATABASE_URL).toBe(expected);
     const identity = await db.$queryRaw<Array<{ name: string; username: string }>>`SELECT current_database() AS name, current_user AS username`;
