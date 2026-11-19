@@ -35,38 +35,35 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
   const [section, setSection] = useState<Section>("status");
   const [historyQuery, setHistoryQuery] = useState("");
 
-  async function load() {
-    const [employeeResponse, programResponse, assessmentResponse] = await Promise.all([
+  async function fetchWorkspaceData() {
+    const responses = await Promise.all([
       fetch("/api/personnel", { credentials: "same-origin" }),
       fetch("/api/training/competency/programs", { credentials: "same-origin" }),
       fetch("/api/training/competency/assessments", { credentials: "same-origin" }),
     ]);
-    const employeeBody = employeeResponse.ok ? await employeeResponse.json() : null;
-    const programBody = programResponse.ok ? await programResponse.json() : null;
-    const assessmentBody = assessmentResponse.ok ? await assessmentResponse.json() : null;
-    setEmployees(employeeBody?.data ?? []);
-    setPrograms(programBody?.data ?? []);
-    setAssessments(assessmentBody?.data ?? []);
+    if (responses.some((response) => !response.ok)) throw new Error("Unable to load competency records. Retry to refresh.");
+    const [employeeBody, programBody, assessmentBody] = await Promise.all(responses.map((response) => response.json()));
+    if (!Array.isArray(employeeBody?.data) || !Array.isArray(programBody?.data) || !Array.isArray(assessmentBody?.data)) {
+      throw new Error("Competency records could not be read. Retry to refresh.");
+    }
+    return { employees: employeeBody.data as Employee[], programs: programBody.data as Program[], assessments: assessmentBody.data as Assessment[] };
+  }
+
+  function applyWorkspaceData(data: Awaited<ReturnType<typeof fetchWorkspaceData>>) {
+    setEmployees(data.employees);
+    setPrograms(data.programs);
+    setAssessments(data.assessments);
+  }
+
+  async function load() {
+    applyWorkspaceData(await fetchWorkspaceData());
   }
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([
-      fetch("/api/personnel", { credentials: "same-origin" }),
-      fetch("/api/training/competency/programs", { credentials: "same-origin" }),
-      fetch("/api/training/competency/assessments", { credentials: "same-origin" }),
-    ]).then(async ([employeeResponse, programResponse, assessmentResponse]) => {
-      const [employeeBody, programBody, assessmentBody] = await Promise.all([
-        employeeResponse.ok ? employeeResponse.json() : null,
-        programResponse.ok ? programResponse.json() : null,
-        assessmentResponse.ok ? assessmentResponse.json() : null,
-      ]);
-      if (!cancelled) {
-        setEmployees(employeeBody?.data ?? []);
-        setPrograms(programBody?.data ?? []);
-        setAssessments(assessmentBody?.data ?? []);
-      }
-    });
+    void fetchWorkspaceData()
+      .then((data) => { if (!cancelled) applyWorkspaceData(data); })
+      .catch(() => { if (!cancelled) setNotice("Unable to load competency records. Refresh the page to retry."); });
     return () => { cancelled = true; };
   }, []);
 
@@ -74,8 +71,14 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     if (!selectedProgramId) return;
     let cancelled = false;
     void fetch(`/api/training/competency/elements?programId=${encodeURIComponent(selectedProgramId)}`, { credentials: "same-origin" })
-      .then(async (response) => response.ok ? response.json() : null)
-      .then((body) => { if (!cancelled) setElements(body?.data ?? []); });
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Unable to load competency elements.");
+        const body = await response.json();
+        if (!Array.isArray(body?.data)) throw new Error("Invalid competency element response.");
+        return body.data as Element[];
+      })
+      .then((data) => { if (!cancelled) setElements(data); })
+      .catch(() => { if (!cancelled) { setElements([]); setNotice("Unable to load program elements. Select the program again to retry."); } });
     return () => { cancelled = true; };
   }, [selectedProgramId]);
 
@@ -108,7 +111,11 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
       setSelectedEmployeeId("");
       setElements([]);
       setNotice("Competency operation recorded with audit evidence.");
-      await load();
+      try {
+        await load();
+      } catch {
+        setNotice("Competency operation was recorded, but the refreshed records could not be loaded. Refresh the page to verify.");
+      }
     } catch {
       setNotice("Unable to reach the competency service. Check your connection and retry.");
     } finally {
