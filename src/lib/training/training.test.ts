@@ -69,6 +69,59 @@ describe("training service", () => {
     expect(() => service.reassignAssignment(context("training.manage"), { organizationId, assignmentId, assignedAt: new Date("2026-09-07T00:00:00Z"), dueAt: new Date("2026-09-06T00:00:00Z"), reason: "Schedule correction" })).toThrow(TrainingValidationError);
   });
 
+  it("denies cross-tenant course creation and assignment before store access", () => {
+    let called = false;
+    const guarded: TrainingStore = {
+      ...store(),
+      async createCourse(input) { called = true; return store().createCourse(input); },
+      async createAssignment(input) { called = true; return store().createAssignment(input); },
+    };
+    const service = new TrainingService(guarded);
+    expect(() => service.createCourse(context("training.manage"), {
+      organizationId: "other-org", code: "HIPAA-101", title: "HIPAA",
+    })).toThrow("Access denied");
+    expect(() => service.createAssignment(context("training.manage"), {
+      organizationId: "other-org", employeeId, courseId, assignedAt: new Date("2026-11-19T00:00:00Z"),
+    })).toThrow("Access denied");
+    expect(called).toBe(false);
+  });
+
+  it("rejects invalid course fields and assignment timestamps", () => {
+    const service = new TrainingService(store());
+    const manager = context("training.manage");
+    expect(() => service.createCourse(manager, {
+      organizationId, code: " ", title: "HIPAA",
+    })).toThrow(TrainingValidationError);
+    expect(() => service.createCourse(manager, {
+      organizationId, code: "HIPAA-101", title: " ",
+    })).toThrow(TrainingValidationError);
+    expect(() => service.createCourse(manager, {
+      organizationId, code: "HIPAA-101", title: "HIPAA", description: "x".repeat(2001),
+    })).toThrow(TrainingValidationError);
+    expect(() => service.createAssignment(manager, {
+      organizationId, employeeId, courseId, assignedAt: new Date("invalid"),
+    })).toThrow(TrainingValidationError);
+    expect(() => service.createAssignment(manager, {
+      organizationId, employeeId, courseId, assignedAt: new Date("2026-11-19T00:00:00Z"),
+      dueAt: new Date("invalid"),
+    })).toThrow(TrainingValidationError);
+  });
+
+  it("preserves authenticated actor and trimmed reason in governed training reassignment", async () => {
+    let received: Parameters<TrainingStore["reassignAssignment"]>[0] | undefined;
+    const guarded: TrainingStore = {
+      ...store(),
+      async reassignAssignment(input) { received = input; return store().reassignAssignment(input); },
+    };
+    await new TrainingService(guarded).reassignAssignment(context("training.manage"), {
+      organizationId, assignmentId, assignedAt: new Date("2026-11-19T00:00:00Z"),
+      reason: "  Correct due date  ",
+    });
+    expect(received).toMatchObject({
+      organizationId, assignmentId, actorUserId: userId, reason: "Correct due date", dueAt: null,
+    });
+  });
+
   it("requires training.manage for completion", () => {
     const service = new TrainingService(store());
     expect(() => service.completeAssignment(context("training.read"), { organizationId, assignmentId, completedAt: new Date("2026-09-07T12:00:00Z") })).toThrow("Access denied");
