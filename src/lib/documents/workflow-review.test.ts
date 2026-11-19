@@ -141,6 +141,66 @@ describe("sequential workflow review", () => {
       ),
     ).resolves.toEqual({ created: 2 });
   });
+  it("denies cross-tenant review transfers before invoking the store", async () => {
+    let invoked = false;
+    const store: WorkflowReviewStore = {
+      ...fixture().store,
+      async transfer() {
+        invoked = true;
+        return true;
+      },
+    };
+    await expect(new WorkflowReviewService(store).transfer(context, {
+      organizationId: "org-2",
+      taskId: "task-1",
+      newAssigneeUserId: "reviewer-2",
+      reason: "Coverage",
+      mode: "REASSIGN",
+    })).rejects.toThrow("Access denied");
+    expect(invoked).toBe(false);
+  });
+  it("requires management permission for reassignment but allows reviewer delegation", async () => {
+    const reviewerOnly = {
+      ...context,
+      grants: [{ permission: "document.review", scopeType: "ORGANIZATION" as const, scopeId: null }],
+    };
+    const service = new WorkflowReviewService(fixture().store);
+    await expect(service.transfer(reviewerOnly, {
+      organizationId: "org-1",
+      taskId: "task-1",
+      newAssigneeUserId: "reviewer-2",
+      reason: "Coverage",
+      mode: "REASSIGN",
+    })).rejects.toThrow("Access denied");
+    await expect(service.transfer(reviewerOnly, {
+      organizationId: "org-1",
+      taskId: "task-1",
+      newAssigneeUserId: "reviewer-2",
+      reason: "Coverage",
+      mode: "DELEGATE",
+    })).resolves.toBeUndefined();
+  });
+  it("rejects stale transfer tasks and self-assignment", async () => {
+    const store: WorkflowReviewStore = {
+      ...fixture().store,
+      async transfer() { return false; },
+    };
+    const service = new WorkflowReviewService(store);
+    await expect(service.transfer(context, {
+      organizationId: "org-1",
+      taskId: "task-1",
+      newAssigneeUserId: "reviewer-2",
+      reason: "Coverage",
+      mode: "REASSIGN",
+    })).rejects.toBeInstanceOf(WorkflowReviewConflictError);
+    await expect(service.transfer(context, {
+      organizationId: "org-1",
+      taskId: "task-1",
+      newAssigneeUserId: "reviewer-1",
+      reason: "Coverage",
+      mode: "DELEGATE",
+    })).rejects.toThrow("new reviewer");
+  });
   it("supports manager reassignment and reviewer delegation with a reason", async () => {
     await expect(
       new WorkflowReviewService(fixture().store).transfer(context, {
