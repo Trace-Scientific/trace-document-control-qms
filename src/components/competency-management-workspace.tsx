@@ -29,6 +29,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
   const [elements, setElements] = useState<Element[]>([]);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [selectedProgramId, setSelectedProgramId] = useState("");
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [section, setSection] = useState<Section>("status");
@@ -93,6 +94,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
       }
       form.reset();
       setSelectedProgramId("");
+      setSelectedEmployeeId("");
       setElements([]);
       setNotice("Competency operation recorded with audit evidence.");
       await load();
@@ -131,6 +133,14 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     }, event.currentTarget);
   }
 
+  function startReassessment(employeeId: string, programId: string) {
+    setSelectedEmployeeId(employeeId);
+    setElements([]);
+    setSelectedProgramId(programId);
+    setNotice("");
+    setSection("assessment");
+  }
+
   const sections = [
     { id: "status" as const, label: "Competency status", description: "Review current qualification status, expirations, and reassessment needs.", visible: true },
     { id: "assessment" as const, label: "Record assessment", description: "Record an append-only competency assessment with governed supporting evidence.", visible: canManage },
@@ -154,11 +164,11 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
         <article><strong>{dashboard.notQualified}</strong><span>Not qualified</span></article>
         <article><strong>{dashboard.conditional}</strong><span>Conditional</span></article>
       </div>
-      <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Latest assessment</th><th>Expires</th><th>Status</th></tr></thead><tbody>{rollups.map((rollup) => { const employee = employeeById.get(rollup.employeeId); const program = programById.get(rollup.programId); return <tr key={`${rollup.employeeId}:${rollup.programId}`}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : rollup.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : rollup.programId}</td><td>{new Date(rollup.assessedAt).toLocaleDateString()}</td><td>{formatDateOnly(rollup.expiresAt)}</td><td>{rollup.status}</td></tr>; })}{!rollups.length && <tr><td colSpan={5}>No competency assessments have been recorded.</td></tr>}</tbody></table></div>
+      <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Latest assessment</th><th>Expires</th><th>Status</th>{canManage && <th>Action</th>}</tr></thead><tbody>{rollups.map((rollup) => { const employee = employeeById.get(rollup.employeeId); const program = programById.get(rollup.programId); return <tr key={`${rollup.employeeId}:${rollup.programId}`}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : rollup.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : rollup.programId}</td><td>{new Date(rollup.assessedAt).toLocaleDateString()}</td><td>{formatDateOnly(rollup.expiresAt)}</td><td>{rollup.status}</td>{canManage && <td>{employee?.status === "ACTIVE" && program?.active && <button type="button" disabled={busy} onClick={() => startReassessment(rollup.employeeId, rollup.programId)}>Reassess</button>}</td>}</tr>; })}{!rollups.length && <tr><td colSpan={canManage ? 6 : 5}>No competency assessments have been recorded.</td></tr>}</tbody></table></div>
     </div>}
 
     {section === "assessment" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record competency assessment</h3><p>Record an append-only assessment decision and supporting evidence.</p></div></div><form onSubmit={createAssessment} className="admin-form">
-      <label>Employee<select name="employeeId" defaultValue="" required><option value="" disabled>Select employee</option>{employees.filter((employee) => employee.status === "ACTIVE").map((employee) => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.lastName}, {employee.firstName}</option>)}</select></label>
+      <label>Employee<select name="employeeId" value={selectedEmployeeId} onChange={(event) => setSelectedEmployeeId(event.target.value)} required><option value="" disabled>Select employee</option>{employees.filter((employee) => employee.status === "ACTIVE").map((employee) => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.lastName}, {employee.firstName}</option>)}</select></label>
       <label>Program<select name="programId" value={selectedProgramId} onChange={(event) => { setElements([]); setSelectedProgramId(event.target.value); }} required><option value="" disabled>Select program</option>{programs.filter((program) => program.active).map((program) => <option key={program.id} value={program.id}>{program.code} · {program.title}</option>)}</select></label>
       <label>Assessed at<input name="assessedAt" type="datetime-local" defaultValue={localDateTimeInputValue(new Date())} required /></label><label>Overall outcome<select name="outcome" defaultValue="QUALIFIED"><option value="QUALIFIED">Qualified</option><option value="CONDITIONAL">Conditional</option><option value="NOT_QUALIFIED">Not qualified</option></select></label><label>Explicit expiration<input name="expiresAt" type="date" /></label><label>Notes<textarea name="notes" maxLength={2000} /></label>
       {elements.map((element) => <label key={element.id}>{element.code} · {element.title}{element.required ? " *" : ""}<select name={`outcome:${element.id}`} defaultValue="PASS" required><option value="PASS">Pass</option><option value="FAIL">Fail</option>{!element.required && <option value="NOT_APPLICABLE">Not applicable</option>}</select></label>)}
