@@ -16,3 +16,18 @@ test("training preview is offline and non-mutating", () => {
   ]);
   assert.ok(preview.courses.every((course) => course.topics.length >= 3));
 });
+
+test("offline enrollment scenarios are proposed only and contain no completion evidence", () => {
+  const preview = previewDemoTraining();
+  assert.equal(preview.scenarios.length, 4);
+  assert.deepEqual(new Set(preview.scenarios.map((scenario) => scenario.learnerPersonaKey)), new Set([
+    "molecular-technologist", "accessioning-lead",
+  ]));
+  assert.ok(preview.scenarios.every((scenario) =>
+    scenario.proposedStatus === "NOT_ASSIGNED" &&
+    scenario.sampleCompletion === null &&
+    scenario.evidenceFileId === null &&
+    !("employeeId" in scenario) &&
+    !("assignmentId" in scenario)
+  ));
+});
