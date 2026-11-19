@@ -6,6 +6,21 @@ export function previewDemoTraining() {
   validateDemoManifest();
   const coordinator = DEMO_PERSONAS.find((persona) => persona.key === "training-coordinator");
   if (!coordinator) throw new Error("Synthetic training coordinator is missing");
+  // Fictional persona-based scenarios only; no employee IDs, accounts, or records.
+  const learners = DEMO_PERSONAS.filter((persona) =>
+    ["molecular-technologist", "accessioning-lead"].includes(persona.key)
+  );
+  if (learners.length !== 2) throw new Error("Synthetic learner personas are missing");
+  const scenarios = learners.flatMap((learner) =>
+    DEMO_TRAINING_COURSES.map((course) => ({
+      learnerPersonaKey: learner.key,
+      learnerRole: learner.role,
+      courseCode: course.code,
+      proposedStatus: "NOT_ASSIGNED",
+      sampleCompletion: null,
+      evidenceFileId: null,
+    }))
+  );
   return {
     mode: "offline-preview-only",
     applied: false,
@@ -14,6 +29,7 @@ export function previewDemoTraining() {
     assignmentsCreated: 0,
     completionsCreated: 0,
     coordinator: { personaKey: coordinator.key, role: coordinator.role },
+    scenarios,
     courses: DEMO_TRAINING_COURSES.map(({ code, title, description, topics }) => ({
       code, title, description, topics: [...topics],
     })),
