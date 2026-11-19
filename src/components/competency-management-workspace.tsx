@@ -148,8 +148,18 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
       setNotice("Select an overall decision and explicitly assess every program element before recording.");
       return;
     }
+    if (form.get("outcome") === "QUALIFIED" && programElements.some((element) => element.required && elementResults.some((result) => result.elementId === element.id && result.outcome === "FAIL"))) {
+      setNotice("An assessment with a failed required element cannot be marked Qualified. Review the overall decision.");
+      return;
+    }
+    const assessedAtValue = String(form.get("assessedAt"));
+    const assessedAt = new Date(assessedAtValue);
+    if (Number.isNaN(assessedAt.getTime())) {
+      setNotice("Enter a valid assessment date and time.");
+      return;
+    }
     await submit("/api/training/competency/assessments", {
-      employeeId: String(form.get("employeeId")), programId, assessedAt: new Date(String(form.get("assessedAt"))).toISOString(),
+      employeeId: String(form.get("employeeId")), programId, assessedAt: assessedAt.toISOString(),
       outcome: String(form.get("outcome")), expiresAt: String(form.get("expiresAt")) || null,
       fileId: String(form.get("fileId")) || null, notes: String(form.get("notes")) || null, elementResults,
     }, event.currentTarget);
