@@ -114,9 +114,21 @@ export class PrismaWorkflowReviewStore implements WorkflowReviewStore {
           stepKey: { startsWith: "REVIEW_" },
           workflow: { status: "ACTIVE", state: "REVIEW", entityType: "DocumentVersion" },
         },
-        select: { id: true, assigneeUserId: true, dueAt: true, workflow: { select: { entityId: true } } },
+        select: { id: true, workflowInstanceId: true, status: true, assigneeUserId: true, dueAt: true, workflow: { select: { entityId: true } } },
       });
       if (!task || task.assigneeUserId === input.newAssigneeUserId) return false;
+      // Reviewers and the designated final approver must remain distinct after reassignment.
+      const finalApproval = await transaction.workflowTask.findFirst({
+        where: {
+          organizationId: input.organizationId,
+          workflowInstanceId: task.workflowInstanceId,
+          stepKey: "APPROVAL",
+          assigneeUserId: input.newAssigneeUserId,
+          status: { in: ["PENDING", "IN_PROGRESS"] },
+        },
+        select: { id: true },
+      });
+      if (finalApproval) return false;
       const eligible = await transaction.user.findFirst({
         where: {
           id: input.newAssigneeUserId,
@@ -128,7 +140,7 @@ export class PrismaWorkflowReviewStore implements WorkflowReviewStore {
       });
       if (!eligible) return false;
       const changed = await transaction.workflowTask.updateMany({
-        where: { id: task.id, organizationId: input.organizationId, assigneeUserId: task.assigneeUserId },
+        where: { id: task.id, organizationId: input.organizationId, status: task.status, assigneeUserId: task.assigneeUserId },
         data: { assigneeUserId: input.newAssigneeUserId },
       });
       if (changed.count !== 1) return false;
