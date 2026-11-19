@@ -44,6 +44,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [assignmentQuery, setAssignmentQuery] = useState("");
   const [assignmentStatus, setAssignmentStatus] = useState("ALL");
   const [previewCourseCode, setPreviewCourseCode] = useState("");
+  const [previewAssignmentId, setPreviewAssignmentId] = useState("");
 
   async function load() {
     const [employeeResponse, courseResponse, assignmentResponse, completionResponse] = await Promise.all([
@@ -198,7 +199,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
           <thead><tr><th>Employee</th><th>Course</th><th>Assigned</th><th>Due</th><th>Status</th><th>Lifecycle evidence</th>{canManage && <th>Action</th>}</tr></thead>
           <tbody>{visibleAssignments.map(({ assignment, status, employeeLabel, courseLabel }) => (
             <tr key={assignment.id}>
-              <td>{employeeLabel}</td><td>{courseLabel}</td>
+              <td>{employeeLabel}</td><td>{courseLabel}{["DEMO-HIPAA", "DEMO-BBP"].includes(courseById.get(assignment.courseId)?.code ?? "") && <div className="training-assignment-preview-action"><button type="button" className="training-lesson-button" aria-expanded={previewAssignmentId === assignment.id} onClick={() => setPreviewAssignmentId(previewAssignmentId === assignment.id ? "" : assignment.id)}>{previewAssignmentId === assignment.id ? "Hide lessons" : "Open practice lessons"}</button></div>}</td>
               <td>{formatDateOnly(assignment.assignedAt)}</td><td>{formatDateOnly(assignment.dueAt)}</td>
               <td>{status}</td><td>{assignment.cancelReason ?? "—"}</td>
               {canManage && <td>{assignment.status === "ASSIGNED" && (
@@ -211,6 +212,17 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
           </td></tr>}</tbody>
         </table>
       </div>
+      {previewAssignmentId && (() => {
+        const assignment = assignments.find((item) => item.id === previewAssignmentId);
+        const course = assignment ? courseById.get(assignment.courseId) : undefined;
+        const employee = assignment ? employeeById.get(assignment.employeeId) : undefined;
+        if (!assignment || !course || !["DEMO-HIPAA", "DEMO-BBP"].includes(course.code)) return null;
+        return <div className="module-section-stack">
+          <p><strong>Assigned training preview:</strong> {employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assignment.employeeId} · {course.title} · {assignment.status}</p>
+          <p>This is a supervisor-accessible demonstration preview, not an authenticated employee learning session. Practice answers are not saved, and completing the quiz does not change the assignment or create a completion record.</p>
+          <DemoTrainingLesson key={assignment.id} courseCode={course.code} />
+        </div>;
+      })()}
     </div>}
 
     {section === "assign" && canManage && <div className="module-section-stack">
