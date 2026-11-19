@@ -1760,5 +1760,6 @@ td.due {
   white-space: nowrap;
   cursor: pointer;
 }
-.training-lesson-button:hover { background: #1d4ed8; }
+.training-lesson-button:hover,
+.training-lesson-button:focus-visible { background: #1d4ed8; color: #fff; }
 .training-lesson-button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
