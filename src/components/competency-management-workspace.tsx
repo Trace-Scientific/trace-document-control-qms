@@ -18,6 +18,11 @@ function formatDateOnly(value: string | null) {
   return `${month}/${day}/${year}`;
 }
 
+function localDateTimeInputValue(date: Date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
 export function CompetencyManagementWorkspace({ canManage, today }: { canManage: boolean; today: string }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
@@ -79,15 +84,23 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
 
   async function submit(path: string, payload: unknown, form: HTMLFormElement) {
     setBusy(true); setNotice("");
-    const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-    const body = await response.json().catch(() => null);
-    setBusy(false);
-    if (!response.ok) return setNotice(body?.error || "Competency operation failed.");
-    form.reset();
-    setSelectedProgramId("");
-    setElements([]);
-    setNotice("Competency operation recorded with audit evidence.");
-    await load();
+    try {
+      const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        setNotice(body?.error || "Competency operation failed.");
+        return;
+      }
+      form.reset();
+      setSelectedProgramId("");
+      setElements([]);
+      setNotice("Competency operation recorded with audit evidence.");
+      await load();
+    } catch {
+      setNotice("Unable to reach the competency service. Check your connection and retry.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function createProgram(event: FormEvent<HTMLFormElement>) {
@@ -145,9 +158,9 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     </div>}
 
     {section === "assessment" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record competency assessment</h3><p>Record an append-only assessment decision and supporting evidence.</p></div></div><form onSubmit={createAssessment} className="admin-form">
-      <label>Employee<select name="employeeId" defaultValue="" required><option value="" disabled>Select employee</option>{employees.filter((employee) => employee.status !== "TERMINATED").map((employee) => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.lastName}, {employee.firstName}</option>)}</select></label>
+      <label>Employee<select name="employeeId" defaultValue="" required><option value="" disabled>Select employee</option>{employees.filter((employee) => employee.status === "ACTIVE").map((employee) => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.lastName}, {employee.firstName}</option>)}</select></label>
       <label>Program<select name="programId" value={selectedProgramId} onChange={(event) => { setElements([]); setSelectedProgramId(event.target.value); }} required><option value="" disabled>Select program</option>{programs.filter((program) => program.active).map((program) => <option key={program.id} value={program.id}>{program.code} · {program.title}</option>)}</select></label>
-      <label>Assessed at<input name="assessedAt" type="datetime-local" required /></label><label>Overall outcome<select name="outcome" defaultValue="QUALIFIED"><option value="QUALIFIED">Qualified</option><option value="CONDITIONAL">Conditional</option><option value="NOT_QUALIFIED">Not qualified</option></select></label><label>Explicit expiration<input name="expiresAt" type="date" /></label><label>Notes<textarea name="notes" maxLength={2000} /></label>
+      <label>Assessed at<input name="assessedAt" type="datetime-local" defaultValue={localDateTimeInputValue(new Date())} required /></label><label>Overall outcome<select name="outcome" defaultValue="QUALIFIED"><option value="QUALIFIED">Qualified</option><option value="CONDITIONAL">Conditional</option><option value="NOT_QUALIFIED">Not qualified</option></select></label><label>Explicit expiration<input name="expiresAt" type="date" /></label><label>Notes<textarea name="notes" maxLength={2000} /></label>
       {elements.map((element) => <label key={element.id}>{element.code} · {element.title}{element.required ? " *" : ""}<select name={`outcome:${element.id}`} defaultValue="PASS" required><option value="PASS">Pass</option><option value="FAIL">Fail</option>{!element.required && <option value="NOT_APPLICABLE">Not applicable</option>}</select></label>)}
       <GovernedEvidenceFilePicker domain="training" disabled={busy} />
       <button type="submit" disabled={busy || !selectedProgramId || elements.length === 0}>Record competency assessment</button>
