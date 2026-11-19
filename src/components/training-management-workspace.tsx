@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { GovernedEvidenceFilePicker } from "./governed-evidence-file-picker";
+import { DemoTrainingLesson } from "./demo-training-lesson";
 
 type Employee = { id: string; employeeNumber: string; firstName: string; lastName: string; status: "ACTIVE" | "INACTIVE" | "TERMINATED" };
 type Course = { id: string; code: string; title: string; active: boolean };
@@ -42,6 +43,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [preselectedAssignmentId, setPreselectedAssignmentId] = useState("");
   const [assignmentQuery, setAssignmentQuery] = useState("");
   const [assignmentStatus, setAssignmentStatus] = useState("ALL");
+  const [previewCourseCode, setPreviewCourseCode] = useState("");
 
   async function load() {
     const [employeeResponse, courseResponse, assignmentResponse, completionResponse] = await Promise.all([
@@ -244,7 +246,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
           <tbody>
             {courses.map((course) => <tr key={course.id}>
               <td>{course.code}</td>
-              <td>{course.title}</td>
+              <td>{course.title}{["DEMO-HIPAA", "DEMO-BBP"].includes(course.code) && <button type="button" onClick={() => setPreviewCourseCode(previewCourseCode === course.code ? "" : course.code)}>{previewCourseCode === course.code ? "Hide lessons" : "View lessons & quiz"}</button>}</td>
               <td>{course.active ? "Active" : "Inactive"}</td>
               {canManage && <td>{course.active && (
                 <button type="button" disabled={busy} aria-label={`Assign ${course.title}`} onClick={() => startAssignment(course)}>Assign course</button>
@@ -254,6 +256,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
           </tbody>
         </table>
       </div>
+      {previewCourseCode && <DemoTrainingLesson key={previewCourseCode} courseCode={previewCourseCode} />}
       {canManage && <form onSubmit={createCourse} className="admin-form">
         <label>Course code<input name="code" maxLength={80} required /></label>
         <label>Course title<input name="title" maxLength={240} required /></label>
