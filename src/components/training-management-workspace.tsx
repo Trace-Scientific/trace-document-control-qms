@@ -89,7 +89,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const todayStart = useMemo(() => dateOnlyTime(today) ?? 0, [today]);
   const activeAssignments = assignments.filter((assignment) => assignment.status === "ASSIGNED");
   const activeCourses = courses.filter((course) => course.active);
-  const eligibleEmployees = employees.filter((employee) => employee.status !== "TERMINATED");
+  const eligibleEmployees = employees.filter((employee) => employee.status === "ACTIVE");
 
   const queryWords = assignmentQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const visibleAssignments = assignments.map((assignment) => {
@@ -207,7 +207,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
         <label>Course<select name="courseId" defaultValue={preselectedCourseId} required><option value="" disabled>Select course</option>{activeCourses.map((course) => (
           <option key={course.id} value={course.id}>{course.code} · {course.title}</option>
         ))}</select></label>
-        <label>Assigned date<input name="assignedAt" type="date" required /></label>
+        <label>Assigned date<input name="assignedAt" type="date" defaultValue={today.slice(0, 10)} required /></label>
         <label>Due date<input name="dueAt" type="date" /></label>
         <button type="submit" disabled={busy || !eligibleEmployees.length || !activeCourses.length}>Assign training</button>
       </form>
