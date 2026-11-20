@@ -158,6 +158,15 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
       setNotice("Enter a valid assessment date and time.");
       return;
     }
+    if (assessedAt.getTime() > Date.now()) {
+      setNotice("Competency assessments cannot be recorded with a future assessment date.");
+      return;
+    }
+    const expiresAtValue = String(form.get("expiresAt"));
+    if (expiresAtValue && expiresAtValue < assessedAtValue.slice(0, 10)) {
+      setNotice("Competency expiration cannot precede the assessment date.");
+      return;
+    }
     await submit("/api/training/competency/assessments", {
       employeeId: String(form.get("employeeId")), programId, assessedAt: assessedAt.toISOString(),
       outcome: String(form.get("outcome")), expiresAt: String(form.get("expiresAt")) || null,
@@ -209,7 +218,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
       </tbody></table></div>
     </div>}
 
-    {section === "assessment" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record competency assessment</h3><p>Record an append-only assessment decision and supporting evidence.</p></div></div><form onSubmit={createAssessment} className="admin-form">
+    {section === "assessment" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record competency assessment</h3><p>Record an append-only assessment decision and supporting evidence. Training completion alone does not establish competency: assess each program element and select the qualification outcome based on observed evidence.</p></div></div><form onSubmit={createAssessment} className="admin-form">
       <label>Employee<select name="employeeId" value={selectedEmployeeId} onChange={(event) => setSelectedEmployeeId(event.target.value)} required><option value="" disabled>Select employee</option>{employees.filter((employee) => employee.status === "ACTIVE").map((employee) => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.lastName}, {employee.firstName}</option>)}</select></label>
       <label>Program<select name="programId" value={selectedProgramId} onChange={(event) => { setElements([]); setSelectedProgramId(event.target.value); }} required><option value="" disabled>Select program</option>{programs.filter((program) => program.active).map((program) => <option key={program.id} value={program.id}>{program.code} · {program.title}</option>)}</select></label>
       <label>Assessed at<input name="assessedAt" type="datetime-local" defaultValue={localDateTimeInputValue(new Date())} required /></label><label>Overall outcome<select name="outcome" defaultValue="" required><option value="" disabled>Select overall decision</option><option value="QUALIFIED">Qualified</option><option value="CONDITIONAL">Conditional</option><option value="NOT_QUALIFIED">Not qualified</option></select></label><label>Explicit expiration<input name="expiresAt" type="date" /></label><label>Notes<textarea name="notes" maxLength={2000} /></label>
