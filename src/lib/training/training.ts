@@ -81,6 +81,7 @@ export class TrainingService {
     requireAuthorization(context, { organizationId: input.organizationId, permission: "training.manage" });
     const result = input.result?.trim() || null;
     if (Number.isNaN(input.completedAt.getTime())) throw new TrainingValidationError("Training completion date is invalid");
+    if (input.completedAt.getTime() > Date.now()) throw new TrainingValidationError("Training completion cannot be recorded in the future");
     if ((result?.length ?? 0) > 500) throw new TrainingValidationError("Training result is too long");
     return this.store.completeAssignment({ organizationId: input.organizationId, assignmentId: input.assignmentId, completedAt: input.completedAt, result, fileId: input.fileId ?? null, actorUserId: context.userId });
   }
