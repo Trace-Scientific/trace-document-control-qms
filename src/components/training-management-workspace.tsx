@@ -42,6 +42,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [preselectedCourseId, setPreselectedCourseId] = useState("");
   const [preselectedAssignmentId, setPreselectedAssignmentId] = useState("");
   const [completionAssignmentId, setCompletionAssignmentId] = useState("");
+  const [completionEvidenceFileId, setCompletionEvidenceFileId] = useState("");
   const [assignmentQuery, setAssignmentQuery] = useState("");
   const [assignmentStatus, setAssignmentStatus] = useState("ALL");
   const [completionQuery, setCompletionQuery] = useState("");
@@ -139,6 +140,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   function startCompletion(assignment: Assignment) {
     setPreselectedAssignmentId(assignment.id);
     setCompletionAssignmentId(assignment.id);
+    setCompletionEvidenceFileId("");
     setNotice("");
     setSection("complete");
   }
@@ -182,7 +184,12 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
 
   async function complete(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
-    await submit("/api/training/completions", { assignmentId: String(form.get("assignmentId")), completedAt: new Date(String(form.get("completedAt"))).toISOString(), result: String(form.get("result")) || null, fileId: String(form.get("fileId")) || null }, event.currentTarget);
+    const fileId = String(form.get("fileId") || "");
+    if (demoCompletionEvidenceRequired && !fileId) {
+      setNotice("Select an AVAILABLE governed evidence file before recording this demo training completion.");
+      return;
+    }
+    await submit("/api/training/completions", { assignmentId: String(form.get("assignmentId")), completedAt: new Date(String(form.get("completedAt"))).toISOString(), result: String(form.get("result")) || null, fileId: fileId || null }, event.currentTarget);
   }
 
   const sections = [
@@ -258,7 +265,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
       </form>
     </div>}
 
-    {section === "complete" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record completion</h3><p>Record completion results with governed supporting evidence. Demo HIPAA and Bloodborne Pathogens assignments require an available evidence file. Practice quiz scores do not qualify as official completion evidence.</p></div></div><form onSubmit={complete} className="admin-form"><label>Assignment<select name="assignmentId" value={completionAssignmentId} onChange={(event) => setCompletionAssignmentId(event.target.value)} required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label><label>Completed at<input name="completedAt" type="datetime-local" defaultValue={localDateTimeInputValue(new Date())} required /></label><label>Result<input name="result" maxLength={500} /></label>{demoCompletionEvidenceRequired && <p role="status"><strong>Evidence required for {completionCourseCode}:</strong> Select an AVAILABLE governed training evidence file before recording this completion. The administrator must independently verify that the evidence supports completion; a practice score alone is insufficient.</p>}<GovernedEvidenceFilePicker domain="training" disabled={busy} /><button type="submit" disabled={busy}>Record completion</button></form></div>}
+    {section === "complete" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record completion</h3><p>Record completion results with governed supporting evidence. Demo HIPAA and Bloodborne Pathogens assignments require an available evidence file. Practice quiz scores do not qualify as official completion evidence.</p></div></div><form onSubmit={complete} className="admin-form"><label>Assignment<select name="assignmentId" value={completionAssignmentId} onChange={(event) => { setCompletionAssignmentId(event.target.value); setNotice(""); }} required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label><label>Completed at<input name="completedAt" type="datetime-local" defaultValue={localDateTimeInputValue(new Date())} required /></label><label>Result<input name="result" maxLength={500} /></label>{demoCompletionEvidenceRequired && <p role="status"><strong>Evidence required for {completionCourseCode}:</strong> Select an AVAILABLE governed training evidence file before recording this completion. The administrator must independently verify that the evidence supports completion; a practice score alone is insufficient.</p>}<GovernedEvidenceFilePicker domain="training" disabled={busy} onSelectionChange={setCompletionEvidenceFileId} /><button type="submit" disabled={busy || (demoCompletionEvidenceRequired && !completionEvidenceFileId)}>Record completion</button></form></div>}
 
     {section === "history" && <div className="module-section-stack"><div className="section-heading"><div><h3>Completion history</h3><p>Review immutable training completion results, event timestamps, and governed evidence references.</p></div></div><div className="admin-form"><label>Search completions<input type="search" value={completionQuery} onChange={(event) => setCompletionQuery(event.target.value)} placeholder="Employee, course, or result" /></label><label>Evidence attachment<select value={completionEvidence} onChange={(event) => setCompletionEvidence(event.target.value)}><option value="ALL">All records</option><option value="ATTACHED">With attached evidence</option><option value="MISSING">Without attached evidence</option></select></label></div><p>Attachment status is informational. An attached file does not by itself establish verified competency or approval.</p><div className="table-wrap"><table><thead><tr><th>Employee</th><th>Course</th><th>Completed at</th><th>Result</th><th>Evidence</th></tr></thead><tbody>{visibleCompletions.map((completion) => {
       const employee = employeeById.get(completion.employeeId); const course = courseById.get(completion.courseId);
