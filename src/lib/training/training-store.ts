@@ -91,6 +91,7 @@ export class PrismaTrainingStore implements TrainingStore {
   async completeAssignment(input: { organizationId: string; assignmentId: string; completedAt: Date; result: string | null; fileId: string | null; actorUserId: string }): Promise<TrainingCompletionRecord> {
     return db.$transaction(async (tx) => {
       const assignment = await this.lockAssignable(tx, input.organizationId, input.assignmentId);
+      if (input.completedAt < assignment.assignedAt) throw new TrainingEligibilityError("Training completion cannot precede the assignment date");
       // Demo practice quiz scores are never completion evidence on their own.
       // Require a governed file before a manager can record completion for demo courses.
       const courseRows = await tx.$queryRaw<Array<{ code: string }>>(Prisma.sql`
