@@ -43,6 +43,8 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [preselectedAssignmentId, setPreselectedAssignmentId] = useState("");
   const [assignmentQuery, setAssignmentQuery] = useState("");
   const [assignmentStatus, setAssignmentStatus] = useState("ALL");
+  const [completionQuery, setCompletionQuery] = useState("");
+  const [completionEvidence, setCompletionEvidence] = useState("ALL");
   const [previewCourseCode, setPreviewCourseCode] = useState("");
   const [previewAssignmentId, setPreviewAssignmentId] = useState("");
 
@@ -112,6 +114,16 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     if (assignmentStatus !== "ALL" && status !== assignmentStatus) return false;
     const searchText = `${employeeLabel} ${courseLabel}`.toLowerCase();
     return queryWords.every((word) => searchText.includes(word));
+  });
+
+  const visibleCompletions = completions.filter((completion) => {
+    const employee = employeeById.get(completion.employeeId);
+    const course = courseById.get(completion.courseId);
+    const searchText = `${employee?.employeeNumber ?? ""} ${employee?.firstName ?? ""} ${employee?.lastName ?? ""} ${course?.code ?? ""} ${course?.title ?? ""} ${completion.result ?? ""}`.toLowerCase();
+    if (!completionQuery.trim().toLowerCase().split(/\s+/).filter(Boolean).every((word) => searchText.includes(word))) return false;
+    if (completionEvidence === "ATTACHED") return Boolean(completion.fileId);
+    if (completionEvidence === "MISSING") return !completion.fileId;
+    return true;
   });
 
   function startAssignment(course: Course) {
@@ -243,10 +255,10 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
 
     {section === "complete" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record completion</h3><p>Record completion results with optional governed supporting evidence.</p></div></div><form onSubmit={complete} className="admin-form"><label>Assignment<select name="assignmentId" defaultValue={preselectedAssignmentId} required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label><label>Completed at<input name="completedAt" type="datetime-local" defaultValue={localDateTimeInputValue(new Date())} required /></label><label>Result<input name="result" maxLength={500} /></label><GovernedEvidenceFilePicker domain="training" disabled={busy} /><button type="submit" disabled={busy}>Record completion</button></form></div>}
 
-    {section === "history" && <div className="module-section-stack"><div className="section-heading"><div><h3>Completion history</h3><p>Review immutable training completion results, event timestamps, and governed evidence references.</p></div></div><div className="table-wrap"><table><thead><tr><th>Employee</th><th>Course</th><th>Completed at</th><th>Result</th><th>Evidence</th></tr></thead><tbody>{completions.map((completion) => {
+    {section === "history" && <div className="module-section-stack"><div className="section-heading"><div><h3>Completion history</h3><p>Review immutable training completion results, event timestamps, and governed evidence references.</p></div></div><div className="admin-form"><label>Search completions<input type="search" value={completionQuery} onChange={(event) => setCompletionQuery(event.target.value)} placeholder="Employee, course, or result" /></label><label>Evidence attachment<select value={completionEvidence} onChange={(event) => setCompletionEvidence(event.target.value)}><option value="ALL">All records</option><option value="ATTACHED">With attached evidence</option><option value="MISSING">Without attached evidence</option></select></label></div><p>Attachment status is informational. An attached file does not by itself establish verified competency or approval.</p><div className="table-wrap"><table><thead><tr><th>Employee</th><th>Course</th><th>Completed at</th><th>Result</th><th>Evidence</th></tr></thead><tbody>{visibleCompletions.map((completion) => {
       const employee = employeeById.get(completion.employeeId); const course = courseById.get(completion.courseId);
       return <tr key={completion.id}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : completion.employeeId}</td><td>{course ? `${course.code} · ${course.title}` : completion.courseId}</td><td>{new Date(completion.completedAt).toLocaleString()}</td><td>{completion.result ?? "—"}</td><td>{completion.fileId ? `${completion.evidenceName ?? "Attached file"} · ${completion.evidenceStatus ?? "Linked"}` : "—"}</td></tr>;
-    })}{!completions.length && <tr><td colSpan={5}>No training completions have been recorded.</td></tr>}</tbody></table></div></div>}
+    })}{!visibleCompletions.length && <tr><td colSpan={5}>{completions.length ? "No completion records match the selected filters." : "No training completions have been recorded."}</td></tr>}</tbody></table></div></div>}
 
     {section === "lifecycle" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Lifecycle actions</h3><p>Cancel or reassign active training without rewriting assignment history.</p></div></div><form onSubmit={lifecycle} className="admin-form"><label>Assignment<select name="assignmentId" defaultValue="" required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label><label>Action<select name="action" defaultValue="cancel"><option value="cancel">Cancel</option><option value="reassign">Reassign</option></select></label><label>Reason<input name="reason" maxLength={500} required /></label><label>New assigned date<input name="assignedAt" type="date" /></label><label>New due date<input name="dueAt" type="date" /></label><button type="submit" disabled={busy}>Apply lifecycle action</button></form></div>}
 
