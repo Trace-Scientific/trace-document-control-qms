@@ -3,11 +3,16 @@
 import { useEffect, useState } from "react";
 import { DemoTrainingLesson } from "./demo-training-lesson";
 
+type Completion = { id: string; assignmentId: string; courseCode: string; courseTitle: string; completedAt: string; result: string | null };
+
 type Assignment = { id: string; courseCode: string; courseTitle: string; assignedAt: string; dueAt: string | null; status: string };
 
 export function MyTrainingWorkspace() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [selectedId, setSelectedId] = useState("");
+  const [completions, setCompletions] = useState<Completion[]>([]);
+  const [completionLoading, setCompletionLoading] = useState(true);
+  const [completionError, setCompletionError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -20,6 +25,14 @@ export function MyTrainingWorkspace() {
       })
       .catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Training assignments could not be loaded."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    void fetch("/api/training/my-completions", { credentials: "same-origin", cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(response.status === 403 ? "Your account is not linked to one active employee record." : response.status === 401 ? "Sign in to view your completion history." : "Completion history could not be loaded.");
+        const body: { data?: { completions?: Completion[] } } = await response.json();
+        if (!controller.signal.aborted) setCompletions(body.data?.completions ?? []);
+      })
+      .catch((reason: unknown) => { if (!controller.signal.aborted) setCompletionError(reason instanceof Error ? reason.message : "Completion history could not be loaded."); })
+      .finally(() => { if (!controller.signal.aborted) setCompletionLoading(false); });
     return () => controller.abort();
   }, []);
   const selected = assignments.find((assignment) => assignment.id === selectedId);
@@ -38,5 +51,20 @@ export function MyTrainingWorkspace() {
       </tr>)}</tbody>
     </table></div>}
     {selected && selected.status === "ASSIGNED" && ["DEMO-HIPAA", "DEMO-BBP"].includes(selected.courseCode) && <DemoTrainingLesson key={selected.id} courseCode={selected.courseCode} assignmentId={selected.id} employeePractice />}
+    <section aria-labelledby="completion-history-heading">
+      <h3 id="completion-history-heading">Official training completion history</h3>
+      <p>These are recorded training completions, separate from demonstration quiz practice scores.</p>
+      {completionLoading && <p role="status">Loading completion history…</p>}
+      {completionError && <p role="alert">{completionError}</p>}
+      {!completionLoading && !completionError && completions.length === 0 && <p>No official training completions are recorded for your employee account.</p>}
+      {!completionLoading && !completionError && completions.length > 0 && <div className="table-wrap"><table>
+        <thead><tr><th>Course</th><th>Completed</th><th>Result</th></tr></thead>
+        <tbody>{completions.map((completion) => <tr key={completion.id}>
+          <td>{completion.courseTitle} ({completion.courseCode})</td>
+          <td>{formatDate(completion.completedAt)}</td>
+          <td>{completion.result || "Not specified"}</td>
+        </tr>)}</tbody>
+      </table></div>}
+    </section>
   </section>;
 }
