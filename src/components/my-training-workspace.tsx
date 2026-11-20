@@ -34,9 +34,9 @@ export function MyTrainingWorkspace() {
       <thead><tr><th>Course</th><th>Assigned</th><th>Due</th><th>Status</th><th>Practice</th></tr></thead>
       <tbody>{assignments.map((assignment) => <tr key={assignment.id}>
         <td>{assignment.courseTitle} ({assignment.courseCode})</td><td>{formatDate(assignment.assignedAt)}</td><td>{formatDate(assignment.dueAt)}</td><td>{assignment.status}</td>
-        <td>{["DEMO-HIPAA", "DEMO-BBP"].includes(assignment.courseCode) ? <button type="button" aria-expanded={selectedId === assignment.id} onClick={() => setSelectedId(selectedId === assignment.id ? "" : assignment.id)}>{selectedId === assignment.id ? "Close practice" : "Open practice lessons"}</button> : "Not available"}</td>
+        <td>{assignment.status === "ASSIGNED" && ["DEMO-HIPAA", "DEMO-BBP"].includes(assignment.courseCode) ? <button type="button" aria-expanded={selectedId === assignment.id} onClick={() => setSelectedId(selectedId === assignment.id ? "" : assignment.id)}>{selectedId === assignment.id ? "Close practice" : "Open practice lessons"}</button> : "Not available"}</td>
       </tr>)}</tbody>
     </table></div>}
-    {selected && ["DEMO-HIPAA", "DEMO-BBP"].includes(selected.courseCode) && <DemoTrainingLesson key={selected.id} courseCode={selected.courseCode} />}
+    {selected && selected.status === "ASSIGNED" && ["DEMO-HIPAA", "DEMO-BBP"].includes(selected.courseCode) && <DemoTrainingLesson key={selected.id} courseCode={selected.courseCode} />}
   </section>;
 }
