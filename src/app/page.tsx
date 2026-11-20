@@ -235,6 +235,9 @@ export default async function HomePage() {
           <a href="/settings/security">Set up authenticator security</a>
         </nav>
       )}
+      <nav aria-label="Employee training" style={{ padding: "0.75rem 1.5rem" }}>
+        <a href="/my-training">My Training — view my assigned courses</a>
+      </nav>
       <DashboardVisibilityGate />
       <DocumentControlDashboard
         developmentPreview={process.env.DEPLOYMENT_TIER === "development-preview"}
