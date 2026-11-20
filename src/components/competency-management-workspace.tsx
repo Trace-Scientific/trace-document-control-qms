@@ -8,6 +8,7 @@ type Employee = { id: string; employeeNumber: string; firstName: string; lastNam
 type Program = { id: string; code: string; title: string; active: boolean; validityDays: number | null };
 type Element = { id: string; programId: string; code: string; title: string; required: boolean; sortOrder: number };
 type Assessment = CompetencyAssessmentSummary & { fileId: string | null; notes: string | null; assessorUserId: string };
+type EvidenceFileSummary = { id: string; originalName: string; status: string };
 type Section = "status" | "history" | "assessment" | "programs" | "elements";
 
 function formatDateOnly(value: string | null) {
@@ -28,6 +29,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
   const [programs, setPrograms] = useState<Program[]>([]);
   const [elements, setElements] = useState<Element[]>([]);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
+  const [evidenceFiles, setEvidenceFiles] = useState<EvidenceFileSummary[]>([]);
   const [selectedProgramId, setSelectedProgramId] = useState("");
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [notice, setNotice] = useState("");
@@ -70,6 +72,15 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/evidence-files?domain=training", { credentials: "same-origin" })
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((body) => { if (!cancelled && Array.isArray(body?.data)) setEvidenceFiles(body.data as EvidenceFileSummary[]); })
+      .catch(() => { /* Evidence references remain visible if file metadata is unavailable. */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     if (!selectedProgramId) return;
     let cancelled = false;
     void fetch(`/api/training/competency/elements?programId=${encodeURIComponent(selectedProgramId)}`, { credentials: "same-origin" })
@@ -86,6 +97,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
 
   const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
   const programById = useMemo(() => new Map(programs.map((program) => [program.id, program])), [programs]);
+  const evidenceById = useMemo(() => new Map(evidenceFiles.map((file) => [file.id, file])), [evidenceFiles]);
   const rollups = useMemo(() => competencyRollups(assessments, today), [assessments, today]);
   const dashboard = useMemo(() => competencyDashboard(rollups), [rollups]);
   const historyWords = historyQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -97,7 +109,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     const program = programById.get(assessment.programId);
     const searchText = [
       employee?.employeeNumber, employee?.firstName, employee?.lastName,
-      program?.code, program?.title, assessment.outcome, assessment.assessorUserId, assessment.notes, assessment.fileId,
+      program?.code, program?.title, assessment.outcome, assessment.assessorUserId, assessment.notes, assessment.fileId, assessment.fileId ? evidenceById.get(assessment.fileId)?.originalName : null,
     ].filter(Boolean).join(" ").toLowerCase();
     return historyWords.every((word) => searchText.includes(word));
   }).sort((a, b) => b.assessedAt.localeCompare(a.assessedAt));
@@ -234,8 +246,8 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
       <label>Evidence status<select value={historyEvidenceFilter} onChange={(event) => setHistoryEvidenceFilter(event.target.value as "ALL" | "ATTACHED" | "MISSING")}><option value="ALL">All assessments</option><option value="ATTACHED">Evidence attached</option><option value="MISSING">Missing evidence attachment</option></select></label>
       <label>Assessment decision<select value={historyOutcomeFilter} onChange={(event) => setHistoryOutcomeFilter(event.target.value as "ALL" | "QUALIFIED" | "CONDITIONAL" | "NOT_QUALIFIED")}><option value="ALL">All decisions</option><option value="QUALIFIED">Qualified</option><option value="CONDITIONAL">Conditional</option><option value="NOT_QUALIFIED">Not qualified</option></select></label>
       <p>Showing {visibleHistory.length} of {assessments.length} assessments. Missing an attachment does not by itself determine competency status.</p>
-      <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Assessed at</th><th>Assessor account</th><th>Outcome</th><th>Expires</th><th>Evidence file ID</th><th>Assessment notes</th>{canManage && <th>Next action</th>}</tr></thead><tbody>
-        {visibleHistory.map((assessment) => { const employee = employeeById.get(assessment.employeeId); const program = programById.get(assessment.programId); return <tr key={assessment.id}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assessment.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : assessment.programId}</td><td>{new Date(assessment.assessedAt).toLocaleString()}</td><td><code>{assessment.assessorUserId}</code></td><td>{assessment.outcome}</td><td>{formatDateOnly(assessment.expiresAt)}</td><td>{assessment.fileId ? <code>{assessment.fileId}</code> : "Not attached"}</td><td>{assessment.notes || "—"}</td>{canManage && <td><button type="button" disabled={busy || employee?.status !== "ACTIVE" || !program?.active} onClick={() => startReassessmentFromHistory(assessment)}>Reassess</button></td>}</tr>; })}
+      <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Assessed at</th><th>Assessor account</th><th>Outcome</th><th>Expires</th><th>Evidence file</th><th>Assessment notes</th>{canManage && <th>Next action</th>}</tr></thead><tbody>
+        {visibleHistory.map((assessment) => { const employee = employeeById.get(assessment.employeeId); const program = programById.get(assessment.programId); return <tr key={assessment.id}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assessment.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : assessment.programId}</td><td>{new Date(assessment.assessedAt).toLocaleString()}</td><td><code>{assessment.assessorUserId}</code></td><td>{assessment.outcome}</td><td>{formatDateOnly(assessment.expiresAt)}</td><td>{assessment.fileId ? <><span>{evidenceById.get(assessment.fileId)?.originalName || "File reference"}</span> <code>{assessment.fileId}</code></> : "Not attached"}</td><td>{assessment.notes || "—"}</td>{canManage && <td><button type="button" disabled={busy || employee?.status !== "ACTIVE" || !program?.active} onClick={() => startReassessmentFromHistory(assessment)}>Reassess</button></td>}</tr>; })}
         {!visibleHistory.length && <tr><td colSpan={canManage ? 9 : 8}>{assessments.length ? "No assessments match this search." : "No competency assessments have been recorded."}</td></tr>}
       </tbody></table></div>
     </div>}
