@@ -60,7 +60,16 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
   }
 
   async function load() {
-    applyWorkspaceData(await fetchWorkspaceData());
+    const data = await fetchWorkspaceData();
+    applyWorkspaceData(data);
+    try {
+      const response = await fetch("/api/evidence-files?domain=training", { credentials: "same-origin" });
+      if (!response.ok) return;
+      const body = await response.json();
+      if (Array.isArray(body?.data)) setEvidenceFiles(body.data as EvidenceFileSummary[]);
+    } catch {
+      // Keep the assessment history and file identifiers available if metadata refresh fails.
+    }
   }
 
   useEffect(() => {
