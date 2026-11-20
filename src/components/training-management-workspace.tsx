@@ -220,7 +220,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
         return <div className="module-section-stack">
           <p><strong>Assigned training preview:</strong> {employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assignment.employeeId} · {course.title} · {assignment.status}</p>
           <p>This is a supervisor-accessible demonstration preview, not an authenticated employee learning session. Practice answers are not saved, and completing the quiz does not change the assignment or create a completion record.</p>
-          <DemoTrainingLesson key={assignment.id} courseCode={course.code} />
+          {canManage ? <DemoTrainingLesson key={assignment.id} courseCode={course.code} assignmentId={assignment.id} /> : <DemoTrainingLesson key={assignment.id} courseCode={course.code} />}
         </div>;
       })()}
     </div>}
