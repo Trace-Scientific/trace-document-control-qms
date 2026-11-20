@@ -7,7 +7,7 @@ import { GovernedEvidenceFilePicker } from "./governed-evidence-file-picker";
 type Employee = { id: string; employeeNumber: string; firstName: string; lastName: string; status: "ACTIVE" | "INACTIVE" | "TERMINATED" };
 type Program = { id: string; code: string; title: string; active: boolean; validityDays: number | null };
 type Element = { id: string; programId: string; code: string; title: string; required: boolean; sortOrder: number };
-type Assessment = CompetencyAssessmentSummary & { fileId: string | null; notes: string | null };
+type Assessment = CompetencyAssessmentSummary & { fileId: string | null; notes: string | null; assessorUserId: string };
 type Section = "status" | "history" | "assessment" | "programs" | "elements";
 
 function formatDateOnly(value: string | null) {
@@ -92,7 +92,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     const program = programById.get(assessment.programId);
     const searchText = [
       employee?.employeeNumber, employee?.firstName, employee?.lastName,
-      program?.code, program?.title, assessment.outcome,
+      program?.code, program?.title, assessment.outcome, assessment.assessorUserId,
     ].filter(Boolean).join(" ").toLowerCase();
     return historyWords.every((word) => searchText.includes(word));
   }).sort((a, b) => b.assessedAt.localeCompare(a.assessedAt));
@@ -210,11 +210,11 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     </div>}
 
     {section === "history" && <div className="module-section-stack">
-      <div className="section-heading"><div><h3>Competency assessment history</h3><p>Review recorded assessments in newest-first order. Historical decisions remain unchanged when reassessments are added.</p></div></div>
+      <div className="section-heading"><div><h3>Competency assessment history</h3><p>Review recorded assessments in newest-first order. Historical decisions remain unchanged when reassessments are added. The assessor account identifier is recorded with each decision for audit traceability.</p></div></div>
       <label>Search assessment history<input type="search" value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Employee, program, or outcome" /></label>
-      <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Assessed at</th><th>Outcome</th><th>Expires</th><th>Evidence</th></tr></thead><tbody>
-        {visibleHistory.map((assessment) => { const employee = employeeById.get(assessment.employeeId); const program = programById.get(assessment.programId); return <tr key={assessment.id}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assessment.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : assessment.programId}</td><td>{new Date(assessment.assessedAt).toLocaleString()}</td><td>{assessment.outcome}</td><td>{formatDateOnly(assessment.expiresAt)}</td><td>{assessment.fileId ? "Attached" : "—"}</td></tr>; })}
-        {!visibleHistory.length && <tr><td colSpan={6}>{assessments.length ? "No assessments match this search." : "No competency assessments have been recorded."}</td></tr>}
+      <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Assessed at</th><th>Assessor account</th><th>Outcome</th><th>Expires</th><th>Evidence</th></tr></thead><tbody>
+        {visibleHistory.map((assessment) => { const employee = employeeById.get(assessment.employeeId); const program = programById.get(assessment.programId); return <tr key={assessment.id}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assessment.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : assessment.programId}</td><td>{new Date(assessment.assessedAt).toLocaleString()}</td><td><code>{assessment.assessorUserId}</code></td><td>{assessment.outcome}</td><td>{formatDateOnly(assessment.expiresAt)}</td><td>{assessment.fileId ? "Attached" : "—"}</td></tr>; })}
+        {!visibleHistory.length && <tr><td colSpan={7}>{assessments.length ? "No assessments match this search." : "No competency assessments have been recorded."}</td></tr>}
       </tbody></table></div>
     </div>}
 
