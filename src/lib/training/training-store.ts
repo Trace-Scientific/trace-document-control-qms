@@ -91,6 +91,16 @@ export class PrismaTrainingStore implements TrainingStore {
   async completeAssignment(input: { organizationId: string; assignmentId: string; completedAt: Date; result: string | null; fileId: string | null; actorUserId: string }): Promise<TrainingCompletionRecord> {
     return db.$transaction(async (tx) => {
       const assignment = await this.lockAssignable(tx, input.organizationId, input.assignmentId);
+      // Demo practice quiz scores are never completion evidence on their own.
+      // Require a governed file before a manager can record completion for demo courses.
+      const courseRows = await tx.$queryRaw<Array<{ code: string }>>(Prisma.sql`
+        SELECT "code" FROM "TrainingCourse"
+        WHERE "organizationId" = ${input.organizationId}::uuid AND "id" = ${assignment.courseId}::uuid
+      `);
+      if (!courseRows[0]) throw new Error("Access denied");
+      if (["DEMO-HIPAA", "DEMO-BBP"].includes(courseRows[0].code) && !input.fileId) {
+        throw new TrainingEligibilityError("Demo training completion requires a governed evidence file; practice quiz scores are not completion evidence");
+      }
       if (input.fileId) {
         const file = await tx.fileObject.findFirst({ where: { organizationId: input.organizationId, id: input.fileId }, select: { status: true } });
         if (!file) throw new Error("Access denied");
