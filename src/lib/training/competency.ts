@@ -45,7 +45,9 @@ export class CompetencyService {
     requireAuthorization(context,{organizationId:input.organizationId,permission:"training.manage"});
     const notes=input.notes?.trim()||null, expiresAt=input.expiresAt??null;
     if(Number.isNaN(input.assessedAt.getTime())) throw new CompetencyValidationError("Competency assessment date is invalid");
+    if(input.assessedAt.getTime()>Date.now()) throw new CompetencyValidationError("Competency assessment date cannot be in the future");
     if(expiresAt&&Number.isNaN(expiresAt.getTime())) throw new CompetencyValidationError("Competency expiration date is invalid");
+    if(expiresAt&&expiresAt.getTime()<input.assessedAt.getTime()) throw new CompetencyValidationError("Competency expiration cannot precede the assessment date");
     if((notes?.length??0)>2000) throw new CompetencyValidationError("Competency assessment notes are too long");
     if(input.elementResults.length===0) throw new CompetencyValidationError("Competency assessment requires element results");
     const ids=new Set<string>();
