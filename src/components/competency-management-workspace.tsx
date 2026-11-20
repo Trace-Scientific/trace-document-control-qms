@@ -144,6 +144,20 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     }, event.currentTarget);
   }
 
+  function startReassessment(assessment: Assessment) {
+    const employee = employees.find((item) => item.id === assessment.employeeId);
+    const program = programs.find((item) => item.id === assessment.programId);
+    if (!employee || employee.status !== "ACTIVE" || !program?.active) {
+      setNotice("Reassessment requires an active employee and active competency program.");
+      return;
+    }
+    setElements([]);
+    setSelectedEmployeeId(assessment.employeeId);
+    setSelectedProgramId(assessment.programId);
+    setNotice("Employee and program selected. Record new observations and an independent assessment decision; prior results are not copied.");
+    setSection("assessment");
+  }
+
   async function createAssessment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
     const programId = String(form.get("programId"));
@@ -220,9 +234,9 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
       <label>Evidence status<select value={historyEvidenceFilter} onChange={(event) => setHistoryEvidenceFilter(event.target.value as "ALL" | "ATTACHED" | "MISSING")}><option value="ALL">All assessments</option><option value="ATTACHED">Evidence attached</option><option value="MISSING">Missing evidence attachment</option></select></label>
       <label>Assessment decision<select value={historyOutcomeFilter} onChange={(event) => setHistoryOutcomeFilter(event.target.value as "ALL" | "QUALIFIED" | "CONDITIONAL" | "NOT_QUALIFIED")}><option value="ALL">All decisions</option><option value="QUALIFIED">Qualified</option><option value="CONDITIONAL">Conditional</option><option value="NOT_QUALIFIED">Not qualified</option></select></label>
       <p>Showing {visibleHistory.length} of {assessments.length} assessments. Missing an attachment does not by itself determine competency status.</p>
-      <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Assessed at</th><th>Assessor account</th><th>Outcome</th><th>Expires</th><th>Evidence file ID</th><th>Assessment notes</th></tr></thead><tbody>
-        {visibleHistory.map((assessment) => { const employee = employeeById.get(assessment.employeeId); const program = programById.get(assessment.programId); return <tr key={assessment.id}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assessment.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : assessment.programId}</td><td>{new Date(assessment.assessedAt).toLocaleString()}</td><td><code>{assessment.assessorUserId}</code></td><td>{assessment.outcome}</td><td>{formatDateOnly(assessment.expiresAt)}</td><td>{assessment.fileId ? <code>{assessment.fileId}</code> : "Not attached"}</td><td>{assessment.notes || "—"}</td></tr>; })}
-        {!visibleHistory.length && <tr><td colSpan={8}>{assessments.length ? "No assessments match this search." : "No competency assessments have been recorded."}</td></tr>}
+      <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Assessed at</th><th>Assessor account</th><th>Outcome</th><th>Expires</th><th>Evidence file ID</th><th>Assessment notes</th>{canManage && <th>Next action</th>}</tr></thead><tbody>
+        {visibleHistory.map((assessment) => { const employee = employeeById.get(assessment.employeeId); const program = programById.get(assessment.programId); return <tr key={assessment.id}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assessment.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : assessment.programId}</td><td>{new Date(assessment.assessedAt).toLocaleString()}</td><td><code>{assessment.assessorUserId}</code></td><td>{assessment.outcome}</td><td>{formatDateOnly(assessment.expiresAt)}</td><td>{assessment.fileId ? <code>{assessment.fileId}</code> : "Not attached"}</td><td>{assessment.notes || "—"}</td>{canManage && <td><button type="button" disabled={busy || employee?.status !== "ACTIVE" || !program?.active} onClick={() => startReassessment(assessment)}>Reassess</button></td>}</tr>; })}
+        {!visibleHistory.length && <tr><td colSpan={canManage ? 9 : 8}>{assessments.length ? "No assessments match this search." : "No competency assessments have been recorded."}</td></tr>}
       </tbody></table></div>
     </div>}
 
