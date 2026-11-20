@@ -35,6 +35,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
   const [section, setSection] = useState<Section>("status");
   const [historyQuery, setHistoryQuery] = useState("");
   const [historyEvidenceFilter, setHistoryEvidenceFilter] = useState<"ALL" | "ATTACHED" | "MISSING">("ALL");
+  const [historyOutcomeFilter, setHistoryOutcomeFilter] = useState<"ALL" | "QUALIFIED" | "CONDITIONAL" | "NOT_QUALIFIED">("ALL");
 
   async function fetchWorkspaceData() {
     const responses = await Promise.all([
@@ -89,6 +90,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
   const dashboard = useMemo(() => competencyDashboard(rollups), [rollups]);
   const historyWords = historyQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const visibleHistory = [...assessments].filter((assessment) => {
+    if (historyOutcomeFilter !== "ALL" && assessment.outcome !== historyOutcomeFilter) return false;
     if (historyEvidenceFilter === "ATTACHED" && !assessment.fileId) return false;
     if (historyEvidenceFilter === "MISSING" && assessment.fileId) return false;
     const employee = employeeById.get(assessment.employeeId);
@@ -216,6 +218,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
       <div className="section-heading"><div><h3>Competency assessment history</h3><p>Review recorded assessments in newest-first order. Historical decisions remain unchanged when reassessments are added. The assessor account identifier, evidence file reference, and recorded notes are shown for audit traceability. An attached file reference alone does not establish competency.</p></div></div>
       <label>Search assessment history<input type="search" value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Employee, program, assessor, notes, or evidence ID" /></label>
       <label>Evidence status<select value={historyEvidenceFilter} onChange={(event) => setHistoryEvidenceFilter(event.target.value as "ALL" | "ATTACHED" | "MISSING")}><option value="ALL">All assessments</option><option value="ATTACHED">Evidence attached</option><option value="MISSING">Missing evidence attachment</option></select></label>
+      <label>Assessment decision<select value={historyOutcomeFilter} onChange={(event) => setHistoryOutcomeFilter(event.target.value as "ALL" | "QUALIFIED" | "CONDITIONAL" | "NOT_QUALIFIED")}><option value="ALL">All decisions</option><option value="QUALIFIED">Qualified</option><option value="CONDITIONAL">Conditional</option><option value="NOT_QUALIFIED">Not qualified</option></select></label>
       <p>Showing {visibleHistory.length} of {assessments.length} assessments. Missing an attachment does not by itself determine competency status.</p>
       <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Assessed at</th><th>Assessor account</th><th>Outcome</th><th>Expires</th><th>Evidence file ID</th><th>Assessment notes</th></tr></thead><tbody>
         {visibleHistory.map((assessment) => { const employee = employeeById.get(assessment.employeeId); const program = programById.get(assessment.programId); return <tr key={assessment.id}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assessment.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : assessment.programId}</td><td>{new Date(assessment.assessedAt).toLocaleString()}</td><td><code>{assessment.assessorUserId}</code></td><td>{assessment.outcome}</td><td>{formatDateOnly(assessment.expiresAt)}</td><td>{assessment.fileId ? <code>{assessment.fileId}</code> : "Not attached"}</td><td>{assessment.notes || "—"}</td></tr>; })}
