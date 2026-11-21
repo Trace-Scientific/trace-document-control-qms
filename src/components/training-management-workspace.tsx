@@ -47,6 +47,8 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [assignmentStatus, setAssignmentStatus] = useState("ALL");
   const [completionQuery, setCompletionQuery] = useState("");
   const [completionEvidence, setCompletionEvidence] = useState("ALL");
+  const [courseQuery, setCourseQuery] = useState("");
+  const [courseStatusFilter, setCourseStatusFilter] = useState("ACTIVE");
   const [previewCourseCode, setPreviewCourseCode] = useState("");
   const [previewAssignmentId, setPreviewAssignmentId] = useState("");
 
@@ -101,6 +103,11 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const todayStart = useMemo(() => dateOnlyTime(today) ?? 0, [today]);
   const activeAssignments = assignments.filter((assignment) => assignment.status === "ASSIGNED");
   const activeCourses = courses.filter((course) => course.active);
+  const visibleCourses = courses.filter((course) => {
+    if (courseStatusFilter === "ACTIVE" && !course.active) return false;
+    if (courseStatusFilter === "INACTIVE" && course.active) return false;
+    return courseQuery.trim().toLowerCase().split(/\s+/).filter(Boolean).every((word) => `${course.code} ${course.title}`.toLowerCase().includes(word));
+  });
   const eligibleEmployees = employees.filter((employee) => employee.status === "ACTIVE");
   const completionAssignment = assignments.find((assignment) => assignment.id === completionAssignmentId);
   const completionCourseCode = completionAssignment ? courseById.get(completionAssignment.courseId)?.code : undefined;
@@ -275,12 +282,15 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     {section === "lifecycle" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Lifecycle actions</h3><p>Cancel or reassign active training without rewriting assignment history.</p></div></div><form onSubmit={lifecycle} className="admin-form"><label>Assignment<select name="assignmentId" defaultValue="" required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label><label>Action<select name="action" defaultValue="cancel"><option value="cancel">Cancel</option><option value="reassign">Reassign</option></select></label><label>Reason<input name="reason" maxLength={500} required /></label><label>New assigned date<input name="assignedAt" type="date" /></label><label>New due date<input name="dueAt" type="date" /></label><button type="submit" disabled={busy}>Apply lifecycle action</button></form></div>}
 
     {section === "courses" && <div className="module-section-stack">
-      <div className="section-heading"><div><h3>Course configuration</h3></div></div>
+      <div className="section-heading"><div><h3>Training course library</h3><p>Find and assign courses configured for your organization. Demonstration lessons are practice only and do not grant CE credit.</p></div></div>
+      <label>Search courses by title or code<input type="search" value={courseQuery} onChange={(event) => setCourseQuery(event.target.value)} placeholder="Search training courses" /></label>
+      <label>Course availability<select value={courseStatusFilter} onChange={(event) => setCourseStatusFilter(event.target.value)}><option value="ACTIVE">Active courses</option><option value="ALL">All courses</option><option value="INACTIVE">Inactive courses</option></select></label>
+      <p role="status">Showing {visibleCourses.length} of {courses.length} configured courses.</p>
       <div className="table-wrap">
         <table aria-label="Training courses">
           <thead><tr><th>Course code</th><th>Course title</th><th>Lessons</th><th>Status</th>{canManage && <th>Action</th>}</tr></thead>
           <tbody>
-            {courses.map((course) => <tr key={course.id}>
+            {visibleCourses.map((course) => <tr key={course.id}>
               <td>{course.code}</td>
               <td>{course.title}</td>
               <td>{["DEMO-HIPAA", "DEMO-BBP"].includes(course.code) && <button type="button" className="training-lesson-button" aria-expanded={previewCourseCode === course.code} onClick={() => setPreviewCourseCode(previewCourseCode === course.code ? "" : course.code)}>{previewCourseCode === course.code ? "Hide lessons" : "View lessons & quiz"}</button>}</td>
@@ -289,7 +299,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
                 <button type="button" disabled={busy} aria-label={`Assign ${course.title}`} onClick={() => startAssignment(course)}>Assign course</button>
               )}</td>}
             </tr>)}
-            {!courses.length && <tr><td colSpan={canManage ? 5 : 4}>No training courses have been created.</td></tr>}
+            {!visibleCourses.length && <tr><td colSpan={canManage ? 5 : 4}>{courses.length ? "No courses match your filters." : "No training courses have been created."}</td></tr>}
           </tbody>
         </table>
       </div>
