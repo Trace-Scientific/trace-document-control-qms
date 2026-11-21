@@ -24,13 +24,15 @@ export function DemoTrainingLesson({ courseCode, assignmentId, employeePractice 
     finally { setChecking(false); }
   }
   if (!course) return null;
-  const answered = course.questions.every((_, index) => answers[index] !== undefined);
+  const answeredCount = course.questions.filter((_, index) => answers[index] !== undefined).length;
+  const answered = answeredCount === course.questions.length;
   const score = course.questions.filter((question, index) => answers[index] === question.correct).length;
   return <section className="module-section-stack" aria-label={course.title}>
     <h4>{course.title} — Interactive awareness preview</h4>
     <p><strong>Demonstration only:</strong> {course.disclaimer}</p>
     {course.lessons.map((lesson) => <article key={lesson.heading}><h5>{lesson.heading}</h5><p>{lesson.content}</p></article>)}
     <h5>Knowledge check</h5>
+    <p role="status">Questions answered: {answeredCount} of {course.questions.length}. {answered ? "Ready to check your practice answers." : "Answer every question to enable scoring."}</p>
     <p>Practice questions only. {assignmentId ? "A server-verified practice score is available. Nothing is recorded as an employee completion." : "Answers and scores stay in this browser view and do not create a training completion or credential."}</p>
     {course.questions.map((question, index) => <fieldset key={question.prompt} disabled={showResults}>
       <legend>{index + 1}. {question.prompt}</legend>
