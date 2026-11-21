@@ -9,6 +9,7 @@ type ListedVersion = { id: string; documentNumber: string; title: string; revisi
 
 export function DocumentFolderManager() {
   const [open, setOpen] = useState(false), [data, setData] = useState<Payload | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const [expandedFolderIds, setExpandedFolderIds] = useState<string[]>([]);
   const [parentFolderId, setParentFolderId] = useState(""), [selectedFolderId, setSelectedFolderId] = useState(""), [folderQuery, setFolderQuery] = useState(""), [folderResults, setFolderResults] = useState<ListedVersion[]>([]);
 
   async function load() {
@@ -32,7 +33,7 @@ export function DocumentFolderManager() {
   const depth = useMemo(() => { const map = new Map(data?.folders.map((folder) => [folder.id, folder]) ?? []); return (folder: Folder) => { let value = 0, current = folder.parentFolderId; const seen = new Set<string>(); while (current && !seen.has(current)) { seen.add(current); value += 1; current = map.get(current)?.parentFolderId ?? null; } return value; }; }, [data]);
 
   return <>
-    <button type="button" style={{ position: "fixed", right: 1020, bottom: 24, zIndex: 80 }} onClick={async () => { setOpen(true); await load(); }}>Document folders</button>
+    <button type="button" onClick={async () => { setOpen(true); await load(); }}>Browse document folders</button>
     {open && <div className="modal-backdrop" role="presentation"><div className="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="folder-manager-title">
       <div className="modal-head"><div><h2 id="folder-manager-title">Document folders</h2><p>Create, move, browse, and safely remove folders without changing revision history.</p></div><button aria-label="Close document folders" onClick={() => setOpen(false)}>×</button></div>
       <div className="detail-body">
@@ -40,7 +41,7 @@ export function DocumentFolderManager() {
         <form className="approval-box" onSubmit={create}><label>Parent folder<select value={parentFolderId} onChange={(event) => setParentFolderId(event.target.value)}><option value="">Root</option>{data?.folders.map((folder) => <option key={folder.id} value={folder.id}>{"— ".repeat(depth(folder))}{folder.name}</option>)}</select></label><label>Folder name<input name="name" required maxLength={120} /></label><button className="primary-button" disabled={busy} type="submit">Create folder</button></form>
         {busy && !data ? <p>Loading folders…</p> : <div className="template-layout">
           <div><strong>Folder hierarchy</strong>{data?.folders.length ? data.folders.map((folder) => <div key={folder.id} style={{ paddingLeft: depth(folder) * 18, marginTop: 10 }}>
-            <button type="button" onClick={() => void browse(folder.id)} style={{ marginRight: 8 }}>📁 {folder.name}</button> · {folder.documentCount} document(s)
+            <button type="button" aria-expanded={expandedFolderIds.includes(folder.id)} onClick={() => { setExpandedFolderIds((current) => current.includes(folder.id) ? current.filter((id) => id !== folder.id) : [...current, folder.id]); void browse(folder.id); }} style={{ marginRight: 8 }}>{expandedFolderIds.includes(folder.id) ? "▾" : "▸"} 📁 {folder.name}</button> · {folder.documentCount} document(s)
             <select aria-label={`Move ${folder.name}`} value={folder.parentFolderId ?? ""} onChange={(event) => void command({ operation: "MOVE_FOLDER", folderId: folder.id, parentFolderId: event.target.value || null })}><option value="">Root</option>{data.folders.filter((candidate) => candidate.id !== folder.id).map((candidate) => <option key={candidate.id} value={candidate.id}>{"— ".repeat(depth(candidate))}{candidate.name}</option>)}</select>
             <button type="button" disabled={busy} onClick={() => void command({ operation: "DELETE_FOLDER", folderId: folder.id })}>Delete</button>
           </div>) : <p>No folders yet.</p>}</div>
