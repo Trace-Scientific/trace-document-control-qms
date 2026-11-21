@@ -974,6 +974,16 @@ export function DocumentControlDashboard({
               </div>
             </article>
           </section>
+          {view === "Documents" && live?.capabilities.canManageReviews && (
+            <section className="panel documents-panel" aria-labelledby="document-review-action-summary">
+              <div className="panel-header"><div><h2 id="document-review-action-summary">Document review action summary</h2><p>Current-version periodic review obligations for this organization. Approval signatures and employee acknowledgments are tracked separately.</p></div></div>
+              <div className="metric-grid">
+                <article><div><span>PERIODIC REVIEWS OPEN</span><strong>{live.reviews.length}</strong><small>Current effective versions</small></div></article>
+                <article><div><span>PERIODIC REVIEWS OVERDUE</span><strong>{live.reviews.filter((review) => review.overdue).length}</strong><small>Past review due date</small></div></article>
+              </div>
+              <button type="button" onClick={() => setView("Review queue")}>View periodic review queue</button>
+            </section>
+          )}
           {view === "Documents" && (
             <>
             {live?.capabilities.canReadDocuments && <ControlledFiles canCreate={live.capabilities.canCreateDocuments} />}
