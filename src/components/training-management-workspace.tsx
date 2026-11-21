@@ -7,6 +7,8 @@ import { DemoTrainingLesson } from "./demo-training-lesson";
 type Employee = { id: string; employeeNumber: string; firstName: string; lastName: string; status: "ACTIVE" | "INACTIVE" | "TERMINATED" };
 type Course = { id: string; code: string; title: string; active: boolean };
 type Assignment = { id: string; employeeId: string; courseId: string; assignedAt: string; dueAt: string | null; status: "ASSIGNED" | "COMPLETED" | "CANCELLED"; cancelReason?: string | null };
+type CourseReview = { id: string; courseId: string; draftRevision: number; status: string; submittedAt: string; submittedByUserId?: string };
+type CoursePublication = { id: string; courseId: string; version: number; publishedAt: string };
 type Completion = { id: string; assignmentId: string; employeeId: string; courseId: string; completedAt: string; result: string | null; fileId: string | null; evidenceName?: string | null; evidenceStatus?: string | null };
 const courseCategories = ["All categories", "Safety & OSHA", "HIPAA & Compliance", "Quality Management", "Laboratory Operations", "Clinical Disciplines", "Leadership & Personnel", "Uncategorized"] as const;
 type CourseCategory = (typeof courseCategories)[number];
@@ -72,6 +74,10 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [draftCourseId, setDraftCourseId] = useState("");
   const [draftRevision, setDraftRevision] = useState(0);
   const [draftSaving, setDraftSaving] = useState(false);
+  const [courseReviews, setCourseReviews] = useState<CourseReview[]>([]);
+  const [coursePublications, setCoursePublications] = useState<CoursePublication[]>([]);
+  const [reviewReason, setReviewReason] = useState<Record<string, string>>({});
+  const [reviewBusyId, setReviewBusyId] = useState("");
   const [previewCourseCode, setPreviewCourseCode] = useState("");
   const [previewAssignmentId, setPreviewAssignmentId] = useState("");
 
@@ -261,6 +267,34 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     } catch { setNotice("Unable to submit course review."); } finally { setDraftSaving(false); }
   }
 
+  async function refreshCourseReviews() {
+    if (!canManage) return;
+    try {
+      const [reviewResponse, publicationResponse] = await Promise.all([
+        fetch("/api/training/course-reviews", { credentials: "same-origin", cache: "no-store" }),
+        fetch("/api/training/course-publications", { credentials: "same-origin", cache: "no-store" }),
+      ]);
+      if (!reviewResponse.ok || !publicationResponse.ok) { setNotice("Course review queue could not be loaded."); return; }
+      const [reviewBody, publicationBody] = await Promise.all([reviewResponse.json(), publicationResponse.json()]);
+      setCourseReviews(reviewBody.data ?? []);
+      setCoursePublications(publicationBody.data ?? []);
+    } catch { setNotice("Course review queue could not be loaded."); }
+  }
+
+  async function decideCourseReview(review: CourseReview, decision: "APPROVE" | "REJECT") {
+    const reason = (reviewReason[review.id] ?? "").trim();
+    if (decision === "REJECT" && !reason) { setNotice("Enter a reason before rejecting a course."); return; }
+    setReviewBusyId(review.id);
+    try {
+      const response = await fetch("/api/training/course-publications", { method: "POST", headers: { "content-type": "application/json" },
+        credentials: "same-origin", body: JSON.stringify({ reviewId: review.id, decision, reason: reason || undefined }) });
+      const body = await response.json();
+      if (!response.ok) { setNotice(body.error || "Course review decision failed."); return; }
+      setNotice(decision === "APPROVE" ? "Course version approved and published. Employee delivery and grading are not enabled yet." : "Course review rejected.");
+      await refreshCourseReviews();
+    } catch { setNotice("Course review decision failed."); } finally { setReviewBusyId(""); }
+  }
+
   function startAssignment(course: Course) {
     setPreselectedCourseId(course.id);
     setNotice("");
@@ -405,6 +439,19 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     {section === "lifecycle" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Lifecycle actions</h3><p>Cancel or reassign active training without rewriting assignment history.</p></div></div><form onSubmit={lifecycle} className="admin-form"><label>Assignment<select name="assignmentId" defaultValue="" required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label><label>Action<select name="action" defaultValue="cancel"><option value="cancel">Cancel</option><option value="reassign">Reassign</option></select></label><label>Reason<input name="reason" maxLength={500} required /></label><label>New assigned date<input name="assignedAt" type="date" /></label><label>New due date<input name="dueAt" type="date" /></label><button type="submit" disabled={busy}>Apply lifecycle action</button></form></div>}
 
     {section === "courses" && <div className="module-section-stack">
+      {canManage && <section aria-label="Course review and publication queue">
+        <h3>Course review and publication</h3>
+        <p>Review saved course submissions before publishing. Submitters cannot decide their own submissions. Publishing does not enable employee quizzes or certificates.</p>
+        <button type="button" onClick={() => { void refreshCourseReviews(); }} disabled={!!reviewBusyId}>Refresh review queue</button>
+        <p role="status">{courseReviews.filter((review) => review.status === "PENDING").length} pending review(s); {coursePublications.length} published version(s) shown.</p>
+        {courseReviews.filter((review) => review.status === "PENDING").map((review) => <div key={review.id}>
+          <p><strong>{courses.find((course) => course.id === review.courseId)?.title ?? "Course"}</strong> — draft revision {review.draftRevision}, submitted {new Date(review.submittedAt).toLocaleDateString()}</p>
+          <label>Decision reason (required for rejection)<input maxLength={1000} value={reviewReason[review.id] ?? ""} onChange={(event) => setReviewReason((current) => ({ ...current, [review.id]: event.target.value }))} /></label>
+          <button type="button" disabled={!!reviewBusyId} onClick={() => { void decideCourseReview(review, "APPROVE"); }}>Approve and publish</button>
+          <button type="button" disabled={!!reviewBusyId} onClick={() => { void decideCourseReview(review, "REJECT"); }}>Reject</button>
+        </div>)}
+        {coursePublications.length > 0 && <p>Latest published versions: {coursePublications.slice(0, 10).map((publication) => `${courses.find((course) => course.id === publication.courseId)?.code ?? "Course"} v${publication.version}`).join(", ")}</p>}
+      </section>}
       <div className="section-heading"><div><h3>Training course library</h3><p>Find and assign courses configured for your organization. Demonstration lessons are practice only and do not grant CE credit.</p></div></div>
       <label>Search courses by title or code<input type="search" value={courseQuery} onChange={(event) => setCourseQuery(event.target.value)} placeholder="Search training courses" /></label>
       <label>Course availability<select value={courseStatusFilter} onChange={(event) => setCourseStatusFilter(event.target.value)}><option value="ACTIVE">Active courses</option><option value="ALL">All courses</option><option value="INACTIVE">Inactive courses</option></select></label>
