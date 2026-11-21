@@ -8,18 +8,24 @@ import { resolveOwnTrainingAssignments } from "@/lib/training/employee-training"
 export async function GET(request: NextRequest) {
   try {
     const context = await authenticateRequest(request);
+    if (request.nextUrl.searchParams.size !== 0) return NextResponse.json({ error: "Unexpected query parameters" }, { status: 422 });
     const employees = await db.$queryRaw<Array<{ id: string; status: string }>>(Prisma.sql`
-      SELECT "id", "status"::text AS "status" FROM "Employee"
-      WHERE "organizationId" = ${context.organizationId}::uuid
-        AND "userId" = ${context.userId}::uuid
+      SELECT e."id", e."status"::text AS "status"
+      FROM "TrainingEmployeeUserLink" l
+      INNER JOIN "Employee" e
+        ON e."organizationId" = l."organizationId" AND e."id" = l."employeeId"
+      WHERE l."organizationId" = ${context.organizationId}::uuid
+        AND l."userId" = ${context.userId}::uuid
     `);
     const employee = resolveOwnTrainingAssignments(context, employees);
-    const assignments = await db.$queryRaw<Array<{ id: string; courseCode: string; courseTitle: string; assignedAt: Date; dueAt: Date | null; status: string }>>(Prisma.sql`
+    const assignments = await db.$queryRaw<Array<{ id: string; courseCode: string; courseTitle: string; assignedAt: Date; dueAt: Date | null; status: string; publishedVersion: number | null }>>(Prisma.sql`
       SELECT a."id", c."code" AS "courseCode", c."title" AS "courseTitle",
-             a."assignedAt", a."dueAt", a."status"::text AS "status"
+             a."assignedAt", a."dueAt", a."status"::text AS "status", p."version" AS "publishedVersion"
       FROM "TrainingAssignment" a
       INNER JOIN "TrainingCourse" c
         ON c."organizationId" = a."organizationId" AND c."id" = a."courseId"
+      LEFT JOIN "TrainingCoursePublishedVersion" p
+        ON p."organizationId" = a."organizationId" AND p."courseId" = a."courseId" AND p."id" = a."publishedVersionId"
       WHERE a."organizationId" = ${context.organizationId}::uuid
         AND a."employeeId" = ${employee.id}::uuid
       ORDER BY a."assignedAt" DESC
