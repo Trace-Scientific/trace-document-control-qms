@@ -60,6 +60,9 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [courseQuery, setCourseQuery] = useState("");
   const [courseStatusFilter, setCourseStatusFilter] = useState("ACTIVE");
   const [courseCategoryFilter, setCourseCategoryFilter] = useState<CourseCategory>("All categories");
+  const [draftLessonTitle, setDraftLessonTitle] = useState("");
+  const [draftLessonContent, setDraftLessonContent] = useState("");
+  const [draftLessons, setDraftLessons] = useState<{ heading: string; content: string }[]>([]);
   const [previewCourseCode, setPreviewCourseCode] = useState("");
   const [previewAssignmentId, setPreviewAssignmentId] = useState("");
 
@@ -149,6 +152,16 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     if (completionEvidence === "MISSING") return !completion.fileId;
     return true;
   });
+
+  function addDraftLesson(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const heading = draftLessonTitle.trim();
+    const content = draftLessonContent.trim();
+    if (!heading || !content) return;
+    setDraftLessons((current) => [...current, { heading, content }]);
+    setDraftLessonTitle("");
+    setDraftLessonContent("");
+  }
 
   function startAssignment(course: Course) {
     setPreselectedCourseId(course.id);
@@ -318,6 +331,16 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
         </table>
       </div>
       {previewCourseCode && <DemoTrainingLesson key={previewCourseCode} courseCode={previewCourseCode} />}
+      {canManage && <div className="approval-box"><h4>Lesson draft composer</h4><p>Prepare original course lessons before a governed lesson storage and publishing workflow is available. Drafts stay in this browser session and are not assigned, saved to the server, or completion eligible.</p>
+        <form onSubmit={addDraftLesson} className="admin-form">
+          <label>Lesson heading<input value={draftLessonTitle} onChange={(event) => setDraftLessonTitle(event.target.value)} maxLength={160} required /></label>
+          <label>Lesson content<textarea value={draftLessonContent} onChange={(event) => setDraftLessonContent(event.target.value)} maxLength={10000} required /></label>
+          <button type="submit">Add lesson to local draft</button>
+        </form>
+        <p role="status">{draftLessons.length} draft lesson(s) in this session.</p>
+        {draftLessons.map((lesson, index) => <div key={index}><strong>{index + 1}. {lesson.heading}</strong><p>{lesson.content}</p><button type="button" onClick={() => setDraftLessons((current) => current.filter((_, position) => position !== index))}>Remove lesson {index + 1}</button></div>)}
+        {draftLessons.length > 0 && <button type="button" onClick={() => { const blob = new Blob([JSON.stringify({ format: "trace-qms-course-draft-v1", status: "LOCAL_DRAFT_NOT_PUBLISHED", lessons: draftLessons }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = "trace-qms-course-lessons-draft.json"; link.click(); URL.revokeObjectURL(url); }}>Export local lesson draft (JSON)</button>}
+      </div>}
       {canManage && <form onSubmit={createCourse} className="admin-form">
         <label>Course code<input name="code" maxLength={80} required /></label>
         <label>Course title<input name="title" maxLength={240} required /></label>
