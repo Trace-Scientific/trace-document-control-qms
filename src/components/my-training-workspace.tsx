@@ -45,11 +45,13 @@ export function MyTrainingWorkspace() {
     if (leftPending !== rightPending) return leftPending - rightPending;
     return (left.dueAt?.slice(0, 10) || "9999-12-31").localeCompare(right.dueAt?.slice(0, 10) || "9999-12-31");
   });
+  const nextPractice = orderedAssignments.find((assignment) => assignment.status === "ASSIGNED" && ["DEMO-HIPAA", "DEMO-BBP"].includes(assignment.courseCode));
   const formatDate = (value: string | null) => value ? value.slice(0, 10) : "Not set";
   return <section className="module-section-stack" aria-labelledby="my-training-heading">
     <div className="section-heading"><div><h2 id="my-training-heading">My Training</h2><p>Your assigned training, based on your signed-in employee account.</p></div></div>
     <p>Demonstration lessons and quizzes are for practice only. They do not create completion records or training credentials.</p>
     {!loading && !error && assignments.length > 0 && <p role="status">{pendingCount} assigned course{pendingCount === 1 ? "" : "s"} remaining; {overdueCount} overdue. Active assignments appear first, with the earliest due dates at the top.</p>}
+    {!loading && !error && nextPractice && <div className="module-action-row"><button type="button" aria-expanded={selectedId === nextPractice.id} onClick={() => setSelectedId(selectedId === nextPractice.id ? "" : nextPractice.id)}>{selectedId === nextPractice.id ? "Close next practice" : `Start next practice: ${nextPractice.courseTitle}`}</button></div>}
     {loading && <p role="status">Loading your assignments…</p>}
     {error && <p role="alert">{error}</p>}
     {!loading && !error && !assignments.length && <p>No training assignments are linked to your employee account.</p>}
