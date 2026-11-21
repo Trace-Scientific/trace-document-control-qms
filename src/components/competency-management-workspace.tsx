@@ -36,6 +36,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
   const [busy, setBusy] = useState(false);
   const [section, setSection] = useState<Section>("status");
   const [historyQuery, setHistoryQuery] = useState("");
+  const [historyEmployeeId, setHistoryEmployeeId] = useState("");
   const [historyFromDate, setHistoryFromDate] = useState("");
   const [historyToDate, setHistoryToDate] = useState("");
   const [historyEvidenceFilter, setHistoryEvidenceFilter] = useState<"ALL" | "ATTACHED" | "MISSING">("ALL");
@@ -113,6 +114,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
   const dashboard = useMemo(() => competencyDashboard(rollups), [rollups]);
   const historyWords = historyQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const visibleHistory = [...assessments].filter((assessment) => {
+    if (historyEmployeeId && assessment.employeeId !== historyEmployeeId) return false;
     const assessmentDate = assessment.assessedAt.slice(0, 10);
     if (historyFromDate && assessmentDate < historyFromDate) return false;
     if (historyToDate && assessmentDate > historyToDate) return false;
@@ -257,6 +259,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     {section === "history" && <div className="module-section-stack">
       <div className="section-heading"><div><h3>Competency assessment history</h3><p>Review recorded assessments in newest-first order. Historical decisions remain unchanged when reassessments are added. The assessor account identifier, evidence file reference, and recorded notes are shown for audit traceability. An attached file reference alone does not establish competency.</p></div></div>
       <label>Search assessment history<input type="search" value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Employee, program, assessor, notes, or evidence filename" /></label>
+      <label>Employee<select value={historyEmployeeId} onChange={(event) => setHistoryEmployeeId(event.target.value)}><option value="">All employees</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.lastName}, {employee.firstName}</option>)}</select></label>
       <label>Evidence status<select value={historyEvidenceFilter} onChange={(event) => setHistoryEvidenceFilter(event.target.value as "ALL" | "ATTACHED" | "MISSING")}><option value="ALL">All assessments</option><option value="ATTACHED">Evidence attached</option><option value="MISSING">Missing evidence attachment</option></select></label>
       <div className="module-action-row">
         {[30, 90].map((days) => <button key={days} type="button" onClick={() => { const end = new Date(); const start = new Date(end); start.setDate(start.getDate() - (days - 1)); const localDay = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; setHistoryFromDate(localDay(start)); setHistoryToDate(localDay(end)); }}>Last {days} days</button>)}
@@ -265,7 +268,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
       <label>Assessed on or before<input type="date" value={historyToDate} min={historyFromDate || undefined} onChange={(event) => setHistoryToDate(event.target.value)} /></label>
       <label>Assessment decision<select value={historyOutcomeFilter} onChange={(event) => setHistoryOutcomeFilter(event.target.value as "ALL" | "QUALIFIED" | "CONDITIONAL" | "NOT_QUALIFIED")}><option value="ALL">All decisions</option><option value="QUALIFIED">Qualified</option><option value="CONDITIONAL">Conditional</option><option value="NOT_QUALIFIED">Not qualified</option></select></label>
       <p>Showing {visibleHistory.length} of {assessments.length} assessments. Missing an attachment does not by itself determine competency status.</p>
-      {(historyQuery || historyFromDate || historyToDate || historyEvidenceFilter !== "ALL" || historyOutcomeFilter !== "ALL") && <button type="button" onClick={() => { setHistoryQuery(""); setHistoryFromDate(""); setHistoryToDate(""); setHistoryEvidenceFilter("ALL"); setHistoryOutcomeFilter("ALL"); }}>Clear history filters</button>}
+      {(historyQuery || historyEmployeeId || historyFromDate || historyToDate || historyEvidenceFilter !== "ALL" || historyOutcomeFilter !== "ALL") && <button type="button" onClick={() => { setHistoryQuery(""); setHistoryEmployeeId(""); setHistoryFromDate(""); setHistoryToDate(""); setHistoryEvidenceFilter("ALL"); setHistoryOutcomeFilter("ALL"); }}>Clear history filters</button>}
       <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Assessed at</th><th>Assessor account</th><th>Outcome</th><th>Expires</th><th>Evidence file</th><th>Assessment notes</th>{canManage && <th>Next action</th>}</tr></thead><tbody>
         {visibleHistory.map((assessment) => { const employee = employeeById.get(assessment.employeeId); const program = programById.get(assessment.programId); return <tr key={assessment.id}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assessment.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : assessment.programId}</td><td>{new Date(assessment.assessedAt).toLocaleString()}</td><td><code>{assessment.assessorUserId}</code></td><td>{assessment.outcome}</td><td>{formatDateOnly(assessment.expiresAt)}</td><td>{assessment.fileId ? <><span>{evidenceById.get(assessment.fileId)?.originalName || "File reference"}</span> <code>{assessment.fileId}</code></> : "Not attached"}</td><td>{assessment.notes || "—"}</td>{canManage && <td><button type="button" disabled={busy || employee?.status !== "ACTIVE" || !program?.active} onClick={() => startReassessmentFromHistory(assessment)}>Reassess</button></td>}</tr>; })}
         {!visibleHistory.length && <tr><td colSpan={canManage ? 9 : 8}>{assessments.length ? "No assessments match this search." : "No competency assessments have been recorded."}</td></tr>}
