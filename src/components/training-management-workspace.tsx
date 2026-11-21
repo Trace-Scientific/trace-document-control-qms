@@ -8,6 +8,16 @@ type Employee = { id: string; employeeNumber: string; firstName: string; lastNam
 type Course = { id: string; code: string; title: string; active: boolean };
 type Assignment = { id: string; employeeId: string; courseId: string; assignedAt: string; dueAt: string | null; status: "ASSIGNED" | "COMPLETED" | "CANCELLED"; cancelReason?: string | null };
 type Completion = { id: string; assignmentId: string; employeeId: string; courseId: string; completedAt: string; result: string | null; fileId: string | null; evidenceName?: string | null; evidenceStatus?: string | null };
+const courseCategories = ["All categories", "Safety & OSHA", "HIPAA & Compliance", "Quality Management", "Laboratory Operations", "Clinical Disciplines", "Leadership & Personnel", "Uncategorized"] as const;
+type CourseCategory = (typeof courseCategories)[number];
+
+function courseCategory(course: Course): CourseCategory {
+  // Classification is only for the two explicitly authored demo courses; do not infer regulated categories from titles.
+  if (course.code === "DEMO-HIPAA") return "HIPAA & Compliance";
+  if (course.code === "DEMO-BBP") return "Safety & OSHA";
+  return "Uncategorized";
+}
+
 type Section = "assignments" | "assign" | "complete" | "history" | "lifecycle" | "courses";
 
 function formatDateOnly(value: string | null) {
@@ -49,6 +59,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [completionEvidence, setCompletionEvidence] = useState("ALL");
   const [courseQuery, setCourseQuery] = useState("");
   const [courseStatusFilter, setCourseStatusFilter] = useState("ACTIVE");
+  const [courseCategoryFilter, setCourseCategoryFilter] = useState<CourseCategory>("All categories");
   const [previewCourseCode, setPreviewCourseCode] = useState("");
   const [previewAssignmentId, setPreviewAssignmentId] = useState("");
 
@@ -104,6 +115,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const activeAssignments = assignments.filter((assignment) => assignment.status === "ASSIGNED");
   const activeCourses = courses.filter((course) => course.active);
   const visibleCourses = courses.filter((course) => {
+    if (courseCategoryFilter !== "All categories" && courseCategory(course) !== courseCategoryFilter) return false;
     if (courseStatusFilter === "ACTIVE" && !course.active) return false;
     if (courseStatusFilter === "INACTIVE" && course.active) return false;
     return courseQuery.trim().toLowerCase().split(/\s+/).filter(Boolean).every((word) => `${course.code} ${course.title}`.toLowerCase().includes(word));
@@ -285,21 +297,23 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
       <div className="section-heading"><div><h3>Training course library</h3><p>Find and assign courses configured for your organization. Demonstration lessons are practice only and do not grant CE credit.</p></div></div>
       <label>Search courses by title or code<input type="search" value={courseQuery} onChange={(event) => setCourseQuery(event.target.value)} placeholder="Search training courses" /></label>
       <label>Course availability<select value={courseStatusFilter} onChange={(event) => setCourseStatusFilter(event.target.value)}><option value="ACTIVE">Active courses</option><option value="ALL">All courses</option><option value="INACTIVE">Inactive courses</option></select></label>
-      <p role="status">Showing {visibleCourses.length} of {courses.length} configured courses.</p>
+      <label>Course category<select value={courseCategoryFilter} onChange={(event) => setCourseCategoryFilter(event.target.value as CourseCategory)}>{courseCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+      <p role="status">Showing {visibleCourses.length} of {courses.length} configured courses. Categories are currently assigned only to the two demonstration courses; other courses remain Uncategorized until governed category metadata is implemented.</p>
       <div className="table-wrap">
         <table aria-label="Training courses">
-          <thead><tr><th>Course code</th><th>Course title</th><th>Lessons</th><th>Status</th>{canManage && <th>Action</th>}</tr></thead>
+          <thead><tr><th>Course code</th><th>Course title</th><th>Category</th><th>Lessons</th><th>Status</th>{canManage && <th>Action</th>}</tr></thead>
           <tbody>
             {visibleCourses.map((course) => <tr key={course.id}>
               <td>{course.code}</td>
               <td>{course.title}</td>
+              <td>{courseCategory(course)}</td>
               <td>{["DEMO-HIPAA", "DEMO-BBP"].includes(course.code) && <button type="button" className="training-lesson-button" aria-expanded={previewCourseCode === course.code} onClick={() => setPreviewCourseCode(previewCourseCode === course.code ? "" : course.code)}>{previewCourseCode === course.code ? "Hide lessons" : "View lessons & quiz"}</button>}</td>
               <td>{course.active ? "Active" : "Inactive"}</td>
               {canManage && <td>{course.active && (
                 <button type="button" disabled={busy} aria-label={`Assign ${course.title}`} onClick={() => startAssignment(course)}>Assign course</button>
               )}</td>}
             </tr>)}
-            {!visibleCourses.length && <tr><td colSpan={canManage ? 5 : 4}>{courses.length ? "No courses match your filters." : "No training courses have been created."}</td></tr>}
+            {!visibleCourses.length && <tr><td colSpan={canManage ? 6 : 5}>{courses.length ? "No courses match your filters." : "No training courses have been created."}</td></tr>}
           </tbody>
         </table>
       </div>
