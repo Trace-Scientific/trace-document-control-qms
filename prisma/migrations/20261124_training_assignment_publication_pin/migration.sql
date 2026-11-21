@@ -3,6 +3,10 @@
 ALTER TABLE "TrainingAssignment"
   ADD COLUMN "publishedVersionId" uuid;
 
+-- PostgreSQL requires a unique referenced key for the tenant-scoped foreign key.
+ALTER TABLE "TrainingCoursePublishedVersion"
+  ADD CONSTRAINT "TrainingCoursePublishedVersion_org_id_key" UNIQUE ("organizationId", "id");
+
 ALTER TABLE "TrainingAssignment"
   ADD CONSTRAINT "TrainingAssignment_publishedVersion_tenant_fk"
   FOREIGN KEY ("organizationId", "publishedVersionId")
