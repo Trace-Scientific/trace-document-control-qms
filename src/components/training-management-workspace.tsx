@@ -63,6 +63,12 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [draftLessonTitle, setDraftLessonTitle] = useState("");
   const [draftLessonContent, setDraftLessonContent] = useState("");
   const [draftLessons, setDraftLessons] = useState<{ heading: string; content: string }[]>([]);
+  const [draftQuestions, setDraftQuestions] = useState<{ prompt: string; choices: string[]; correctIndex: number; explanation: string }[]>([]);
+  const [draftQuestionPrompt, setDraftQuestionPrompt] = useState("");
+  const [draftQuestionChoices, setDraftQuestionChoices] = useState(["", "", "", ""]);
+  const [draftQuestionCorrect, setDraftQuestionCorrect] = useState(0);
+  const [draftQuestionExplanation, setDraftQuestionExplanation] = useState("");
+  const [draftPassingScore, setDraftPassingScore] = useState(80);
   const [previewCourseCode, setPreviewCourseCode] = useState("");
   const [previewAssignmentId, setPreviewAssignmentId] = useState("");
 
@@ -161,6 +167,22 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     setDraftLessons((current) => [...current, { heading, content }]);
     setDraftLessonTitle("");
     setDraftLessonContent("");
+  }
+
+  function addDraftQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const prompt = draftQuestionPrompt.trim();
+    const choices = draftQuestionChoices.map((choice) => choice.trim());
+    if (!prompt || choices.some((choice) => !choice) || new Set(choices.map((choice) => choice.toLowerCase())).size !== 4) {
+      setNotice("Provide a question and four distinct, nonempty answer choices.");
+      return;
+    }
+    setDraftQuestions((current) => [...current, { prompt, choices, correctIndex: draftQuestionCorrect, explanation: draftQuestionExplanation.trim() }]);
+    setDraftQuestionPrompt("");
+    setDraftQuestionChoices(["", "", "", ""]);
+    setDraftQuestionCorrect(0);
+    setDraftQuestionExplanation("");
+    setNotice("");
   }
 
   function startAssignment(course: Course) {
@@ -339,7 +361,18 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
         </form>
         <p role="status">{draftLessons.length} draft lesson(s) in this session.</p>
         {draftLessons.map((lesson, index) => <div key={index}><strong>{index + 1}. {lesson.heading}</strong><p>{lesson.content}</p><button type="button" onClick={() => setDraftLessons((current) => current.filter((_, position) => position !== index))}>Remove lesson {index + 1}</button></div>)}
-        {draftLessons.length > 0 && <button type="button" onClick={() => { const blob = new Blob([JSON.stringify({ format: "trace-qms-course-draft-v1", status: "LOCAL_DRAFT_NOT_PUBLISHED", lessons: draftLessons }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = "trace-qms-course-lessons-draft.json"; link.click(); URL.revokeObjectURL(url); }}>Export local lesson draft (JSON)</button>}
+        <h4>Assessment draft</h4><p>Quiz questions and answer keys are local drafts only. They are not secure assessments or employee completion evidence.</p>
+        <label>Proposed passing score (%)<input type="number" min={1} max={100} value={draftPassingScore} onChange={(event) => setDraftPassingScore(Number(event.target.value))} /></label>
+        <form onSubmit={addDraftQuestion} className="admin-form">
+          <label>Question<input value={draftQuestionPrompt} onChange={(event) => setDraftQuestionPrompt(event.target.value)} maxLength={500} required /></label>
+          {draftQuestionChoices.map((choice, index) => <label key={index}>Answer choice {index + 1}<input value={choice} onChange={(event) => setDraftQuestionChoices((current) => current.map((item, position) => position === index ? event.target.value : item))} maxLength={300} required /></label>)}
+          <label>Correct answer<select value={draftQuestionCorrect} onChange={(event) => setDraftQuestionCorrect(Number(event.target.value))}>{draftQuestionChoices.map((_, index) => <option key={index} value={index}>Choice {index + 1}</option>)}</select></label>
+          <label>Answer explanation<textarea value={draftQuestionExplanation} onChange={(event) => setDraftQuestionExplanation(event.target.value)} maxLength={1000} /></label>
+          <button type="submit">Add question to local draft</button>
+        </form>
+        <p role="status">{draftQuestions.length} draft question(s).</p>
+        {draftQuestions.map((question, index) => <div key={index}><strong>{index + 1}. {question.prompt}</strong><p>Correct answer: {question.choices[question.correctIndex]}</p><button type="button" onClick={() => setDraftQuestions((current) => current.filter((_, position) => position !== index))}>Remove question {index + 1}</button></div>)}
+        {(draftLessons.length > 0 || draftQuestions.length > 0) && <button type="button" onClick={() => { const blob = new Blob([JSON.stringify({ format: "trace-qms-course-draft-v2", status: "LOCAL_DRAFT_NOT_PUBLISHED", lessons: draftLessons, assessment: { passingScorePercent: draftPassingScore, questions: draftQuestions } }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = "trace-qms-course-lessons-draft.json"; link.click(); URL.revokeObjectURL(url); }}>Export local lesson draft (JSON)</button>}
       </div>}
       {canManage && <form onSubmit={createCourse} className="admin-form">
         <label>Course code<input name="code" maxLength={80} required /></label>
