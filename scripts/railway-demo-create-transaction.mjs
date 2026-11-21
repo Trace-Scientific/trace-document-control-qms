@@ -4,8 +4,31 @@
 export const DEMO_CREATE_CONFIRMATION = "CREATE-INACTIVE-SYNTHETIC-TRACE-DEMO-LAB";
 export const DEMO_CREATE_LOGIN_CODE = "trace-demo-lab";
 
-export async function createInactiveSyntheticDemoOrganization(db, { authorization } = {}) {
-  if (authorization !== DEMO_CREATE_CONFIRMATION) {
+export const ISOLATION_DEMO_CREATE_CONFIRMATION = "CREATE-INACTIVE-SYNTHETIC-TRACE-DEMO-LAB-B";
+export const ISOLATION_DEMO_LOGIN_CODE = "trace-demo-lab-b";
+export const ISOLATION_DEMO_DISPLAY_NAME = "Trace Scientific Demo Laboratory B (SYNTHETIC)";
+export const ISOLATION_DEMO_LEGAL_NAME = "Trace Scientific Demonstration Laboratory B - Fictional";
+
+export function createInactiveSyntheticDemoOrganization(db, { authorization } = {}) {
+  return createInactiveOrganization(db, authorization, {
+    confirmation: DEMO_CREATE_CONFIRMATION,
+    loginCode: DEMO_CREATE_LOGIN_CODE,
+    legalName: "Trace Scientific Demonstration Laboratory - Fictional",
+    displayName: "Trace Scientific Demo Laboratory (SYNTHETIC)",
+  });
+}
+
+export function createInactiveIsolationDemoOrganization(db, { authorization } = {}) {
+  return createInactiveOrganization(db, authorization, {
+    confirmation: ISOLATION_DEMO_CREATE_CONFIRMATION,
+    loginCode: ISOLATION_DEMO_LOGIN_CODE,
+    legalName: ISOLATION_DEMO_LEGAL_NAME,
+    displayName: ISOLATION_DEMO_DISPLAY_NAME,
+  });
+}
+
+async function createInactiveOrganization(db, authorization, { confirmation, loginCode, legalName, displayName }) {
+  if (authorization !== confirmation) {
     throw new Error("Demo create: independent explicit authorization is required");
   }
   if (!db || typeof db.$transaction !== "function") {
@@ -13,21 +36,21 @@ export async function createInactiveSyntheticDemoOrganization(db, { authorizatio
   }
   return db.$transaction(async (tx) => {
     const existing = await tx.organization.findUnique({
-      where: { loginCode: DEMO_CREATE_LOGIN_CODE },
+      where: { loginCode },
       select: { id: true },
     });
     if (existing) throw new Error("Demo create: target login code already exists");
     const organization = await tx.organization.create({
       data: {
-        loginCode: DEMO_CREATE_LOGIN_CODE,
-        legalName: "Trace Scientific Demonstration Laboratory - Fictional",
-        displayName: "Trace Scientific Demo Laboratory (SYNTHETIC)",
+        loginCode,
+        legalName,
+        displayName,
         timezone: "America/Los_Angeles",
         active: false,
       },
       select: { id: true, loginCode: true, active: true },
     });
-    if (organization.active !== false || organization.loginCode !== DEMO_CREATE_LOGIN_CODE) {
+    if (organization.active !== false || organization.loginCode !== loginCode) {
       throw new Error("Demo create: returned organization violates inactive synthetic constraints");
     }
     await tx.auditEvent.create({
@@ -39,7 +62,7 @@ export async function createInactiveSyntheticDemoOrganization(db, { authorizatio
         reason: "Synthetic demonstration environment provisioning",
         metadata: {
           synthetic: true,
-          loginCode: DEMO_CREATE_LOGIN_CODE,
+          loginCode,
           provisioningVersion: 1,
           initialStatus: "INACTIVE",
         },

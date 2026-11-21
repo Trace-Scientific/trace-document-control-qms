@@ -1,4 +1,5 @@
 import { DEMO_RAILWAY, assertRailwayDemoIdentity, assertRailwayDemoDatabaseUrl } from "./railway-demo-identity.mjs";
+import { DEMO_CREATE_LOGIN_CODE, ISOLATION_DEMO_LOGIN_CODE } from "./railway-demo-create-transaction.mjs";
 
 export function validateDemoDatabaseIdentityRows(rows) {
   if (!Array.isArray(rows) || rows.length !== 1) {
@@ -23,7 +24,15 @@ export function validateDemoDatabaseIdentityRows(rows) {
   return { databaseName: row.database_name, databaseUser: row.database_user };
 }
 
-export async function inspectRailwayDemoDatabase({ db, identity, databaseUrl, expectedServiceId = DEMO_RAILWAY.applicationServiceId }) {
+export function inspectRailwayDemoDatabase(options) {
+  return inspectDatabase(options, DEMO_CREATE_LOGIN_CODE);
+}
+
+export function inspectRailwayIsolationDemoDatabase(options) {
+  return inspectDatabase(options, ISOLATION_DEMO_LOGIN_CODE);
+}
+
+async function inspectDatabase({ db, identity, databaseUrl, expectedServiceId = DEMO_RAILWAY.applicationServiceId }, loginCode) {
   assertRailwayDemoIdentity(identity, expectedServiceId);
   assertRailwayDemoDatabaseUrl(databaseUrl);
   if (!db || typeof db.$queryRaw !== "function") {
@@ -36,14 +45,14 @@ export async function inspectRailwayDemoDatabase({ db, identity, databaseUrl, ex
   `;
   const database = validateDemoDatabaseIdentityRows(rows);
   const existing = await db.organization.findUnique({
-    where: { loginCode: "trace-demo-lab" },
+    where: { loginCode },
     select: { id: true, loginCode: true, active: true },
   });
   return {
     mode: "READ_ONLY",
     environmentId: DEMO_RAILWAY.environmentId,
     database,
-    proposedLoginCode: "trace-demo-lab",
+    proposedLoginCode: loginCode,
     canCreate: existing === null,
     existingOrganization: existing ? { loginCode: existing.loginCode, active: existing.active } : null,
     writesPerformed: 0,
