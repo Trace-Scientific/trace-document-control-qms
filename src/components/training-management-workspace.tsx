@@ -7,6 +7,7 @@ import { DemoTrainingLesson } from "./demo-training-lesson";
 type Employee = { id: string; employeeNumber: string; firstName: string; lastName: string; status: "ACTIVE" | "INACTIVE" | "TERMINATED" };
 type Course = { id: string; code: string; title: string; active: boolean };
 type Assignment = { id: string; employeeId: string; courseId: string; assignedAt: string; dueAt: string | null; status: "ASSIGNED" | "COMPLETED" | "CANCELLED"; cancelReason?: string | null };
+type LearnerCourseContent = { publicationId: string; version: number; lessons: { heading: string; content: string }[]; assessment: { passingScorePercent: number; questions: { prompt: string; choices: string[] }[] } };
 type ReviewContent = { lessons: { heading: string; content: string }[]; assessment: { passingScorePercent: number; questions: { prompt: string; choices: string[]; correctIndex: number; explanation: string }[] } };
 type CourseReview = { id: string; courseId: string; draftRevision: number; status: string; submittedAt: string; submittedByUserId?: string };
 type CoursePublication = { id: string; courseId: string; version: number; publishedAt: string };
@@ -82,6 +83,9 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [inspectedReviewId, setInspectedReviewId] = useState("");
   const [inspectedReviewContent, setInspectedReviewContent] = useState<ReviewContent | null>(null);
   const [previewCourseCode, setPreviewCourseCode] = useState("");
+  const [publishedPreviewCourseId, setPublishedPreviewCourseId] = useState("");
+  const [publishedPreview, setPublishedPreview] = useState<LearnerCourseContent | null>(null);
+  const [publishedPreviewBusy, setPublishedPreviewBusy] = useState(false);
   const [previewAssignmentId, setPreviewAssignmentId] = useState("");
 
   async function load() {
@@ -282,6 +286,20 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
       setCourseReviews(reviewBody.data ?? []);
       setCoursePublications(publicationBody.data ?? []);
     } catch { setNotice("Course review queue could not be loaded."); }
+  }
+
+  async function previewPublishedCourse(course: Course) {
+    if (publishedPreviewCourseId === course.id) { setPublishedPreviewCourseId(""); setPublishedPreview(null); return; }
+    setPublishedPreview(null);
+    setPublishedPreviewCourseId("");
+    setPublishedPreviewBusy(true);
+    try {
+      const response = await fetch("/api/training/published-content?courseId=" + encodeURIComponent(course.id), { credentials: "same-origin", cache: "no-store" });
+      const body = await response.json();
+      if (!response.ok) { setNotice(body.error || "Published course could not be loaded."); return; }
+      setPublishedPreview(body.data as LearnerCourseContent);
+      setPublishedPreviewCourseId(course.id);
+    } catch { setNotice("Published course could not be loaded."); } finally { setPublishedPreviewBusy(false); }
   }
 
   async function inspectCourseReview(review: CourseReview) {
@@ -496,7 +514,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
               <td>{course.code}</td>
               <td>{course.title}</td>
               <td>{courseCategory(course)}</td>
-              <td>{["DEMO-HIPAA", "DEMO-BBP"].includes(course.code) && <button type="button" className="training-lesson-button" aria-expanded={previewCourseCode === course.code} onClick={() => setPreviewCourseCode(previewCourseCode === course.code ? "" : course.code)}>{previewCourseCode === course.code ? "Hide lessons" : "View lessons & quiz"}</button>}</td>
+              <td><button type="button" className="training-lesson-button" disabled={publishedPreviewBusy} aria-expanded={publishedPreviewCourseId === course.id} onClick={() => { void previewPublishedCourse(course); }}>{publishedPreviewCourseId === course.id ? "Hide published course" : "View published course"}</button> {["DEMO-HIPAA", "DEMO-BBP"].includes(course.code) && <button type="button" className="training-lesson-button" aria-expanded={previewCourseCode === course.code} onClick={() => setPreviewCourseCode(previewCourseCode === course.code ? "" : course.code)}>{previewCourseCode === course.code ? "Hide lessons" : "View lessons & quiz"}</button>}</td>
               <td>{course.active ? "Active" : "Inactive"}</td>
               {canManage && <td>{course.active && (
                 <button type="button" disabled={busy} aria-label={`Assign ${course.title}`} onClick={() => startAssignment(course)}>Assign course</button>
@@ -506,8 +524,15 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
           </tbody>
         </table>
       </div>
+      {publishedPreviewCourseId && publishedPreview && <section aria-label="Published course preview">
+        <h4>Published course version {publishedPreview.version} — read-only preview</h4>
+        <p>This is approved content, not an employee assessment or completion record. Answers are not provided.</p>
+        {publishedPreview.lessons.map((lesson, index) => <div key={index}><h5>{index + 1}. {lesson.heading}</h5><p style={{ whiteSpace: "pre-wrap" }}>{lesson.content}</p></div>)}
+        <h5>Assessment preview — {publishedPreview.assessment.questions.length} questions, passing score {publishedPreview.assessment.passingScorePercent}%</h5>
+        {publishedPreview.assessment.questions.map((question, index) => <div key={index}><strong>{index + 1}. {question.prompt}</strong><ol>{question.choices.map((choice, choiceIndex) => <li key={choiceIndex}>{choice}</li>)}</ol></div>)}
+      </section>}
       {previewCourseCode && <DemoTrainingLesson key={previewCourseCode} courseCode={previewCourseCode} />}
-      {canManage && <div className="approval-box"><h4>Lesson draft composer</h4><p>Prepare original course lessons before a governed lesson storage and publishing workflow is available. Drafts stay in this browser session and are not assigned, saved to the server, or completion eligible.</p>
+      {canManage && <div className="approval-box"><h4>Lesson draft composer</h4><p>Create original course lessons and quizzes, save a controlled draft, and submit it for separate review. Local edits remain unsaved until you select Save draft. Only approved published versions are available in the published course preview; this composer does not record employee completion.</p>
         <label>Course for saved draft<select value={draftCourseId} onChange={(event) => { setDraftCourseId(event.target.value); setDraftRevision(0); setDraftLessons([]); setDraftQuestions([]); setDraftPassingScore(80); setNotice("Course changed. Load its saved draft before editing."); }}><option value="">Select a course</option>{courses.map((course) => <option key={course.id} value={course.id}>{course.code} — {course.title}</option>)}</select></label>
         <p>Saved revision: {draftRevision || "Not loaded"}. Drafts are not published.</p>
         <button type="button" disabled={!draftCourseId || draftSaving} onClick={() => { void loadSavedDraft(); }}>Load saved draft</button>
