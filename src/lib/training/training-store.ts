@@ -155,13 +155,26 @@ export class PrismaTrainingStore implements TrainingStore {
       throw new TrainingValidationError("An identical active training assignment already exists. Use lifecycle reassign for governed schedule changes instead of duplicating the same assignment.");
     }
 
+    // New assignments must reference an approved, immutable publication.
+    // The course lock serializes this lookup with publication creation and prevents version drift.
+    await tx.$queryRaw(Prisma.sql`
+      SELECT "id" FROM "TrainingCourse"
+      WHERE "organizationId" = ${input.organizationId}::uuid AND "id" = ${input.courseId}::uuid FOR UPDATE
+    `);
+    const published = await tx.$queryRaw<Array<{ id: string; version: number }>>(Prisma.sql`
+      SELECT "id", "version" FROM "TrainingCoursePublishedVersion"
+      WHERE "organizationId" = ${input.organizationId}::uuid AND "courseId" = ${input.courseId}::uuid
+      ORDER BY "version" DESC LIMIT 1
+    `);
+    if (!published[0]) throw new TrainingEligibilityError("Publish an approved course version before assigning this course.");
+
     const rows = await tx.$queryRaw<TrainingAssignmentRecord[]>(Prisma.sql`
-      INSERT INTO "TrainingAssignment" ("organizationId", "employeeId", "courseId", "assignedAt", "dueAt", "createdByUserId")
-      VALUES (${input.organizationId}::uuid, ${input.employeeId}::uuid, ${input.courseId}::uuid, ${input.assignedAt}, ${input.dueAt}, ${input.actorUserId}::uuid) RETURNING *
+      INSERT INTO "TrainingAssignment" ("organizationId", "employeeId", "courseId", "publishedVersionId", "assignedAt", "dueAt", "createdByUserId")
+      VALUES (${input.organizationId}::uuid, ${input.employeeId}::uuid, ${input.courseId}::uuid, ${published[0].id}::uuid, ${input.assignedAt}, ${input.dueAt}, ${input.actorUserId}::uuid) RETURNING *
     `);
     const assignment = rows[0];
     if (!assignment) throw new TrainingValidationError("Training assignment could not be created");
-    if (audit) await tx.auditEvent.create({ data: { organizationId: input.organizationId, actorUserId: input.actorUserId, action: "TRAINING_ASSIGNED", entityType: "TrainingAssignment", entityId: assignment.id, metadata: { employeeId: assignment.employeeId, courseId: assignment.courseId, dueAt: assignment.dueAt?.toISOString() ?? null } } });
+    if (audit) await tx.auditEvent.create({ data: { organizationId: input.organizationId, actorUserId: input.actorUserId, action: "TRAINING_ASSIGNED", entityType: "TrainingAssignment", entityId: assignment.id, metadata: { employeeId: assignment.employeeId, courseId: assignment.courseId, publishedVersionId: published[0].id, publishedVersion: published[0].version, dueAt: assignment.dueAt?.toISOString() ?? null } } });
     return assignment;
   }
 }
