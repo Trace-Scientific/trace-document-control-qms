@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { authenticateRequest, AuthenticationRequiredError } from "@/lib/security/authenticated-request";
 import { requireAuthorization } from "@/lib/security/authorization";
 
+const reviewLookup = z.object({ reviewId: z.string().uuid() });
 const inputSchema = z.object({ courseId: z.string().uuid(), expectedRevision: z.number().int().positive() }).strict();
 type Review = { id: string; courseId: string; draftRevision: number; status: string; submittedAt: Date };
 class ReviewConflict extends Error {}
@@ -13,8 +14,22 @@ export async function GET(request: NextRequest) {
   try {
     const context = await authenticateRequest(request);
     requireAuthorization(context, { organizationId: context.organizationId, permission: "training.manage" });
+    if (request.nextUrl.searchParams.has("reviewId")) {
+      const { reviewId } = reviewLookup.parse(Object.fromEntries(request.nextUrl.searchParams));
+      const details = await db.$queryRaw<Array<Review & { submittedByUserId: string; content: unknown; currentRevision: number }>>(Prisma.sql`
+        SELECT r."id", r."courseId", r."draftRevision", r."status", r."submittedAt",
+          r."submittedByUserId", d."content", d."revision" AS "currentRevision"
+        FROM "TrainingCourseReview" r
+        INNER JOIN "TrainingCourseDraft" d ON d."organizationId" = r."organizationId" AND d."courseId" = r."courseId"
+        WHERE r."organizationId" = ${context.organizationId}::uuid AND r."id" = ${reviewId}::uuid
+      `);
+      const review = details[0];
+      if (!review) return NextResponse.json({ error: "Review not found" }, { status: 404 });
+      if (review.currentRevision !== review.draftRevision) return NextResponse.json({ error: "Submitted content is outdated. Request a new review submission." }, { status: 409 });
+      return NextResponse.json({ data: review });
+    }
     const rows = await db.$queryRaw<Review[]>(Prisma.sql`
-      SELECT "id", "courseId", "draftRevision", "status", "submittedAt"
+      SELECT "id", "courseId", "draftRevision", "status", "submittedAt", "submittedByUserId"
       FROM "TrainingCourseReview" WHERE "organizationId" = ${context.organizationId}::uuid
       ORDER BY "submittedAt" DESC LIMIT 100
     `);

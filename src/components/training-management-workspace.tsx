@@ -7,6 +7,7 @@ import { DemoTrainingLesson } from "./demo-training-lesson";
 type Employee = { id: string; employeeNumber: string; firstName: string; lastName: string; status: "ACTIVE" | "INACTIVE" | "TERMINATED" };
 type Course = { id: string; code: string; title: string; active: boolean };
 type Assignment = { id: string; employeeId: string; courseId: string; assignedAt: string; dueAt: string | null; status: "ASSIGNED" | "COMPLETED" | "CANCELLED"; cancelReason?: string | null };
+type ReviewContent = { lessons: { heading: string; content: string }[]; assessment: { passingScorePercent: number; questions: { prompt: string; choices: string[]; correctIndex: number; explanation: string }[] } };
 type CourseReview = { id: string; courseId: string; draftRevision: number; status: string; submittedAt: string; submittedByUserId?: string };
 type CoursePublication = { id: string; courseId: string; version: number; publishedAt: string };
 type Completion = { id: string; assignmentId: string; employeeId: string; courseId: string; completedAt: string; result: string | null; fileId: string | null; evidenceName?: string | null; evidenceStatus?: string | null };
@@ -78,6 +79,8 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [coursePublications, setCoursePublications] = useState<CoursePublication[]>([]);
   const [reviewReason, setReviewReason] = useState<Record<string, string>>({});
   const [reviewBusyId, setReviewBusyId] = useState("");
+  const [inspectedReviewId, setInspectedReviewId] = useState("");
+  const [inspectedReviewContent, setInspectedReviewContent] = useState<ReviewContent | null>(null);
   const [previewCourseCode, setPreviewCourseCode] = useState("");
   const [previewAssignmentId, setPreviewAssignmentId] = useState("");
 
@@ -281,7 +284,24 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     } catch { setNotice("Course review queue could not be loaded."); }
   }
 
+  async function inspectCourseReview(review: CourseReview) {
+    setInspectedReviewId("");
+    setInspectedReviewContent(null);
+    setReviewBusyId(review.id);
+    try {
+      const response = await fetch("/api/training/course-reviews?reviewId=" + encodeURIComponent(review.id), { credentials: "same-origin", cache: "no-store" });
+      const body = await response.json();
+      if (!response.ok) { setNotice(body.error || "Unable to inspect submitted content."); return; }
+      const content = body.data?.content as ReviewContent | undefined;
+      if (!Array.isArray(content?.lessons) || !Array.isArray(content?.assessment?.questions)) { setNotice("Submitted course content is invalid."); return; }
+      setInspectedReviewId(review.id);
+      setInspectedReviewContent(content);
+      setNotice("Review the complete lesson and assessment content before deciding.");
+    } catch { setNotice("Unable to inspect submitted content."); } finally { setReviewBusyId(""); }
+  }
+
   async function decideCourseReview(review: CourseReview, decision: "APPROVE" | "REJECT") {
+    if (inspectedReviewId !== review.id || !inspectedReviewContent) { setNotice("Inspect the submitted content before making a decision."); return; }
     const reason = (reviewReason[review.id] ?? "").trim();
     if (decision === "REJECT" && !reason) { setNotice("Enter a reason before rejecting a course."); return; }
     setReviewBusyId(review.id);
@@ -291,6 +311,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
       const body = await response.json();
       if (!response.ok) { setNotice(body.error || "Course review decision failed."); return; }
       setNotice(decision === "APPROVE" ? "Course version approved and published. Employee delivery and grading are not enabled yet." : "Course review rejected.");
+      setInspectedReviewId(""); setInspectedReviewContent(null);
       await refreshCourseReviews();
     } catch { setNotice("Course review decision failed."); } finally { setReviewBusyId(""); }
   }
@@ -446,9 +467,19 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
         <p role="status">{courseReviews.filter((review) => review.status === "PENDING").length} pending review(s); {coursePublications.length} published version(s) shown.</p>
         {courseReviews.filter((review) => review.status === "PENDING").map((review) => <div key={review.id}>
           <p><strong>{courses.find((course) => course.id === review.courseId)?.title ?? "Course"}</strong> — draft revision {review.draftRevision}, submitted {new Date(review.submittedAt).toLocaleDateString()}</p>
+          <button type="button" disabled={!!reviewBusyId} onClick={() => { void inspectCourseReview(review); }}>Inspect submitted lessons and quiz</button>
+          {inspectedReviewId === review.id && inspectedReviewContent && <div aria-label="Submitted course content">
+            <h4>Submitted lessons ({inspectedReviewContent.lessons.length})</h4>
+            {inspectedReviewContent.lessons.map((lesson, index) => <div key={index}><strong>{index + 1}. {lesson.heading}</strong><p style={{ whiteSpace: "pre-wrap" }}>{lesson.content}</p></div>)}
+            <h4>Submitted assessment ({inspectedReviewContent.assessment.questions.length} questions; pass score {inspectedReviewContent.assessment.passingScorePercent}%)</h4>
+            {inspectedReviewContent.assessment.questions.map((question, index) => <div key={index}><strong>{index + 1}. {question.prompt}</strong>
+              <ol>{question.choices.map((choice, choiceIndex) => <li key={choiceIndex}>{choice}{choiceIndex === question.correctIndex ? " (correct answer)" : ""}</li>)}</ol>
+              <p>Explanation: {question.explanation}</p>
+            </div>)}
+          </div>}
           <label>Decision reason (required for rejection)<input maxLength={1000} value={reviewReason[review.id] ?? ""} onChange={(event) => setReviewReason((current) => ({ ...current, [review.id]: event.target.value }))} /></label>
-          <button type="button" disabled={!!reviewBusyId} onClick={() => { void decideCourseReview(review, "APPROVE"); }}>Approve and publish</button>
-          <button type="button" disabled={!!reviewBusyId} onClick={() => { void decideCourseReview(review, "REJECT"); }}>Reject</button>
+          <button type="button" disabled={!!reviewBusyId || inspectedReviewId !== review.id} onClick={() => { void decideCourseReview(review, "APPROVE"); }}>Approve and publish</button>
+          <button type="button" disabled={!!reviewBusyId || inspectedReviewId !== review.id} onClick={() => { void decideCourseReview(review, "REJECT"); }}>Reject</button>
         </div>)}
         {coursePublications.length > 0 && <p>Latest published versions: {coursePublications.slice(0, 10).map((publication) => `${courses.find((course) => course.id === publication.courseId)?.code ?? "Course"} v${publication.version}`).join(", ")}</p>}
       </section>}
