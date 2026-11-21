@@ -5,11 +5,14 @@ import { DemoTrainingLesson } from "./demo-training-lesson";
 
 type Completion = { id: string; assignmentId: string; courseCode: string; courseTitle: string; completedAt: string; result: string | null };
 
-type Assignment = { id: string; courseCode: string; courseTitle: string; assignedAt: string; dueAt: string | null; status: string };
+type PublishedLessons = { version: number; lessons: { heading: string; content: string }[]; assessment: { passingScorePercent: number; questions: unknown[] } };
+type Assignment = { id: string; courseCode: string; courseTitle: string; assignedAt: string; dueAt: string | null; status: string; publishedVersion?: number | null };
 
 export function MyTrainingWorkspace() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [selectedId, setSelectedId] = useState("");
+  const [published, setPublished] = useState<PublishedLessons | null>(null);
+  const [lessonError, setLessonError] = useState("");
   const [completions, setCompletions] = useState<Completion[]>([]);
   const [completionLoading, setCompletionLoading] = useState(true);
   const [completionError, setCompletionError] = useState("");
@@ -35,6 +38,19 @@ export function MyTrainingWorkspace() {
       .finally(() => { if (!controller.signal.aborted) setCompletionLoading(false); });
     return () => controller.abort();
   }, []);
+  async function viewApprovedLessons(id: string) {
+    setSelectedId(id);
+    setPublished(null);
+    setLessonError("");
+    try {
+      const response = await fetch(`/api/training/my-assignment-content?assignmentId=${encodeURIComponent(id)}`, { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw new Error("Approved lessons are unavailable for this assignment.");
+      const body: { data: PublishedLessons } = await response.json();
+      setPublished(body.data);
+    } catch (reason) {
+      setLessonError(reason instanceof Error ? reason.message : "Unable to load lessons.");
+    }
+  }
   const selected = assignments.find((assignment) => assignment.id === selectedId);
   const today = new Date().toLocaleDateString("en-CA");
   const pendingCount = assignments.filter((assignment) => assignment.status === "ASSIGNED").length;
@@ -56,12 +72,18 @@ export function MyTrainingWorkspace() {
     {error && <p role="alert">{error}</p>}
     {!loading && !error && !assignments.length && <p>No training assignments are linked to your employee account.</p>}
     {!loading && !error && assignments.length > 0 && <div className="table-wrap"><table>
-      <thead><tr><th>Course</th><th>Assigned</th><th>Due</th><th>Status</th><th>Practice</th></tr></thead>
+      <thead><tr><th>Course</th><th>Assigned</th><th>Due</th><th>Status</th><th>Learning</th></tr></thead>
       <tbody>{orderedAssignments.map((assignment) => <tr key={assignment.id}>
         <td>{assignment.courseTitle} ({assignment.courseCode})</td><td>{formatDate(assignment.assignedAt)}</td><td>{formatDate(assignment.dueAt)}{assignment.status === "ASSIGNED" && assignment.dueAt && assignment.dueAt.slice(0, 10) < today ? " (Overdue)" : ""}</td><td>{assignment.status}</td>
-        <td>{assignment.status === "ASSIGNED" && ["DEMO-HIPAA", "DEMO-BBP"].includes(assignment.courseCode) ? <button type="button" aria-expanded={selectedId === assignment.id} onClick={() => setSelectedId(selectedId === assignment.id ? "" : assignment.id)}>{selectedId === assignment.id ? "Close practice" : "Open practice lessons"}</button> : "Not available"}</td>
+        <td>{assignment.status === "ASSIGNED" && ["DEMO-HIPAA", "DEMO-BBP"].includes(assignment.courseCode) ? <button type="button" aria-expanded={selectedId === assignment.id} onClick={() => setSelectedId(selectedId === assignment.id ? "" : assignment.id)}>{selectedId === assignment.id ? "Close practice" : "Open practice lessons"}</button> : assignment.status === "ASSIGNED" && assignment.publishedVersion ? <button type="button" onClick={() => void viewApprovedLessons(assignment.id)}>View approved lessons</button> : "Not available"}</td>
       </tr>)}</tbody>
     </table></div>}
+    {lessonError && <p role="alert">{lessonError}</p>}
+    {selected && published && <section aria-label="Approved assigned lessons"><h3>Approved course version {published.version}</h3>
+      {published.lessons.map((lesson, index) => <article key={index}><h4>{lesson.heading}</h4><p style={{ whiteSpace: "pre-wrap" }}>{lesson.content}</p></article>)}
+      <p>Assessment: {published.assessment.questions.length} questions. Passing threshold: {published.assessment.passingScorePercent}%. Assessment submission is not yet available here.</p>
+      <p>Viewing lessons does not mark training complete.</p>
+    </section>}
     {selected && selected.status === "ASSIGNED" && ["DEMO-HIPAA", "DEMO-BBP"].includes(selected.courseCode) && <DemoTrainingLesson key={selected.id} courseCode={selected.courseCode} assignmentId={selected.id} employeePractice />}
     <section aria-labelledby="completion-history-heading">
       <h3 id="completion-history-heading">Official training completion history</h3>

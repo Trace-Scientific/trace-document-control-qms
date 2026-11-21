@@ -14,6 +14,7 @@ import { PersonnelManagementWorkspace } from "@/components/personnel-management-
 import { PersonnelCredentialWorkspace } from "@/components/personnel-credential-workspace";
 import { PersonnelQualificationWorkspace } from "@/components/personnel-qualification-workspace";
 import { TrainingManagementWorkspace } from "@/components/training-management-workspace";
+import { MyTrainingWorkspace } from "@/components/my-training-workspace";
 import { CompetencyManagementWorkspace } from "@/components/competency-management-workspace";
 import { QualityEventWorkspace } from "@/components/quality-event-workspace";
 import { EquipmentManagementWorkspace } from "@/components/equipment-management-workspace";
@@ -192,6 +193,12 @@ export default async function HomePage() {
           label: "Training & competency",
           description: "Training assignments and competency evidence.",
           sections: [
+            {
+              id: "my-training",
+              label: "My training",
+              description: "Your assignments, approved lessons, and completion history.",
+              content: <MyTrainingWorkspace />,
+            },
             {
               id: "training",
               label: "Training",
