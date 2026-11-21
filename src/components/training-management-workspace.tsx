@@ -69,6 +69,9 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [draftQuestionCorrect, setDraftQuestionCorrect] = useState(0);
   const [draftQuestionExplanation, setDraftQuestionExplanation] = useState("");
   const [draftPassingScore, setDraftPassingScore] = useState(80);
+  const [draftCourseId, setDraftCourseId] = useState("");
+  const [draftRevision, setDraftRevision] = useState(0);
+  const [draftSaving, setDraftSaving] = useState(false);
   const [previewCourseCode, setPreviewCourseCode] = useState("");
   const [previewAssignmentId, setPreviewAssignmentId] = useState("");
 
@@ -216,6 +219,35 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     } catch {
       setNotice("Draft import failed. Select a valid Trace QMS v2 JSON draft; existing draft was preserved.");
     }
+  }
+
+  async function loadSavedDraft() {
+    if (!draftCourseId) return;
+    setDraftSaving(true);
+    try {
+      const response = await fetch("/api/training/course-drafts?courseId=" + encodeURIComponent(draftCourseId), { cache: "no-store" });
+      const body = await response.json();
+      if (!response.ok) { setNotice(body.error || "Unable to load draft."); return; }
+      if (!body.data) { setDraftRevision(0); setDraftLessons([]); setDraftQuestions([]); setDraftPassingScore(80); setNotice("No saved draft. Starting a new draft."); return; }
+      const data = body.data.content;
+      if (data?.format !== "trace-qms-course-draft-v2" || !Array.isArray(data.lessons) || !Array.isArray(data.assessment?.questions)) { setNotice("Unsupported draft format."); return; }
+      setDraftLessons(data.lessons); setDraftQuestions(data.assessment.questions); setDraftPassingScore(data.assessment.passingScorePercent);
+      setDraftRevision(body.data.revision); setNotice("Saved draft loaded; not published.");
+    } catch { setNotice("Unable to load draft."); } finally { setDraftSaving(false); }
+  }
+
+  async function saveCourseDraft() {
+    if (!draftCourseId || !Number.isInteger(draftPassingScore) || draftPassingScore < 1 || draftPassingScore > 100) { setNotice("Select a course and passing score from 1 to 100."); return; }
+    setDraftSaving(true);
+    try {
+      const response = await fetch("/api/training/course-drafts", { method: "PUT", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ courseId: draftCourseId, expectedRevision: draftRevision,
+          draft: { format: "trace-qms-course-draft-v2", status: "LOCAL_DRAFT_NOT_PUBLISHED", lessons: draftLessons,
+            assessment: { passingScorePercent: draftPassingScore, questions: draftQuestions } } }) });
+      const body = await response.json();
+      if (!response.ok) { setNotice(body.error || "Unable to save draft."); return; }
+      setDraftRevision(body.data.revision); setNotice("Course draft saved to your organization. Not published.");
+    } catch { setNotice("Unable to save draft."); } finally { setDraftSaving(false); }
   }
 
   function startAssignment(course: Course) {
@@ -387,6 +419,10 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
       </div>
       {previewCourseCode && <DemoTrainingLesson key={previewCourseCode} courseCode={previewCourseCode} />}
       {canManage && <div className="approval-box"><h4>Lesson draft composer</h4><p>Prepare original course lessons before a governed lesson storage and publishing workflow is available. Drafts stay in this browser session and are not assigned, saved to the server, or completion eligible.</p>
+        <label>Course for saved draft<select value={draftCourseId} onChange={(event) => { setDraftCourseId(event.target.value); setDraftRevision(0); setDraftLessons([]); setDraftQuestions([]); setDraftPassingScore(80); setNotice("Course changed. Load its saved draft before editing."); }}><option value="">Select a course</option>{courses.map((course) => <option key={course.id} value={course.id}>{course.code} — {course.title}</option>)}</select></label>
+        <p>Saved revision: {draftRevision || "Not loaded"}. Drafts are not published.</p>
+        <button type="button" disabled={!draftCourseId || draftSaving} onClick={() => { void loadSavedDraft(); }}>Load saved draft</button>
+        <button type="button" disabled={!draftCourseId || draftSaving} onClick={() => { void saveCourseDraft(); }}>Save draft to Trace QMS</button>
         <label>Restore an exported draft (replaces current local draft)<input type="file" accept=".json,application/json" onChange={(event) => { void importDraft(event.target.files?.[0]); event.target.value = ""; }} /></label>
         <form onSubmit={addDraftLesson} className="admin-form">
           <label>Lesson heading<input value={draftLessonTitle} onChange={(event) => setDraftLessonTitle(event.target.value)} maxLength={160} required /></label>
