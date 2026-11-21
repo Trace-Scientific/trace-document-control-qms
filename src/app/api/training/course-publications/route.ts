@@ -51,6 +51,10 @@ export async function POST(request: NextRequest) {
       `);
       let publication: Published | null = null;
       if (input.decision === "APPROVE") {
+        await tx.$queryRaw(Prisma.sql`
+          SELECT "id" FROM "TrainingCourse" WHERE "organizationId" = ${context.organizationId}::uuid
+          AND "id" = ${review.courseId}::uuid FOR UPDATE
+        `);
         const versions = await tx.$queryRaw<Array<{ version: number }>>(Prisma.sql`
           SELECT "version" FROM "TrainingCoursePublishedVersion"
           WHERE "organizationId" = ${context.organizationId}::uuid AND "courseId" = ${review.courseId}::uuid
