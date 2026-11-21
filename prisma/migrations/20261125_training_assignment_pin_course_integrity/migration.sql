@@ -7,7 +7,7 @@ ALTER TABLE "TrainingCoursePublishedVersion"
   UNIQUE ("organizationId", "courseId", "id");
 
 ALTER TABLE "TrainingAssignment"
-  DROP CONSTRAINT "TrainingAssignment_publishedVersion_fkey";
+  DROP CONSTRAINT "TrainingAssignment_publishedVersion_tenant_fk";
 
 ALTER TABLE "TrainingAssignment"
   ADD CONSTRAINT "TrainingAssignment_publishedVersion_course_fkey"
