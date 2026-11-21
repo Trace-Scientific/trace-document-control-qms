@@ -10,6 +10,7 @@ ALTER TABLE "TrainingCourseReview" ADD CONSTRAINT "TrainingCourseReview_decision
       OR ( "status" IN ('PENDING', 'SUPERSEDED') AND "decidedByUserId" IS NULL AND "decidedAt" IS NULL ));
 ALTER TABLE "TrainingCourseReview" ADD CONSTRAINT "TrainingCourseReview_separation_check"
   CHECK ("decidedByUserId" IS NULL OR "decidedByUserId" <> "submittedByUserId");
+ALTER TABLE "TrainingCourseReview" ADD CONSTRAINT "TrainingCourseReview_org_id_key" UNIQUE ("organizationId", "id");
 CREATE TABLE "TrainingCoursePublishedVersion" (
   "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "organizationId" uuid NOT NULL,
@@ -27,4 +28,3 @@ CREATE TABLE "TrainingCoursePublishedVersion" (
   CONSTRAINT "TrainingCoursePublishedVersion_review_fkey" FOREIGN KEY ("organizationId", "reviewId") REFERENCES "TrainingCourseReview" ("organizationId", "id") ON DELETE RESTRICT,
   CONSTRAINT "TrainingCoursePublishedVersion_publisher_fkey" FOREIGN KEY ("organizationId", "publishedByUserId") REFERENCES "User" ("organizationId", "id") ON DELETE RESTRICT
 );
-ALTER TABLE "TrainingCourseReview" ADD CONSTRAINT "TrainingCourseReview_org_id_key" UNIQUE ("organizationId", "id");
