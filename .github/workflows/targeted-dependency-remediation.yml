@@ -1,0 +1,62 @@
+name: Targeted dependency remediation evaluation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/targeted-dependency-remediation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Build isolated patched candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p remediation-evidence
+          node - <<'NODE'
+          const fs = require('fs');
+          const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          p.dependencies.next = '16.4.6';
+          p.devDependencies['eslint-config-next'] = '16.4.6';
+          fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
+          NODE
+          # Resolve patched transitive packages from the registry instead of
+          # invoking npm audit fix --force (which proposes a Vitest downgrade).
+          PICOMATCH=$(npm view picomatch version)
+          MINIMATCH=$(npm view minimatch version)
+          echo "picomatch candidate: $PICOMATCH" | tee remediation-evidence/versions.txt
+          echo "minimatch candidate: $MINIMATCH" | tee -a remediation-evidence/versions.txt
+          node - "$PICOMATCH" "$MINIMATCH" <<'NODE'
+          const fs = require('fs');
+          const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          p.overrides = {...p.overrides, picomatch: process.argv[2], minimatch: process.argv[3]};
+          fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
+          NODE
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          cp package.json package-lock.json remediation-evidence/
+          npm audit --json > remediation-evidence/audit.json || true
+          npm ls picomatch minimatch next vite vitest eslint-config-next --all > remediation-evidence/dependency-tree.txt 2>&1 || true
+      - name: Verify candidate installation and audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm audit --audit-level=high
+      - name: Upload review evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qms-targeted-remediation-evidence
+          path: remediation-evidence/
+          retention-days: 7
