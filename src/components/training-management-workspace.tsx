@@ -250,6 +250,17 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     } catch { setNotice("Unable to save draft."); } finally { setDraftSaving(false); }
   }
 
+  async function submitCourseReview() {
+    if (!draftCourseId || draftRevision < 1) { setNotice("Save or load a course draft before submitting it for review."); return; }
+    setDraftSaving(true);
+    try {
+      const response = await fetch("/api/training/course-reviews", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ courseId: draftCourseId, expectedRevision: draftRevision }) });
+      const body = await response.json();
+      setNotice(response.ok ? "Saved revision submitted for review. It is not approved, published, or assignable as course content." : (body.error || "Unable to submit review."));
+    } catch { setNotice("Unable to submit course review."); } finally { setDraftSaving(false); }
+  }
+
   function startAssignment(course: Course) {
     setPreselectedCourseId(course.id);
     setNotice("");
@@ -423,6 +434,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
         <p>Saved revision: {draftRevision || "Not loaded"}. Drafts are not published.</p>
         <button type="button" disabled={!draftCourseId || draftSaving} onClick={() => { void loadSavedDraft(); }}>Load saved draft</button>
         <button type="button" disabled={!draftCourseId || draftSaving} onClick={() => { void saveCourseDraft(); }}>Save draft to Trace QMS</button>
+        <button type="button" disabled={!draftCourseId || !draftRevision || draftSaving} onClick={() => { void submitCourseReview(); }}>Submit saved revision for review</button>
         <label>Restore an exported draft (replaces current local draft)<input type="file" accept=".json,application/json" onChange={(event) => { void importDraft(event.target.files?.[0]); event.target.value = ""; }} /></label>
         <form onSubmit={addDraftLesson} className="admin-form">
           <label>Lesson heading<input value={draftLessonTitle} onChange={(event) => setDraftLessonTitle(event.target.value)} maxLength={160} required /></label>
