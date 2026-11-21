@@ -185,6 +185,39 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     setNotice("");
   }
 
+  async function importDraft(file: File | undefined) {
+    if (!file) return;
+    if (file.size > 250_000) { setNotice("Draft file is too large (250 KB maximum)."); return; }
+    try {
+      const parsed: unknown = JSON.parse(await file.text());
+      if (!parsed || typeof parsed !== "object") throw new Error("Invalid draft");
+      const data = parsed as Record<string, unknown>;
+      if (data.format !== "trace-qms-course-draft-v2" || data.status !== "LOCAL_DRAFT_NOT_PUBLISHED") throw new Error("Unsupported draft format");
+      if (!Array.isArray(data.lessons) || data.lessons.length > 100) throw new Error("Invalid lesson count");
+      const lessons = data.lessons.map((item: unknown) => {
+        if (!item || typeof item !== "object") throw new Error("Invalid lesson");
+        const lesson = item as Record<string, unknown>;
+        if (typeof lesson.heading !== "string" || !lesson.heading.trim() || lesson.heading.length > 160 || typeof lesson.content !== "string" || !lesson.content.trim() || lesson.content.length > 10000) throw new Error("Invalid lesson content");
+        return { heading: lesson.heading, content: lesson.content };
+      });
+      if (!data.assessment || typeof data.assessment !== "object") throw new Error("Missing assessment");
+      const assessment = data.assessment as Record<string, unknown>;
+      if (!Number.isInteger(assessment.passingScorePercent) || Number(assessment.passingScorePercent) < 1 || Number(assessment.passingScorePercent) > 100 || !Array.isArray(assessment.questions) || assessment.questions.length > 100) throw new Error("Invalid assessment");
+      const questions = assessment.questions.map((item: unknown) => {
+        if (!item || typeof item !== "object") throw new Error("Invalid question");
+        const question = item as Record<string, unknown>;
+        if (typeof question.prompt !== "string" || !question.prompt.trim() || question.prompt.length > 500 || !Array.isArray(question.choices) || question.choices.length !== 4 || question.choices.some((choice: unknown) => typeof choice !== "string" || !choice.trim() || choice.length > 300) || new Set(question.choices.map((choice: string) => choice.trim().toLowerCase())).size !== 4 || !Number.isInteger(question.correctIndex) || Number(question.correctIndex) < 0 || Number(question.correctIndex) > 3 || typeof question.explanation !== "string" || question.explanation.length > 1000) throw new Error("Invalid question content");
+        return { prompt: question.prompt, choices: question.choices as string[], correctIndex: question.correctIndex as number, explanation: question.explanation };
+      });
+      setDraftLessons(lessons);
+      setDraftQuestions(questions);
+      setDraftPassingScore(Number(assessment.passingScorePercent));
+      setNotice("Local draft imported. Nothing has been saved or published to Trace QMS.");
+    } catch {
+      setNotice("Draft import failed. Select a valid Trace QMS v2 JSON draft; existing draft was preserved.");
+    }
+  }
+
   function startAssignment(course: Course) {
     setPreselectedCourseId(course.id);
     setNotice("");
@@ -354,6 +387,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
       </div>
       {previewCourseCode && <DemoTrainingLesson key={previewCourseCode} courseCode={previewCourseCode} />}
       {canManage && <div className="approval-box"><h4>Lesson draft composer</h4><p>Prepare original course lessons before a governed lesson storage and publishing workflow is available. Drafts stay in this browser session and are not assigned, saved to the server, or completion eligible.</p>
+        <label>Restore an exported draft (replaces current local draft)<input type="file" accept=".json,application/json" onChange={(event) => { void importDraft(event.target.files?.[0]); event.target.value = ""; }} /></label>
         <form onSubmit={addDraftLesson} className="admin-form">
           <label>Lesson heading<input value={draftLessonTitle} onChange={(event) => setDraftLessonTitle(event.target.value)} maxLength={160} required /></label>
           <label>Lesson content<textarea value={draftLessonContent} onChange={(event) => setDraftLessonContent(event.target.value)} maxLength={10000} required /></label>
