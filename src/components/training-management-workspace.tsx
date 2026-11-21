@@ -86,6 +86,9 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [publishedPreviewCourseId, setPublishedPreviewCourseId] = useState("");
   const [publishedPreview, setPublishedPreview] = useState<LearnerCourseContent | null>(null);
   const [publishedPreviewBusy, setPublishedPreviewBusy] = useState(false);
+  const [pinnedPreviewAssignmentId, setPinnedPreviewAssignmentId] = useState("");
+  const [pinnedPreview, setPinnedPreview] = useState<LearnerCourseContent | null>(null);
+  const [pinnedPreviewBusy, setPinnedPreviewBusy] = useState(false);
   const [previewAssignmentId, setPreviewAssignmentId] = useState("");
 
   async function load() {
@@ -288,6 +291,20 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     } catch { setNotice("Course review queue could not be loaded."); }
   }
 
+  async function previewAssignedVersion(assignment: Assignment) {
+    if (pinnedPreviewAssignmentId === assignment.id) { setPinnedPreviewAssignmentId(""); setPinnedPreview(null); return; }
+    setPinnedPreview(null);
+    setPinnedPreviewAssignmentId("");
+    setPinnedPreviewBusy(true);
+    try {
+      const response = await fetch("/api/training/assignment-content?assignmentId=" + encodeURIComponent(assignment.id), { credentials: "same-origin", cache: "no-store" });
+      const body = await response.json();
+      if (!response.ok) { setNotice(body.error || "Assigned course version could not be loaded."); return; }
+      setPinnedPreview(body.data as LearnerCourseContent);
+      setPinnedPreviewAssignmentId(assignment.id);
+    } catch { setNotice("Assigned course version could not be loaded."); } finally { setPinnedPreviewBusy(false); }
+  }
+
   async function previewPublishedCourse(course: Course) {
     if (publishedPreviewCourseId === course.id) { setPublishedPreviewCourseId(""); setPublishedPreview(null); return; }
     setPublishedPreview(null);
@@ -426,7 +443,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
           <thead><tr><th>Employee</th><th>Course</th><th>Assigned</th><th>Due</th><th>Status</th><th>Lifecycle evidence</th>{canManage && <th>Action</th>}</tr></thead>
           <tbody>{visibleAssignments.map(({ assignment, status, employeeLabel, courseLabel }) => (
             <tr key={assignment.id}>
-              <td>{employeeLabel}</td><td>{courseLabel}{["DEMO-HIPAA", "DEMO-BBP"].includes(courseById.get(assignment.courseId)?.code ?? "") && <div className="training-assignment-preview-action"><button type="button" className="training-lesson-button" aria-expanded={previewAssignmentId === assignment.id} onClick={() => setPreviewAssignmentId(previewAssignmentId === assignment.id ? "" : assignment.id)}>{previewAssignmentId === assignment.id ? "Hide lessons" : "Open practice lessons"}</button></div>}</td>
+              <td>{employeeLabel}</td><td>{courseLabel}{canManage && <div><button type="button" disabled={pinnedPreviewBusy} aria-expanded={pinnedPreviewAssignmentId === assignment.id} onClick={() => { void previewAssignedVersion(assignment); }}>{pinnedPreviewAssignmentId === assignment.id ? "Hide assigned version" : "View assigned version"}</button></div>}{["DEMO-HIPAA", "DEMO-BBP"].includes(courseById.get(assignment.courseId)?.code ?? "") && <div className="training-assignment-preview-action"><button type="button" className="training-lesson-button" aria-expanded={previewAssignmentId === assignment.id} onClick={() => setPreviewAssignmentId(previewAssignmentId === assignment.id ? "" : assignment.id)}>{previewAssignmentId === assignment.id ? "Hide lessons" : "Open practice lessons"}</button></div>}</td>
               <td>{formatDateOnly(assignment.assignedAt)}</td><td>{formatDateOnly(assignment.dueAt)}</td>
               <td>{status}</td><td>{assignment.cancelReason ?? "—"}</td>
               {canManage && <td>{assignment.status === "ASSIGNED" && (
@@ -439,6 +456,13 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
           </td></tr>}</tbody>
         </table>
       </div>
+      {canManage && pinnedPreviewAssignmentId && pinnedPreview && <section aria-label="Assigned published course version">
+        <h4>Assigned course version {pinnedPreview.version} — manager preview</h4>
+        <p>Read-only view of the version pinned when the assignment was created. This is not an employee training session or completion record.</p>
+        {pinnedPreview.lessons.map((lesson, index) => <div key={index}><h5>{index + 1}. {lesson.heading}</h5><p style={{ whiteSpace: "pre-wrap" }}>{lesson.content}</p></div>)}
+        <h5>Assessment questions ({pinnedPreview.assessment.questions.length}); passing score {pinnedPreview.assessment.passingScorePercent}%</h5>
+        {pinnedPreview.assessment.questions.map((question, index) => <div key={index}><strong>{index + 1}. {question.prompt}</strong><ol>{question.choices.map((choice, choiceIndex) => <li key={choiceIndex}>{choice}</li>)}</ol></div>)}
+      </section>}
       {previewAssignmentId && (() => {
         const assignment = assignments.find((item) => item.id === previewAssignmentId);
         const course = assignment ? courseById.get(assignment.courseId) : undefined;
