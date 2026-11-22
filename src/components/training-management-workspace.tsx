@@ -6,7 +6,8 @@ import { DemoTrainingLesson } from "./demo-training-lesson";
 import { TrainingAssessmentReport } from "./training-assessment-report";
 
 type Employee = { id: string; employeeNumber: string; firstName: string; lastName: string; status: "ACTIVE" | "INACTIVE" | "TERMINATED" };
-type Course = { id: string; code: string; title: string; active: boolean };\ntype RenewalPolicy = { courseId: string; intervalMonths: number };
+type Course = { id: string; code: string; title: string; active: boolean };
+type RenewalPolicy = { courseId: string; intervalMonths: number };
 type Assignment = { id: string; employeeId: string; courseId: string; assignedAt: string; dueAt: string | null; status: "ASSIGNED" | "COMPLETED" | "CANCELLED"; cancelReason?: string | null };
 type LearnerCourseContent = { publicationId: string; version: number; lessons: { heading: string; content: string }[]; assessment: { passingScorePercent: number; questions: { prompt: string; choices: string[] }[] } };
 type ReviewContent = { lessons: { heading: string; content: string }[]; assessment: { passingScorePercent: number; questions: { prompt: string; choices: string[]; correctIndex: number; explanation: string }[] } };
@@ -49,7 +50,10 @@ function dateOnlyTime(value: string | null) {
 
 export function TrainingManagementWorkspace({ canManage, today }: { canManage: boolean; today: string }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]);\n  const [renewalPolicies, setRenewalPolicies] = useState<RenewalPolicy[]>([]);\n  const [renewalCourseId, setRenewalCourseId] = useState("");\n  const [renewalMonths, setRenewalMonths] = useState("12");
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [renewalPolicies, setRenewalPolicies] = useState<RenewalPolicy[]>([]);
+  const [renewalCourseId, setRenewalCourseId] = useState("");
+  const [renewalMonths, setRenewalMonths] = useState("12");
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [completions, setCompletions] = useState<Completion[]>([]);
   const [assessmentResults, setAssessmentResults] = useState<AssessmentResult[]>([]);
