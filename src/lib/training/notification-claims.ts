@@ -1,11 +1,11 @@
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 /**
  * Internal-only transaction primitives for a future notification worker.
  * Not connected to a route, cron job or mail provider. Do not mark SENT
  * until the external delivery provider has acknowledged the message.
  */
-type Transaction = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
+type Transaction = Prisma.TransactionClient;
 type Claim = { id: string; organizationId: string; attemptCount: number; reminderType: string };
 
 export async function claimTrainingRenewalNotifications(
