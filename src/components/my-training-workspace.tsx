@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { DemoTrainingLesson } from "./demo-training-lesson";
+import { AssignedTrainingAssessment } from "./assigned-training-assessment";
 
 type Completion = { id: string; assignmentId: string; courseCode: string; courseTitle: string; completedAt: string; result: string | null };
 
-type PublishedLessons = { version: number; lessons: { heading: string; content: string }[]; assessment: { passingScorePercent: number; questions: unknown[] } };
+type PublishedLessons = { version: number; lessons: { heading: string; content: string }[]; assessment: { passingScorePercent: number; questions: { prompt: string; choices: string[] }[] } };
 type Assignment = { id: string; courseCode: string; courseTitle: string; assignedAt: string; dueAt: string | null; status: string; publishedVersion?: number | null };
 
 export function MyTrainingWorkspace() {
@@ -81,7 +82,8 @@ export function MyTrainingWorkspace() {
     {lessonError && <p role="alert">{lessonError}</p>}
     {selected && published && <section aria-label="Approved assigned lessons"><h3>Approved course version {published.version}</h3>
       {published.lessons.map((lesson, index) => <article key={index}><h4>{lesson.heading}</h4><p style={{ whiteSpace: "pre-wrap" }}>{lesson.content}</p></article>)}
-      <p>Assessment: {published.assessment.questions.length} questions. Passing threshold: {published.assessment.passingScorePercent}%. Assessment submission is not yet available here.</p>
+      <p>Assessment: {published.assessment.questions.length} questions. Passing threshold: {published.assessment.passingScorePercent}%. Submit your answers below for a recorded assessment result.</p>
+      <AssignedTrainingAssessment key={selected.id} assignmentId={selected.id} assessment={published.assessment} />
       <p>Viewing lessons does not mark training complete.</p>
     </section>}
     {selected && selected.status === "ASSIGNED" && ["DEMO-HIPAA", "DEMO-BBP"].includes(selected.courseCode) && <DemoTrainingLesson key={selected.id} courseCode={selected.courseCode} assignmentId={selected.id} employeePractice />}
