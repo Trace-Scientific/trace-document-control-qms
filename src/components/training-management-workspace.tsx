@@ -180,10 +180,23 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const completionCourseCode = completionAssignment ? courseById.get(completionAssignment.courseId)?.code : undefined;
   const demoCompletionEvidenceRequired = completionCourseCode === "DEMO-HIPAA" || completionCourseCode === "DEMO-BBP";
 
-  const queryWords = assignmentQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  // Existing assignment due dates are authoritative; no inferred annual renewal interval.
+  const dueSoonEnd = todayStart + 30 * 24 * 60 * 60 * 1000;
+  const overdueCount = activeAssignments.filter((assignment) => {
+    const due = dateOnlyTime(assignment.dueAt);
+    return due !== null && due < todayStart;
+  }).length;
+  const dueSoonCount = activeAssignments.filter((assignment) => {
+    const due = dateOnlyTime(assignment.dueAt);
+    return due !== null && due >= todayStart && due <= dueSoonEnd;
+  }).length;
+  const unscheduledCount = activeAssignments.filter((assignment) => !assignment.dueAt).length;
+  const queryWords = assignmentQuery.trim().toLowerCase().split(/\\s+/).filter(Boolean);
   const visibleAssignments = assignments.map((assignment) => {
     const dueTime = dateOnlyTime(assignment.dueAt);
-    const status = assignment.status === "ASSIGNED" && dueTime !== null && dueTime < todayStart ? "OVERDUE" : assignment.status;
+    const status = assignment.status === "ASSIGNED" && dueTime !== null
+      ? dueTime < todayStart ? "OVERDUE" : dueTime <= dueSoonEnd ? "DUE_SOON" : "ASSIGNED"
+      : assignment.status;
     const employee = employeeById.get(assignment.employeeId);
     const course = courseById.get(assignment.courseId);
     const employeeLabel = employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assignment.employeeId;
@@ -455,12 +468,15 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
 
     {section === "assignments" && <div className="module-section-stack">
       <div className="section-heading"><div><h3>Training assignments</h3><p>Browse governed training assignments and their current lifecycle state.</p></div></div>
+      <p role="status"><strong>{overdueCount} overdue</strong> · <strong>{dueSoonCount} due within 30 days</strong> · {unscheduledCount} assigned without a due date. Counts include only open assignments.</p>
+      <p>Due dates are taken from existing training assignments. Recurring renewal intervals and automatic reassignments are not configured by this view.</p>
       <div className="admin-form">
         <label>Search assignments<input type="search" value={assignmentQuery} onChange={(event) => setAssignmentQuery(event.target.value)} placeholder="Employee name, number, or course" /></label>
         <label>Assignment status<select value={assignmentStatus} onChange={(event) => setAssignmentStatus(event.target.value)}>
           <option value="ALL">All statuses</option>
           <option value="ASSIGNED">Assigned</option>
           <option value="OVERDUE">Overdue</option>
+          <option value="DUE_SOON">Due within 30 days</option>
           <option value="COMPLETED">Completed</option>
           <option value="CANCELLED">Cancelled</option>
         </select></label>
