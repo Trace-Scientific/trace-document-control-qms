@@ -89,3 +89,36 @@ export async function recordTrainingRenewalDeliveryOutcome(
   }
   return result.length === 1;
 }
+
+/**
+ * Mark abandoned in-flight attempts for manual reconciliation. A crashed worker
+ * may have delivered the message before losing its acknowledgement. Never retry
+ * such attempts automatically.
+ */
+export async function quarantineStaleTrainingRenewalClaims(
+  tx: Transaction,
+  organizationId: string,
+  actorUserId: string,
+  olderThanMinutes = 60,
+): Promise<number> {
+  if (!Number.isInteger(olderThanMinutes) || olderThanMinutes < 15 || olderThanMinutes > 10080) {
+    throw new Error("Invalid recovery age");
+  }
+  const rows = await tx.$queryRaw<Array<{ id: string; attemptCount: number }>>(Prisma.sql`
+    UPDATE "TrainingRenewalNotificationDelivery"
+    SET "status" = 'REVIEW_REQUIRED',
+      "lastError" = 'Delivery outcome unknown after interrupted processing',
+      "updatedAt" = CURRENT_TIMESTAMP
+    WHERE "organizationId" = ${organizationId}::uuid AND "status" = 'SENDING'
+      AND "lastAttemptAt" < CURRENT_TIMESTAMP - (${olderThanMinutes} * INTERVAL '1 minute')
+    RETURNING "id", "attemptCount"
+  `);
+  for (const row of rows) {
+    await tx.auditEvent.create({ data: {
+      organizationId, actorUserId, action: "TRAINING_NOTIFICATION_REVIEW_REQUIRED",
+      entityType: "TrainingRenewalNotificationDelivery", entityId: row.id,
+      metadata: { attemptCount: row.attemptCount, reason: "interrupted_delivery_unknown" },
+    } });
+  }
+  return rows.length;
+}
