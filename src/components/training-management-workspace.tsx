@@ -144,7 +144,6 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   useEffect(() => {
     if (!canManage || section !== "complete") return;
     const controller = new AbortController();
-    setAssessmentReportStatus("loading");
     void fetch("/api/training/assessment-report?limit=200", { credentials: "same-origin", cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("Assessment results unavailable");
