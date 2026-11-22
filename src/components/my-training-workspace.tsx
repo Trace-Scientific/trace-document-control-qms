@@ -122,11 +122,12 @@ export function MyTrainingWorkspace() {
       {completionError && <p role="alert">{completionError}</p>}
       {!completionLoading && !completionError && completions.length === 0 && <p>No official training completions are recorded for your employee account.</p>}
       {!completionLoading && !completionError && completions.length > 0 && <div className="table-wrap"><table>
-        <thead><tr><th>Course</th><th>Completed</th><th>Result</th></tr></thead>
+        <thead><tr><th>Course</th><th>Completed</th><th>Result</th><th>Record</th></tr></thead>
         <tbody>{completions.map((completion) => <tr key={completion.id}>
           <td>{completion.courseTitle} ({completion.courseCode})</td>
           <td>{formatDate(completion.completedAt)}</td>
           <td>{completion.result || "Not specified"}</td>
+          <td><a href={`/api/training/my-completion-certificate?completionId=${encodeURIComponent(completion.id)}`} target="_blank" rel="noopener noreferrer">Print completion record</a></td>
         </tr>)}</tbody>
       </table></div>}
     </section>
