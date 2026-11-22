@@ -9,9 +9,11 @@ export async function GET(request: NextRequest) {
   try {
     const context = await authenticateRequest(request);
     const employees = await db.$queryRaw<Array<{ id: string; status: string }>>(Prisma.sql`
-      SELECT "id", "status"::text AS "status" FROM "Employee"
-      WHERE "organizationId" = ${context.organizationId}::uuid
-        AND "userId" = ${context.userId}::uuid
+      SELECT e."id", e."status"::text AS "status"
+      FROM "TrainingEmployeeUserLink" l
+      INNER JOIN "Employee" e ON e."organizationId" = l."organizationId" AND e."id" = l."employeeId"
+      WHERE l."organizationId" = ${context.organizationId}::uuid
+        AND l."userId" = ${context.userId}::uuid
     `);
     const employee = resolveOwnTrainingAssignments(context, employees);
     const completions = await db.$queryRaw<Array<{
