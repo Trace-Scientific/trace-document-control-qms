@@ -12,6 +12,7 @@ type LearnerCourseContent = { publicationId: string; version: number; lessons: {
 type ReviewContent = { lessons: { heading: string; content: string }[]; assessment: { passingScorePercent: number; questions: { prompt: string; choices: string[]; correctIndex: number; explanation: string }[] } };
 type CourseReview = { id: string; courseId: string; draftRevision: number; status: string; submittedAt: string; submittedByUserId?: string };
 type CoursePublication = { id: string; courseId: string; version: number; publishedAt: string };
+type AssessmentResult = { assignmentId: string; submittedAt: string; passed: boolean; scorePercent: number; passingScorePercent: number; publishedVersionId: string };
 type Completion = { id: string; assignmentId: string; employeeId: string; courseId: string; completedAt: string; result: string | null; fileId: string | null; evidenceName?: string | null; evidenceStatus?: string | null };
 const courseCategories = ["All categories", "Safety & OSHA", "HIPAA & Compliance", "Quality Management", "Laboratory Operations", "Clinical Disciplines", "Leadership & Personnel", "Uncategorized"] as const;
 type CourseCategory = (typeof courseCategories)[number];
@@ -51,6 +52,8 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [courses, setCourses] = useState<Course[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [completions, setCompletions] = useState<Completion[]>([]);
+  const [assessmentResults, setAssessmentResults] = useState<AssessmentResult[]>([]);
+  const [assessmentReportStatus, setAssessmentReportStatus] = useState<"loading" | "ready" | "error">("loading");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [section, setSection] = useState<Section>("assignments");
@@ -138,6 +141,19 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    if (!canManage || section !== "complete") return;
+    const controller = new AbortController();
+    void fetch("/api/training/assessment-report?limit=200", { credentials: "same-origin", cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Assessment results unavailable");
+        const body: { data?: { attempts?: AssessmentResult[] } } = await response.json();
+        if (!controller.signal.aborted) { setAssessmentResults(body.data?.attempts ?? []); setAssessmentReportStatus("ready"); }
+      })
+      .catch(() => { if (!controller.signal.aborted) setAssessmentReportStatus("error"); });
+    return () => controller.abort();
+  }, [canManage, section]);
+
   const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
   const courseById = useMemo(() => new Map(courses.map((course) => [course.id, course])), [courses]);
   const todayStart = useMemo(() => dateOnlyTime(today) ?? 0, [today]);
@@ -151,6 +167,16 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   });
   const eligibleEmployees = employees.filter((employee) => employee.status === "ACTIVE");
   const completionAssignment = assignments.find((assignment) => assignment.id === completionAssignmentId);
+  const completionAttempts = assessmentResults.filter((attempt) => attempt.assignmentId === completionAssignmentId);
+  const latestAssessment = completionAttempts[0];
+  const passingAssessment = completionAttempts.find((attempt) => attempt.passed);
+  const completionAssessmentStatus = assessmentReportStatus !== "ready"
+    ? "Assessment reporting unavailable or loading; server will validate eligibility."
+    : passingAssessment
+      ? `Passing assessment recorded: ${passingAssessment.scorePercent}% on ${new Date(passingAssessment.submittedAt).toLocaleString()}. Verify assigned publication and evidence before completion.`
+      : latestAssessment
+        ? `Latest assessment: ${latestAssessment.scorePercent}% (${latestAssessment.passed ? "passed" : "not passed"}). No passing attempt found in the most recent 200 results; server will validate full history.`
+        : "No assessment found in the most recent 200 results; server will validate full history.";
   const completionCourseCode = completionAssignment ? courseById.get(completionAssignment.courseId)?.code : undefined;
   const demoCompletionEvidenceRequired = completionCourseCode === "DEMO-HIPAA" || completionCourseCode === "DEMO-BBP";
 
@@ -493,7 +519,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
       </form>
     </div>}
 
-    {section === "complete" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record completion</h3><p>Record completion results with governed supporting evidence. Demo HIPAA and Bloodborne Pathogens assignments require an available evidence file. Practice quiz scores do not qualify as official completion evidence.</p></div></div><form onSubmit={complete} className="admin-form"><label>Assignment<select name="assignmentId" value={completionAssignmentId} onChange={(event) => { setCompletionAssignmentId(event.target.value); setNotice(""); }} required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label><label>Completed at<input name="completedAt" type="datetime-local" defaultValue={localDateTimeInputValue(new Date())} required /></label><label>Result<input name="result" maxLength={500} /></label>{demoCompletionEvidenceRequired && <p role="status"><strong>Evidence required for {completionCourseCode}:</strong> Select an AVAILABLE governed training evidence file before recording this completion. The administrator must independently verify that the evidence supports completion; a practice score alone is insufficient.</p>}<GovernedEvidenceFilePicker domain="training" disabled={busy} onSelectionChange={setCompletionEvidenceFileId} /><button type="submit" disabled={busy || (demoCompletionEvidenceRequired && !completionEvidenceFileId)}>Record completion</button></form></div>}
+    {section === "complete" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record completion</h3><p>Record completion results with governed supporting evidence. Demo HIPAA and Bloodborne Pathogens assignments require an available evidence file. Practice quiz scores do not qualify as official completion evidence.</p></div></div><form onSubmit={complete} className="admin-form"><label>Assignment<select name="assignmentId" value={completionAssignmentId} onChange={(event) => { setCompletionAssignmentId(event.target.value); setNotice(""); }} required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label>{completionAssignmentId && <p role="status"><strong>Assessment evidence:</strong> {completionAssessmentStatus}</p>}<label>Completed at<input name="completedAt" type="datetime-local" defaultValue={localDateTimeInputValue(new Date())} required /></label><label>Result<input name="result" maxLength={500} /></label>{demoCompletionEvidenceRequired && <p role="status"><strong>Evidence required for {completionCourseCode}:</strong> Select an AVAILABLE governed training evidence file before recording this completion. The administrator must independently verify that the evidence supports completion; a practice score alone is insufficient.</p>}<GovernedEvidenceFilePicker domain="training" disabled={busy} onSelectionChange={setCompletionEvidenceFileId} /><button type="submit" disabled={busy || (demoCompletionEvidenceRequired && !completionEvidenceFileId)}>Record completion</button></form></div>}
 
     {section === "history" && <div className="module-section-stack"><div className="section-heading"><div><h3>Completion history</h3><p>Review immutable training completion results, event timestamps, and governed evidence references.</p></div></div><div className="admin-form"><label>Search completions<input type="search" value={completionQuery} onChange={(event) => setCompletionQuery(event.target.value)} placeholder="Employee, course, or result" /></label><label>Evidence attachment<select value={completionEvidence} onChange={(event) => setCompletionEvidence(event.target.value)}><option value="ALL">All records</option><option value="ATTACHED">With attached evidence</option><option value="MISSING">Without attached evidence</option></select></label></div><p>Attachment status is informational. An attached file does not by itself establish verified competency or approval.</p><div className="table-wrap"><table><thead><tr><th>Employee</th><th>Course</th><th>Completed at</th><th>Result</th><th>Evidence</th></tr></thead><tbody>{visibleCompletions.map((completion) => {
       const employee = employeeById.get(completion.employeeId); const course = courseById.get(completion.courseId);
