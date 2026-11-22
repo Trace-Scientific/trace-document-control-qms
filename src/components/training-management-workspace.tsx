@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { GovernedEvidenceFilePicker } from "./governed-evidence-file-picker";
 import { DemoTrainingLesson } from "./demo-training-lesson";
 import { TrainingAssessmentReport } from "./training-assessment-report";
+import { TrainingRenewalForecast } from "./training-renewal-forecast";
 
 type Employee = { id: string; employeeNumber: string; firstName: string; lastName: string; status: "ACTIVE" | "INACTIVE" | "TERMINATED" };
 type Course = { id: string; code: string; title: string; active: boolean };
@@ -507,6 +508,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     {notice && <p role="status">{notice}</p>}
 
     {section === "assignments" && <div className="module-section-stack">
+      <TrainingRenewalForecast />
       <div className="section-heading"><div><h3>Training assignments</h3><p>Browse governed training assignments and their current lifecycle state.</p></div></div>
       <p role="status"><strong>{overdueCount} overdue</strong> · <strong>{dueSoonCount} due within 30 days</strong> · {unscheduledCount} assigned without a due date. Counts include only open assignments.</p>
       <p>Due dates are taken from existing training assignments. Recurring renewal intervals and automatic reassignments are not configured by this view.</p>
