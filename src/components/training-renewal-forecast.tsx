@@ -15,6 +15,8 @@ export function TrainingRenewalForecast() {
   const [search, setSearch] = useState("");
   const [preferences, setPreferences] = useState<{ enabled: boolean; remind30Days: boolean; remind7Days: boolean; remindOverdue: boolean } | null>(null);
   const [preferenceStatus, setPreferenceStatus] = useState("");
+  const [processorPreview, setProcessorPreview] = useState<{ reminderType: string; eligible: number; alreadyRecorded: number }[] | null>(null);
+  const [processorError, setProcessorError] = useState("");
   const [digest, setDigest] = useState<{ overdue: number; within7Days: number; within30Days: number } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -56,6 +58,15 @@ export function TrainingRenewalForecast() {
       setPreferenceStatus(response.ok ? "Preferences saved. Automatic delivery remains inactive." : "Unable to save preferences.");
     } catch { setPreferenceStatus("Unable to save preferences."); }
   }
+  async function previewProcessor() {
+    setProcessorError("");
+    try {
+      const response = await fetch("/api/training/notification-processor-preview", { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw new Error("Preview unavailable");
+      const body: { data: { reminderType: string; eligible: number; alreadyRecorded: number }[] } = await response.json();
+      setProcessorPreview(body.data);
+    } catch { setProcessorError("Unable to load processor preview."); }
+  }
   const overdue = rows.filter((row) => row.daysUntilDue < 0).length;
   const upcoming = rows.filter((row) => row.daysUntilDue >= 0 && row.daysUntilDue <= 30).length;
   const urgent = rows.filter((row) => row.daysUntilDue >= 0 && row.daysUntilDue <= 7).length;
@@ -78,6 +89,10 @@ export function TrainingRenewalForecast() {
       <button type="button" onClick={() => void savePreferences()}>Save notification preferences</button>
       {preferenceStatus && <p role="status">{preferenceStatus}</p>}
     </fieldset>}
+    <div><button type="button" onClick={() => void previewProcessor()}>Preview notification processing (dry run)</button>
+      {processorError && <p role="alert">{processorError}</p>}
+      {processorPreview && <p role="status">Dry run only — {processorPreview.reduce((sum, row) => sum + row.eligible, 0)} eligible reminders; {processorPreview.reduce((sum, row) => sum + row.alreadyRecorded, 0)} already recorded. No messages sent or records created.</p>}
+    </div>
     {digest && <p role="status">Notification preview (not sent): {digest.overdue} overdue, {digest.within7Days} due within 7 days, {digest.within30Days} due within 30 days. Automatic delivery is disabled.</p>}
     {status === "loading" && <p>Loading renewal forecast…</p>}
     {status === "error" && <p role="alert">Renewal forecast could not be loaded.</p>}
