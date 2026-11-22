@@ -64,10 +64,14 @@ export async function closeTrainingNotificationScheduleRun(
     runId: string;
     status: "FINISHED" | "REVIEW_REQUIRED";
     claimedCount: number;
+    stagedCount?: number;
   },
 ): Promise<boolean> {
   if (!Number.isInteger(input.claimedCount) || input.claimedCount < 0) {
     throw new Error("Invalid claimed count");
+  }
+  if (input.stagedCount !== undefined && (!Number.isInteger(input.stagedCount) || input.stagedCount < 0)) {
+    throw new Error("Invalid staged count");
   }
   const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     UPDATE "TrainingNotificationScheduleRun"
@@ -83,7 +87,12 @@ export async function closeTrainingNotificationScheduleRun(
     organizationId: input.organizationId, actorUserId: input.actorUserId,
     action: "TRAINING_NOTIFICATION_SCHEDULE_CLOSED",
     entityType: "TrainingNotificationScheduleRun", entityId: input.runId,
-    metadata: { status: input.status, claimedCount: input.claimedCount, deliveryActive: false },
+    metadata: {
+      status: input.status,
+      claimedCount: input.claimedCount,
+      ...(input.stagedCount !== undefined ? { stagedCount: input.stagedCount } : {}),
+      deliveryActive: false,
+    },
   } });
   return true;
 }
