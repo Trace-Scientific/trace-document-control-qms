@@ -92,6 +92,27 @@ export class PrismaTrainingStore implements TrainingStore {
     return db.$transaction(async (tx) => {
       const assignment = await this.lockAssignable(tx, input.organizationId, input.assignmentId);
       if (input.completedAt < assignment.assignedAt) throw new TrainingEligibilityError("Training completion cannot precede the assignment date");
+      // Published, version-pinned assignments require a passing recorded attempt
+      // from that exact assignment and immutable publication before manager completion.
+      // Legacy unpinned assignments retain their existing governed evidence workflow.
+      if (assignment.publishedVersionId) {
+        const passedAttempts = await tx.$queryRaw<Array<{ id: string; submittedAt: Date }>>(Prisma.sql`
+          SELECT "id", "submittedAt" FROM "TrainingAssessmentAttempt"
+          WHERE "organizationId" = ${input.organizationId}::uuid
+            AND "assignmentId" = ${assignment.id}::uuid
+            AND "employeeId" = ${assignment.employeeId}::uuid
+            AND "courseId" = ${assignment.courseId}::uuid
+            AND "publishedVersionId" = ${assignment.publishedVersionId}::uuid
+            AND "passed" = TRUE
+          ORDER BY "submittedAt" DESC, "id" DESC LIMIT 1
+        `);
+        if (!passedAttempts[0]) {
+          throw new TrainingEligibilityError("A passing recorded assessment attempt for the assigned published version is required before official completion");
+        }
+        if (input.completedAt < passedAttempts[0].submittedAt) {
+          throw new TrainingEligibilityError("Training completion cannot precede the passing assessment");
+        }
+      }
       // Demo practice quiz scores are never completion evidence on their own.
       // Require a governed file before a manager can record completion for demo courses.
       const courseRows = await tx.$queryRaw<Array<{ code: string }>>(Prisma.sql`
