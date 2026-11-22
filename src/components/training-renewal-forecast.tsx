@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { TrainingNotificationReview } from "./training-notification-review";
 
 type Renewal = {
   employeeId: string; employeeNumber: string; firstName: string; lastName: string;
@@ -89,6 +90,7 @@ export function TrainingRenewalForecast() {
       <button type="button" onClick={() => void savePreferences()}>Save notification preferences</button>
       {preferenceStatus && <p role="status">{preferenceStatus}</p>}
     </fieldset>}
+    {preferences && <TrainingNotificationReview />}
     <div><button type="button" onClick={() => void previewProcessor()}>Preview notification processing (dry run)</button>
       {processorError && <p role="alert">{processorError}</p>}
       {processorPreview && <p role="status">Dry run only — {processorPreview.reduce((sum, row) => sum + row.eligible, 0)} eligible reminders; {processorPreview.reduce((sum, row) => sum + row.alreadyRecorded, 0)} already recorded. No messages sent or records created.</p>}
