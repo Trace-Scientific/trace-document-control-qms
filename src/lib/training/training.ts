@@ -8,7 +8,7 @@ export type TrainingCourseRecord = {
   id: string; organizationId: string; code: string; title: string; description: string | null; active: boolean; createdAt: Date; updatedAt: Date;
 };
 export type TrainingAssignmentRecord = {
-  id: string; organizationId: string; employeeId: string; courseId: string; assignedAt: Date; dueAt: Date | null; status: "ASSIGNED" | "COMPLETED" | "CANCELLED"; createdByUserId: string; createdAt: Date; updatedAt: Date; cancelledAt?: Date | null; cancelReason?: string | null; cancelledByUserId?: string | null;
+  id: string; organizationId: string; employeeId: string; courseId: string; publishedVersionId?: string | null; assignedAt: Date; dueAt: Date | null; status: "ASSIGNED" | "COMPLETED" | "CANCELLED"; createdByUserId: string; createdAt: Date; updatedAt: Date; cancelledAt?: Date | null; cancelReason?: string | null; cancelledByUserId?: string | null;
 };
 export type TrainingCompletionRecord = {
   id: string; organizationId: string; assignmentId: string; employeeId: string; courseId: string; completedAt: Date; result: string | null; fileId: string | null; createdByUserId: string; createdAt: Date; evidenceName?: string | null; evidenceStatus?: string | null;
