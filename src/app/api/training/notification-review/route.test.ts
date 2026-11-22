@@ -52,7 +52,7 @@ test("requires organization-wide training management permission", async () => {
   expect(query).not.toHaveBeenCalled();
 });
 
-test.each(["?organizationId=other", "?page=1&page=2", "?page=0", "?page=01", "?page=9007199254740992"])(
+test.each(["?organizationId=other", "?page=1&page=2", "?page=0", "?page=01", "?page=9007199254740992", "?view=sent", "?view=closed&view=open"])(
   "rejects invalid or unexpected query parameters (%s)",
   async (search) => {
     expect((await GET(request(search))).status).toBe(422);
@@ -93,4 +93,26 @@ test("returns an empty first page when no reminders are flagged", async () => {
   const response = await GET(request());
 
   expect(await response.json()).toEqual({ data: [], page: 1, hasMore: false });
+});
+
+test("loads closed reviews from the tenant's matching closure audit events", async () => {
+  const closedAt = new Date("2026-11-28T18:35:00Z");
+  query.mockResolvedValue([{ id: "delivery-closed", disposition: "OUTCOME_UNCONFIRMED", closedAt }]);
+
+  const response = await GET(request("?view=closed&page=2"));
+
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(await response.json()).toEqual({
+    data: [{ id: "delivery-closed", disposition: "OUTCOME_UNCONFIRMED", closedAt: closedAt.toISOString() }],
+    page: 2,
+    hasMore: false,
+  });
+  const statement = query.mock.calls[0][0];
+  expect(statement.values).toEqual([manager.organizationId, 26, 25]);
+  expect(statement.text).toContain(`d."status" = 'REVIEW_CLOSED'`);
+  expect(statement.text).toContain('a."organizationId" = d."organizationId"');
+  expect(statement.text).toContain('a."entityId" = d."id"');
+  expect(statement.text).toContain(`a."action" = 'TRAINING_NOTIFICATION_REVIEW_CLOSED'`);
+  expect(statement.text).not.toMatch(/lastError|recipientEmail/);
 });
