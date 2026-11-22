@@ -6,7 +6,7 @@ import { DemoTrainingLesson } from "./demo-training-lesson";
 import { TrainingAssessmentReport } from "./training-assessment-report";
 
 type Employee = { id: string; employeeNumber: string; firstName: string; lastName: string; status: "ACTIVE" | "INACTIVE" | "TERMINATED" };
-type Course = { id: string; code: string; title: string; active: boolean };
+type Course = { id: string; code: string; title: string; active: boolean };\ntype RenewalPolicy = { courseId: string; intervalMonths: number };
 type Assignment = { id: string; employeeId: string; courseId: string; assignedAt: string; dueAt: string | null; status: "ASSIGNED" | "COMPLETED" | "CANCELLED"; cancelReason?: string | null };
 type LearnerCourseContent = { publicationId: string; version: number; lessons: { heading: string; content: string }[]; assessment: { passingScorePercent: number; questions: { prompt: string; choices: string[] }[] } };
 type ReviewContent = { lessons: { heading: string; content: string }[]; assessment: { passingScorePercent: number; questions: { prompt: string; choices: string[]; correctIndex: number; explanation: string }[] } };
@@ -49,7 +49,7 @@ function dateOnlyTime(value: string | null) {
 
 export function TrainingManagementWorkspace({ canManage, today }: { canManage: boolean; today: string }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);\n  const [renewalPolicies, setRenewalPolicies] = useState<RenewalPolicy[]>([]);\n  const [renewalCourseId, setRenewalCourseId] = useState("");\n  const [renewalMonths, setRenewalMonths] = useState("12");
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [completions, setCompletions] = useState<Completion[]>([]);
   const [assessmentResults, setAssessmentResults] = useState<AssessmentResult[]>([]);
@@ -154,7 +154,43 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     return () => controller.abort();
   }, [canManage, section]);
 
-  const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/training/renewal-policies", { credentials: "same-origin", cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Renewal policies could not be loaded");
+        const body: { data?: RenewalPolicy[] } = await response.json();
+        if (!controller.signal.aborted) setRenewalPolicies(body.data ?? []);
+      })
+      .catch(() => { if (!controller.signal.aborted) setNotice("Renewal policies could not be loaded."); });
+    return () => controller.abort();
+  }, []);
+
+  async function saveRenewalPolicy(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!renewalCourseId) return;
+    const intervalMonths = renewalMonths === "none" ? null : Number(renewalMonths);
+    if (intervalMonths !== null && (!Number.isInteger(intervalMonths) || intervalMonths < 1 || intervalMonths > 120)) {
+      setNotice("Renewal interval must be between 1 and 120 months."); return;
+    }
+    setBusy(true);
+    try {
+      const response = await fetch("/api/training/renewal-policies", {
+        method: "PUT", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ courseId: renewalCourseId, intervalMonths }),
+      });
+      if (!response.ok) throw new Error("Renewal policy could not be saved.");
+      setRenewalPolicies((current) => [
+        ...current.filter((policy) => policy.courseId !== renewalCourseId),
+        ...(intervalMonths === null ? [] : [{ courseId: renewalCourseId, intervalMonths }]),
+      ]);
+      setNotice("Renewal policy saved. Existing assignments and completions were not changed.");
+    } catch { setNotice("Renewal policy could not be saved."); }
+    finally { setBusy(false); }
+  }
+
+    const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
   const courseById = useMemo(() => new Map(courses.map((course) => [course.id, course])), [courses]);
   const todayStart = useMemo(() => dateOnlyTime(today) ?? 0, [today]);
   const activeAssignments = assignments.filter((assignment) => assignment.status === "ASSIGNED");
@@ -545,6 +581,30 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     {section === "lifecycle" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Lifecycle actions</h3><p>Cancel or reassign active training without rewriting assignment history.</p></div></div><form onSubmit={lifecycle} className="admin-form"><label>Assignment<select name="assignmentId" defaultValue="" required><option value="" disabled>Select active assignment</option>{activeAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.code ?? assignment.courseId}</option>)}</select></label><label>Action<select name="action" defaultValue="cancel"><option value="cancel">Cancel</option><option value="reassign">Reassign</option></select></label><label>Reason<input name="reason" maxLength={500} required /></label><label>New assigned date<input name="assignedAt" type="date" /></label><label>New due date<input name="dueAt" type="date" /></label><button type="submit" disabled={busy}>Apply lifecycle action</button></form></div>}
 
     {section === "courses" && <div className="module-section-stack">
+      {canManage && <section aria-label="Course renewal policies">
+        <h3>Recurring training policy</h3>
+        <p>Configure a course renewal interval in months. This records the policy only; it does not automatically assign training, expire completions, or issue reminders.</p>
+        <form className="admin-form" onSubmit={(event) => { void saveRenewalPolicy(event); }}>
+          <label>Course<select value={renewalCourseId} onChange={(event) => {
+            const id = event.target.value;
+            setRenewalCourseId(id);
+            setRenewalMonths(String(renewalPolicies.find((policy) => policy.courseId === id)?.intervalMonths ?? 12));
+          }} required>
+            <option value="">Select course</option>
+            {courses.map((course) => <option key={course.id} value={course.id}>{course.code} · {course.title}</option>)}
+          </select></label>
+          <label>Renewal interval<select value={renewalMonths} onChange={(event) => setRenewalMonths(event.target.value)}>
+            <option value="none">No renewal policy</option>
+            <option value="6">Every 6 months</option>
+            <option value="12">Every 12 months</option>
+            <option value="24">Every 24 months</option>
+            <option value="36">Every 36 months</option>
+          </select></label>
+          <button type="submit" disabled={busy || !renewalCourseId}>Save renewal policy</button>
+        </form>
+        <p>{renewalPolicies.length} course(s) with configured renewal intervals.</p>
+      </section>}
+
       {canManage && <section aria-label="Course review and publication queue">
         <h3>Course review and publication</h3>
         <p>Review saved course submissions before publishing. Submitters cannot decide their own submissions. Publishing does not enable employee quizzes or certificates.</p>
