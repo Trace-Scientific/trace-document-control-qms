@@ -11,7 +11,11 @@ type ReviewRow = {
   reminderType: string;
   lastAttemptAt: string | null;
   updatedAt: string;
+  disposition?: string | null;
+  closedAt?: string | null;
 };
+
+type ReviewView = "open" | "closed";
 
 type ReviewPage = {
   page: number;
@@ -25,9 +29,16 @@ const reminderLabels: Record<string, string> = {
   OVERDUE: "Overdue reminder",
 };
 
+const reviewOutcomes: Record<string, string> = {
+  PROVIDER_ACCEPTANCE_CONFIRMED: "Provider acceptance confirmed",
+  PROVIDER_NON_ACCEPTANCE_CONFIRMED: "Provider non-acceptance confirmed",
+  OUTCOME_UNCONFIRMED: "Outcome could not be confirmed",
+};
+
 const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 export function TrainingNotificationReview() {
+  const [view, setView] = useState<ReviewView>("open");
   const [result, setResult] = useState<ReviewPage | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -37,13 +48,18 @@ export function TrainingNotificationReview() {
   const [closeError, setCloseError] = useState("");
   const [closedMessage, setClosedMessage] = useState("");
 
-  async function loadPage(page: number) {
+  async function loadPage(page: number, nextView = view) {
+    if (nextView !== view) {
+      setView(nextView);
+      setResult(null);
+      setClosedMessage("");
+    }
     setLoading(true);
     setError(false);
     setSelected(null);
     setCloseError("");
     try {
-      const response = await fetch(`/api/training/notification-review?page=${page}`, {
+      const response = await fetch(`/api/training/notification-review?page=${page}&view=${nextView}`, {
         credentials: "same-origin",
         cache: "no-store",
       });
@@ -87,14 +103,18 @@ export function TrainingNotificationReview() {
   }
 
   const busy = loading || closing;
+  const showHistory = view === "closed";
 
   return (
-    <section aria-label="Training reminders requiring review" aria-busy={busy}>
-      <button type="button" disabled={busy} onClick={() => void loadPage(1)}>
-        {result ? "Refresh reminders requiring review" : "View reminders requiring review"}
+    <section aria-label="Training reminder delivery reviews" aria-busy={busy}>
+      <button type="button" disabled={busy} onClick={() => void loadPage(1, "open")}>
+        {result && !showHistory ? "Refresh reminders requiring review" : "View reminders requiring review"}
       </button>
-      {loading && <p role="status">Loading reminders for review…</p>}
-      {error && <p role="alert">Reminders requiring review could not be loaded.</p>}
+      <button type="button" disabled={busy} onClick={() => void loadPage(1, "closed")}>
+        {result && showHistory ? "Refresh closed review history" : "View closed review history"}
+      </button>
+      {loading && <p role="status">{showHistory ? "Loading closed reviews…" : "Loading reminders for review…"}</p>}
+      {error && <p role="alert">{showHistory ? "Closed reviews could not be loaded." : "Reminders requiring review could not be loaded."}</p>}
       {closeError && <p role="alert">{closeError}</p>}
       {closedMessage && <p role="status">{closedMessage}</p>}
       {selected && (
@@ -104,9 +124,9 @@ export function TrainingNotificationReview() {
             Review outcome{" "}
             <select required value={disposition} onChange={(event) => setDisposition(event.target.value)} disabled={busy}>
               <option value="">Select an outcome</option>
-              <option value="PROVIDER_ACCEPTANCE_CONFIRMED">Provider acceptance confirmed</option>
-              <option value="PROVIDER_NON_ACCEPTANCE_CONFIRMED">Provider non-acceptance confirmed</option>
-              <option value="OUTCOME_UNCONFIRMED">Outcome could not be confirmed</option>
+              {Object.entries(reviewOutcomes).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
             </select>
           </label>
           <button type="submit" disabled={busy || !disposition}>Close review</button>
@@ -116,11 +136,11 @@ export function TrainingNotificationReview() {
       {result && (
         <>
           {result.data.length === 0 ? (
-            <p role="status">{result.page === 1 ? "No reminders require review." : "No reminders on this page."}</p>
+            <p role="status">{result.page > 1 ? "No reminders on this page." : showHistory ? "No reminder reviews have been closed." : "No reminders require review."}</p>
           ) : (
             <div className="table-wrap">
               <table>
-                <caption>Training reminders requiring review</caption>
+                <caption>{showHistory ? "Closed training reminder reviews" : "Training reminders requiring review"}</caption>
                 <thead>
                   <tr>
                     <th scope="col">Employee number</th>
@@ -128,9 +148,9 @@ export function TrainingNotificationReview() {
                     <th scope="col">Reminder</th>
                     <th scope="col">Renewal due</th>
                     <th scope="col">Last attempt</th>
-                    <th scope="col">Flagged for review</th>
+                    <th scope="col">{showHistory ? "Review closed" : "Flagged for review"}</th>
                     <th scope="col">Delivery reference</th>
-                    <th scope="col">Action</th>
+                    <th scope="col">{showHistory ? "Recorded outcome" : "Action"}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -141,10 +161,12 @@ export function TrainingNotificationReview() {
                       <td>{reminderLabels[row.reminderType] ?? row.reminderType}</td>
                       <td>{row.renewalDueDate}</td>
                       <td>{row.lastAttemptAt ? dateTime.format(new Date(row.lastAttemptAt)) : "Unavailable"}</td>
-                      <td>{dateTime.format(new Date(row.updatedAt))}</td>
+                      <td>{showHistory
+                        ? row.closedAt ? dateTime.format(new Date(row.closedAt)) : "Unavailable"
+                        : dateTime.format(new Date(row.updatedAt))}</td>
                       <td><code>{row.id}</code></td>
                       <td>
-                        <button
+                        {showHistory ? (reviewOutcomes[row.disposition ?? ""] ?? "Unavailable") : <button
                           type="button"
                           disabled={busy}
                           aria-label={`Record outcome for ${row.employeeNumber}, ${row.courseCode}, ${reminderLabels[row.reminderType] ?? row.reminderType}, due ${row.renewalDueDate}`}
@@ -156,7 +178,7 @@ export function TrainingNotificationReview() {
                           }}
                         >
                           Record outcome
-                        </button>
+                        </button>}
                       </td>
                     </tr>
                   ))}
