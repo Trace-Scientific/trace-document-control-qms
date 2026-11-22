@@ -13,6 +13,8 @@ export function TrainingRenewalForecast() {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [filter, setFilter] = useState("DUE");
   const [search, setSearch] = useState("");
+  const [preferences, setPreferences] = useState<{ enabled: boolean; remind30Days: boolean; remind7Days: boolean; remindOverdue: boolean } | null>(null);
+  const [preferenceStatus, setPreferenceStatus] = useState("");
   const [digest, setDigest] = useState<{ overdue: number; within7Days: number; within30Days: number } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -36,6 +38,24 @@ export function TrainingRenewalForecast() {
       .catch(() => {});
     return () => controller.abort();
   }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/training/notification-preferences", { credentials: "same-origin", cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const body: { data?: { enabled: boolean; remind30Days: boolean; remind7Days: boolean; remindOverdue: boolean } } = await response.json();
+        if (!controller.signal.aborted) setPreferences(body.data ?? null);
+      }).catch(() => {});
+    return () => controller.abort();
+  }, []);
+  async function savePreferences() {
+    if (!preferences) return;
+    setPreferenceStatus("Saving…");
+    try {
+      const response = await fetch("/api/training/notification-preferences", { method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(preferences) });
+      setPreferenceStatus(response.ok ? "Preferences saved. Automatic delivery remains inactive." : "Unable to save preferences.");
+    } catch { setPreferenceStatus("Unable to save preferences."); }
+  }
   const overdue = rows.filter((row) => row.daysUntilDue < 0).length;
   const upcoming = rows.filter((row) => row.daysUntilDue >= 0 && row.daysUntilDue <= 30).length;
   const urgent = rows.filter((row) => row.daysUntilDue >= 0 && row.daysUntilDue <= 7).length;
@@ -52,6 +72,12 @@ export function TrainingRenewalForecast() {
   return <section aria-label="Training renewal forecast">
     <h3>Training renewal forecast</h3>
     <p>Based on each employee’s latest official completion and the course renewal interval. This is planning information only; no automatic reassignment or expiration occurs.</p>
+    {preferences && <fieldset><legend>Training notification preferences (manager only)</legend>
+      <p>Configure future delivery. Saving these settings does not activate email or scheduled notifications.</p>
+      {(["enabled", "remind30Days", "remind7Days", "remindOverdue"] as const).map((key) => <label key={key} style={{ display: "block" }}><input type="checkbox" checked={preferences[key]} onChange={(event) => setPreferences({ ...preferences, [key]: event.target.checked })} /> {key === "enabled" ? "Enable notifications when delivery is released" : key === "remind30Days" ? "30-day reminders" : key === "remind7Days" ? "7-day reminders" : "Overdue reminders"}</label>)}
+      <button type="button" onClick={() => void savePreferences()}>Save notification preferences</button>
+      {preferenceStatus && <p role="status">{preferenceStatus}</p>}
+    </fieldset>}
     {digest && <p role="status">Notification preview (not sent): {digest.overdue} overdue, {digest.within7Days} due within 7 days, {digest.within30Days} due within 30 days. Automatic delivery is disabled.</p>}
     {status === "loading" && <p>Loading renewal forecast…</p>}
     {status === "error" && <p role="alert">Renewal forecast could not be loaded.</p>}
