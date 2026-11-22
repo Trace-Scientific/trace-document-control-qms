@@ -12,11 +12,12 @@ export async function claimTrainingRenewalNotifications(
   tx: Transaction,
   organizationId: string,
   batchSize = 25,
+  actorUserId?: string,
 ): Promise<Claim[]> {
   if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 100) {
     throw new Error("Invalid notification batch size");
   }
-  return tx.$queryRaw<Claim[]>(Prisma.sql`
+  const claims = await tx.$queryRaw<Claim[]>(Prisma.sql`
     WITH eligible AS (
       SELECT d."id"
       FROM "TrainingRenewalNotificationDelivery" d
@@ -42,6 +43,15 @@ export async function claimTrainingRenewalNotifications(
     WHERE d."id" = eligible."id" AND d."organizationId" = ${organizationId}::uuid
     RETURNING d."id", d."organizationId", d."attemptCount", d."reminderType"
   `);
+  if (claims.length && !actorUserId) throw new Error("Notification claim audit actor required");
+  for (const claim of claims) {
+    await tx.auditEvent.create({ data: {
+      organizationId, actorUserId: actorUserId!, action: "TRAINING_NOTIFICATION_CLAIMED",
+      entityType: "TrainingRenewalNotificationDelivery", entityId: claim.id,
+      metadata: { attemptCount: claim.attemptCount, reminderType: claim.reminderType },
+    } });
+  }
+  return claims;
 }
 
 export async function recordTrainingRenewalDeliveryOutcome(
@@ -52,6 +62,7 @@ export async function recordTrainingRenewalDeliveryOutcome(
     attemptCount: number;
     outcome: "SENT" | "FAILED";
     error?: string;
+    actorUserId: string;
   },
 ): Promise<boolean> {
   if (!Number.isInteger(input.attemptCount) || input.attemptCount < 1) {
@@ -68,5 +79,46 @@ export async function recordTrainingRenewalDeliveryOutcome(
       AND "status" = 'SENDING' AND "attemptCount" = ${input.attemptCount}
     RETURNING "id"
   `);
+  if (result.length === 1) {
+    await tx.auditEvent.create({ data: {
+      organizationId: input.organizationId, actorUserId: input.actorUserId,
+      action: input.outcome === "SENT" ? "TRAINING_NOTIFICATION_SENT" : "TRAINING_NOTIFICATION_FAILED",
+      entityType: "TrainingRenewalNotificationDelivery", entityId: input.deliveryId,
+      metadata: { attemptCount: input.attemptCount, errorRecorded: Boolean(input.error) },
+    } });
+  }
   return result.length === 1;
+}
+
+/**
+ * Mark abandoned in-flight attempts for manual reconciliation. A crashed worker
+ * may have delivered the message before losing its acknowledgement. Never retry
+ * such attempts automatically.
+ */
+export async function quarantineStaleTrainingRenewalClaims(
+  tx: Transaction,
+  organizationId: string,
+  actorUserId: string,
+  olderThanMinutes = 60,
+): Promise<number> {
+  if (!Number.isInteger(olderThanMinutes) || olderThanMinutes < 15 || olderThanMinutes > 10080) {
+    throw new Error("Invalid recovery age");
+  }
+  const rows = await tx.$queryRaw<Array<{ id: string; attemptCount: number }>>(Prisma.sql`
+    UPDATE "TrainingRenewalNotificationDelivery"
+    SET "status" = 'REVIEW_REQUIRED',
+      "lastError" = 'Delivery outcome unknown after interrupted processing',
+      "updatedAt" = CURRENT_TIMESTAMP
+    WHERE "organizationId" = ${organizationId}::uuid AND "status" = 'SENDING'
+      AND "lastAttemptAt" < CURRENT_TIMESTAMP - (${olderThanMinutes} * INTERVAL '1 minute')
+    RETURNING "id", "attemptCount"
+  `);
+  for (const row of rows) {
+    await tx.auditEvent.create({ data: {
+      organizationId, actorUserId, action: "TRAINING_NOTIFICATION_REVIEW_REQUIRED",
+      entityType: "TrainingRenewalNotificationDelivery", entityId: row.id,
+      metadata: { attemptCount: row.attemptCount, reason: "interrupted_delivery_unknown" },
+    } });
+  }
+  return rows.length;
 }
