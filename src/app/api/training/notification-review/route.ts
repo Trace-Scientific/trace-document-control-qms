@@ -16,6 +16,8 @@ type ReviewRow = {
   reminderType: string;
   lastAttemptAt: Date | null;
   updatedAt: Date;
+  disposition?: string | null;
+  closedAt?: Date | null;
 };
 
 export async function GET(request: NextRequest) {
@@ -26,19 +28,37 @@ export async function GET(request: NextRequest) {
     const params = request.nextUrl.searchParams;
     const pageValue = params.get("page") ?? "1";
     const page = Number(pageValue);
-    if (params.size !== params.getAll("page").length || params.size > 1
+    const view = params.get("view") ?? "open";
+    if (params.getAll("page").length > 1 || params.getAll("view").length > 1
+      || params.size !== Number(params.has("page")) + Number(params.has("view"))
+      || (view !== "open" && view !== "closed")
       || !/^[1-9][0-9]*$/.test(pageValue) || !Number.isSafeInteger((page - 1) * pageSize)) {
       return NextResponse.json({ error: "Invalid review queue page" }, { status: 422 });
     }
 
+    const closed = view === "closed";
+    const closureAudit = closed ? Prisma.sql`
+      LEFT JOIN LATERAL (
+        SELECT a."metadata" ->> 'disposition' AS "disposition", a."occurredAt" AS "closedAt"
+        FROM "AuditEvent" a
+        WHERE a."organizationId" = d."organizationId"
+          AND a."entityType" = 'TrainingRenewalNotificationDelivery' AND a."entityId" = d."id"
+          AND a."action" = 'TRAINING_NOTIFICATION_REVIEW_CLOSED'
+        ORDER BY a."occurredAt" DESC, a."id" DESC
+        LIMIT 1
+      ) closure ON TRUE
+    ` : Prisma.empty;
     const rows = await db.$queryRaw<ReviewRow[]>(Prisma.sql`
       SELECT d."id", e."employeeNumber", c."code" AS "courseCode", c."title" AS "courseTitle",
         to_char(d."renewalDueDate", 'YYYY-MM-DD') AS "renewalDueDate",
         d."reminderType", d."lastAttemptAt", d."updatedAt"
+        ${closed ? Prisma.sql`, closure."disposition", closure."closedAt"` : Prisma.empty}
       FROM "TrainingRenewalNotificationDelivery" d
       JOIN "Employee" e ON e."organizationId" = d."organizationId" AND e."id" = d."employeeId"
       JOIN "TrainingCourse" c ON c."organizationId" = d."organizationId" AND c."id" = d."courseId"
-      WHERE d."organizationId" = ${context.organizationId}::uuid AND d."status" = 'REVIEW_REQUIRED'
+      ${closureAudit}
+      WHERE d."organizationId" = ${context.organizationId}::uuid
+        AND ${closed ? Prisma.sql`d."status" = 'REVIEW_CLOSED'` : Prisma.sql`d."status" = 'REVIEW_REQUIRED'`}
       ORDER BY d."updatedAt" DESC, d."id" DESC
       LIMIT ${pageSize + 1} OFFSET ${(page - 1) * pageSize}
     `);
@@ -54,7 +74,7 @@ export async function GET(request: NextRequest) {
     if (error instanceof Error && error.message === "Access denied") {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
-    return NextResponse.json({ error: "Unable to load reminders for review" }, { status: 500 });
+    return NextResponse.json({ error: "Unable to load reminder reviews" }, { status: 500 });
   }
 }
 
