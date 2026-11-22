@@ -55,13 +55,19 @@ export async function deliverTrainingReminder(
   if (!message.deliveryId || !message.organizationId || !message.idempotencyKey) {
     throw new Error("Missing notification delivery identity");
   }
-  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(message.recipientEmail)) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(message.recipientEmail)) {
     throw new Error("Invalid notification recipient");
   }
   if (!message.subject.trim() || !message.text.trim()) {
     throw new Error("Empty notification content");
   }
-  const result = await provider.deliver(message);
+  let result: TrainingReminderDeliveryResult;
+  try {
+    result = await provider.deliver(message);
+  } catch {
+    // A transport failure can occur after the provider accepted the message.
+    return { status: "unknown", reason: "Provider delivery could not be confirmed" };
+  }
   if (result.status === "accepted" && !result.providerMessageId.trim()) {
     return { status: "unknown", reason: "Provider accepted without a receipt identifier" };
   }
