@@ -54,13 +54,19 @@ export async function claimTrainingRenewalNotifications(
   return claims;
 }
 
+const deliveryOutcomeAuditActions = {
+  SENT: "TRAINING_NOTIFICATION_SENT",
+  FAILED: "TRAINING_NOTIFICATION_FAILED",
+  REVIEW_REQUIRED: "TRAINING_NOTIFICATION_REVIEW_REQUIRED",
+} as const;
+
 export async function recordTrainingRenewalDeliveryOutcome(
   tx: Transaction,
   input: {
     organizationId: string;
     deliveryId: string;
     attemptCount: number;
-    outcome: "SENT" | "FAILED";
+    outcome: keyof typeof deliveryOutcomeAuditActions;
     error?: string;
     actorUserId: string;
   },
@@ -68,11 +74,21 @@ export async function recordTrainingRenewalDeliveryOutcome(
   if (!Number.isInteger(input.attemptCount) || input.attemptCount < 1) {
     throw new Error("Invalid attempt number");
   }
+  let lastError: string | null = null;
+  switch (input.outcome) {
+    case "FAILED":
+      lastError = (input.error ?? "Delivery failed").slice(0, 500);
+      break;
+    case "REVIEW_REQUIRED":
+      // Provider exception details may contain recipient information.
+      lastError = "Provider delivery could not be confirmed";
+      break;
+  }
   const result = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     UPDATE "TrainingRenewalNotificationDelivery"
     SET "status" = ${input.outcome},
       "sentAt" = CASE WHEN ${input.outcome} = 'SENT' THEN CURRENT_TIMESTAMP ELSE NULL END,
-      "lastError" = CASE WHEN ${input.outcome} = 'FAILED' THEN ${(input.error ?? "Delivery failed").slice(0, 500)} ELSE NULL END,
+      "lastError" = ${lastError},
       "updatedAt" = CURRENT_TIMESTAMP
     WHERE "organizationId" = ${input.organizationId}::uuid
       AND "id" = ${input.deliveryId}::uuid
@@ -82,9 +98,13 @@ export async function recordTrainingRenewalDeliveryOutcome(
   if (result.length === 1) {
     await tx.auditEvent.create({ data: {
       organizationId: input.organizationId, actorUserId: input.actorUserId,
-      action: input.outcome === "SENT" ? "TRAINING_NOTIFICATION_SENT" : "TRAINING_NOTIFICATION_FAILED",
+      action: deliveryOutcomeAuditActions[input.outcome],
       entityType: "TrainingRenewalNotificationDelivery", entityId: input.deliveryId,
-      metadata: { attemptCount: input.attemptCount, errorRecorded: Boolean(input.error) },
+      metadata: {
+        attemptCount: input.attemptCount,
+        errorRecorded: input.outcome === "REVIEW_REQUIRED" || Boolean(input.error),
+        ...(input.outcome === "REVIEW_REQUIRED" ? { reason: "provider_delivery_unknown" } : {}),
+      },
     } });
   }
   return result.length === 1;
