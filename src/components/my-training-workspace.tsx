@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { DemoTrainingLesson } from "./demo-training-lesson";
 import { AssignedTrainingAssessment } from "./assigned-training-assessment";
 
+type AssessmentAttempt = { id: string; assignmentId: string; courseCode: string; courseTitle: string; submittedAt: string; scorePercent: number; passingScorePercent: number; passed: boolean; correctCount: number; questionCount: number };
 type Completion = { id: string; assignmentId: string; courseCode: string; courseTitle: string; completedAt: string; result: string | null };
 
 type PublishedLessons = { version: number; lessons: { heading: string; content: string }[]; assessment: { passingScorePercent: number; questions: { prompt: string; choices: string[] }[] } };
@@ -15,6 +16,9 @@ export function MyTrainingWorkspace() {
   const [published, setPublished] = useState<PublishedLessons | null>(null);
   const [lessonError, setLessonError] = useState("");
   const [completions, setCompletions] = useState<Completion[]>([]);
+  const [attempts, setAttempts] = useState<AssessmentAttempt[]>([]);
+  const [attemptLoading, setAttemptLoading] = useState(true);
+  const [attemptError, setAttemptError] = useState("");
   const [completionLoading, setCompletionLoading] = useState(true);
   const [completionError, setCompletionError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -29,6 +33,14 @@ export function MyTrainingWorkspace() {
       })
       .catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Training assignments could not be loaded."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    void fetch("/api/training/my-assessment-history", { credentials: "same-origin", cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(response.status === 403 ? "Your account is not linked to an active employee." : "Assessment history could not be loaded.");
+        const body: { data?: { attempts?: AssessmentAttempt[] } } = await response.json();
+        if (!controller.signal.aborted) setAttempts(body.data?.attempts ?? []);
+      })
+      .catch((reason: unknown) => { if (!controller.signal.aborted) setAttemptError(reason instanceof Error ? reason.message : "Assessment history could not be loaded."); })
+      .finally(() => { if (!controller.signal.aborted) setAttemptLoading(false); });
     void fetch("/api/training/my-completions", { credentials: "same-origin", cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(response.status === 403 ? "Your account is not linked to one active employee record." : response.status === 401 ? "Sign in to view your completion history." : "Completion history could not be loaded.");
@@ -87,6 +99,22 @@ export function MyTrainingWorkspace() {
       <p>Viewing lessons does not mark training complete.</p>
     </section>}
     {selected && selected.status === "ASSIGNED" && ["DEMO-HIPAA", "DEMO-BBP"].includes(selected.courseCode) && <DemoTrainingLesson key={selected.id} courseCode={selected.courseCode} assignmentId={selected.id} employeePractice />}
+    <section aria-labelledby="assessment-history-heading">
+      <h3 id="assessment-history-heading">Assessment attempt history</h3>
+      <p>Scores and passing results are separate from official training completions.</p>
+      {attemptLoading && <p role="status">Loading assessment history…</p>}
+      {attemptError && <p role="alert">{attemptError}</p>}
+      {!attemptLoading && !attemptError && attempts.length === 0 && <p>No recorded assessment attempts.</p>}
+      {!attemptLoading && !attemptError && attempts.length > 0 && <div className="table-wrap"><table>
+        <thead><tr><th>Course</th><th>Submitted</th><th>Score</th><th>Result</th></tr></thead>
+        <tbody>{attempts.map((attempt) => <tr key={attempt.id}>
+          <td>{attempt.courseTitle} ({attempt.courseCode})</td>
+          <td>{formatDate(attempt.submittedAt)}</td>
+          <td>{attempt.scorePercent}% ({attempt.correctCount}/{attempt.questionCount})</td>
+          <td>{attempt.passed ? "Passed" : "Not passed"}</td>
+        </tr>)}</tbody>
+      </table></div>}
+    </section>
     <section aria-labelledby="completion-history-heading">
       <h3 id="completion-history-heading">Official training completion history</h3>
       <p>These are recorded training completions, separate from demonstration quiz practice scores.</p>
