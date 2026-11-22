@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { GovernedEvidenceFilePicker } from "./governed-evidence-file-picker";
 import { DemoTrainingLesson } from "./demo-training-lesson";
+import { TrainingAssessmentReport } from "./training-assessment-report";
 
 type Employee = { id: string; employeeNumber: string; firstName: string; lastName: string; status: "ACTIVE" | "INACTIVE" | "TERMINATED" };
 type Course = { id: string; code: string; title: string; active: boolean };
@@ -590,5 +591,6 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
         <button type="submit" disabled={busy}>Create course</button>
       </form>}
     </div>}
+    {canManage && <TrainingAssessmentReport />}
   </section>;
 }
