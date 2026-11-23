@@ -54,6 +54,8 @@ All content must be clearly labeled **SYNTHETIC / FOR DEMONSTRATION ONLY**. Do n
 
 Rehearse this workflow in the approved demo tenant before a customer session. Use a fictional employee linked to an active demo learner account, a training manager in the same tenant, and an active demonstration course. Prepare one recorded completion in advance so the customer session can start with the certificate.
 
+To set up the learner, open **Administration → Users & access → Training employee links**. An organization-wide administrator with training management and personnel read access can select the active demo account and employee, review the pair, and confirm the link. The link is audited and gives the learner access to their own training history.
+
 1. In **Training management**, assign the course to the fictional employee. If the assignment uses a published course version, sign in as the learner and pass its recorded assessment in **My Training** before the manager records completion.
 2. In **Training management → Record completion**, enter a completion date and result for that assignment. The completion date must follow the assignment and any required passing assessment. For courses coded `DEMO-HIPAA` or `DEMO-BBP`, attach a synthetic governed evidence file in `AVAILABLE` status. Practice quiz scores alone cannot create an official completion.
 3. Sign in as the linked learner. In **My Training → Official training completion history**, select **Print certificate** on the sample completion.
