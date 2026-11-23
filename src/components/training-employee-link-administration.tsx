@@ -36,8 +36,12 @@ export function TrainingEmployeeLinkAdministration({ users }: { users: User[] })
 
   const links = records?.links ?? [];
   const employees = records?.employees ?? [];
-  const eligibleUsers = users.filter((user) => user.status === "ACTIVE" && !links.some((link) => link.userId === user.id));
-  const eligibleEmployees = employees.filter((employee) => employee.status === "ACTIVE" && !links.some((link) => link.employeeId === employee.id));
+  const usersById = new Map(users.map((user) => [user.id, user]));
+  const employeesById = new Map(employees.map((employee) => [employee.id, employee]));
+  const linkedUserIds = new Set(links.map((link) => link.userId));
+  const linkedEmployeeIds = new Set(links.map((link) => link.employeeId));
+  const eligibleUsers = users.filter((user) => user.status === "ACTIVE" && !linkedUserIds.has(user.id));
+  const eligibleEmployees = employees.filter((employee) => employee.status === "ACTIVE" && !linkedEmployeeIds.has(employee.id));
   const user = eligibleUsers.find((candidate) => candidate.id === userId);
   const employee = eligibleEmployees.find((candidate) => candidate.id === employeeId);
 
@@ -88,6 +92,36 @@ export function TrainingEmployeeLinkAdministration({ users }: { users: User[] })
       {notice && <p role="status">{notice}</p>}
       {!records && !error && <p role="status">Loading employee linking options…</p>}
       {!records && error && <button type="button" onClick={() => { setError(""); setRefresh((value) => value + 1); }}>Reload linking options</button>}
+      {records && links.length === 0 && <p>No saved employee links.</p>}
+      {links.length > 0 && (
+        <div className="table-wrap">
+          <table>
+            <caption>Saved training employee links</caption>
+            <thead>
+              <tr>
+                <th scope="col">User account</th>
+                <th scope="col">Account status</th>
+                <th scope="col">Employee record</th>
+                <th scope="col">Employee status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {links.map((link) => {
+                const linkedUser = usersById.get(link.userId);
+                const linkedEmployee = employeesById.get(link.employeeId);
+                return (
+                  <tr key={link.userId}>
+                    <td>{linkedUser ? `${linkedUser.firstName} ${linkedUser.lastName} · ${linkedUser.email}` : "Account unavailable"}</td>
+                    <td>{linkedUser?.status ?? "Unavailable"}</td>
+                    <td>{linkedEmployee ? `${linkedEmployee.employeeNumber} · ${linkedEmployee.firstName} ${linkedEmployee.lastName}` : "Employee unavailable"}</td>
+                    <td>{linkedEmployee?.status ?? "Unavailable"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
       {records && (eligibleUsers.length === 0 || eligibleEmployees.length === 0) && <p>Linking requires an active, unlinked user and employee.</p>}
       {records && eligibleUsers.length > 0 && eligibleEmployees.length > 0 && (
         <form className="template-form" onSubmit={(event) => void submit(event)}>
