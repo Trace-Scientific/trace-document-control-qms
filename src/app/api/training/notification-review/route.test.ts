@@ -69,6 +69,7 @@ test("returns a bounded page of tenant-scoped review entries", async () => {
     renewalDueDate: "2026-12-02",
     reminderType: "DUE_7",
     lastAttemptAt: null,
+    reviewReason: index === 0 ? "interrupted_delivery_unknown" : index === 1 ? "provider_delivery_unknown" : null,
     updatedAt: new Date("2026-11-28T18:15:00Z"),
   }));
   query.mockResolvedValue(rows);
@@ -86,6 +87,11 @@ test("returns a bounded page of tenant-scoped review entries", async () => {
   expect(statement.values).toEqual([manager.organizationId, 26, 25]);
   expect(statement.text).toContain('d."organizationId" = $1::uuid');
   expect(statement.text).toContain(`d."status" = 'REVIEW_REQUIRED'`);
+  expect(statement.text).toContain('a."organizationId" = d."organizationId"');
+  expect(statement.text).toContain('a."entityId" = d."id"');
+  expect(statement.text).toContain(`a."action" = 'TRAINING_NOTIFICATION_REVIEW_REQUIRED'`);
+  expect(statement.text).toContain(`WHEN 'provider_delivery_unknown' THEN 'provider_delivery_unknown'`);
+  expect(statement.text).toContain(`WHEN 'interrupted_delivery_unknown' THEN 'interrupted_delivery_unknown'`);
   expect(statement.text).not.toMatch(/lastError|recipientEmail/);
 });
 
@@ -97,14 +103,14 @@ test("returns an empty first page when no reminders are flagged", async () => {
 
 test("loads closed reviews from the tenant's matching closure audit events", async () => {
   const closedAt = new Date("2026-11-28T18:35:00Z");
-  query.mockResolvedValue([{ id: "delivery-closed", disposition: "OUTCOME_UNCONFIRMED", closedAt }]);
+  query.mockResolvedValue([{ id: "delivery-closed", reviewReason: "provider_delivery_unknown", disposition: "OUTCOME_UNCONFIRMED", closedAt }]);
 
   const response = await GET(request("?view=closed&page=2"));
 
   expect(response.status).toBe(200);
   expect(response.headers.get("Cache-Control")).toBe("private, no-store");
   expect(await response.json()).toEqual({
-    data: [{ id: "delivery-closed", disposition: "OUTCOME_UNCONFIRMED", closedAt: closedAt.toISOString() }],
+    data: [{ id: "delivery-closed", reviewReason: "provider_delivery_unknown", disposition: "OUTCOME_UNCONFIRMED", closedAt: closedAt.toISOString() }],
     page: 2,
     hasMore: false,
   });
