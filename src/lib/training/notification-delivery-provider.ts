@@ -19,6 +19,13 @@ export type TrainingReminderDeliveryResult =
   | Readonly<{ status: "rejected"; reason: string }>
   | Readonly<{ status: "unknown"; reason: string }>;
 
+/** Provider identifiers are opaque, but only bounded visible ASCII is safe to retain. */
+export function trainingReminderProviderReceipt(result: TrainingReminderDeliveryResult): string | null {
+  if (result.status !== "accepted") return null;
+  const receipt = result.providerMessageId.trim();
+  return /^[!-~]{1,512}$/.test(receipt) ? receipt : null;
+}
+
 export interface TrainingReminderProvider {
   deliver(message: TrainingReminderMessage): Promise<TrainingReminderDeliveryResult>;
 }
@@ -68,8 +75,8 @@ export async function deliverTrainingReminder(
     // A transport failure can occur after the provider accepted the message.
     return { status: "unknown", reason: "Provider delivery could not be confirmed" };
   }
-  if (result.status === "accepted" && !result.providerMessageId.trim()) {
-    return { status: "unknown", reason: "Provider accepted without a receipt identifier" };
+  if (result.status === "accepted" && !trainingReminderProviderReceipt(result)) {
+    return { status: "unknown", reason: "Provider accepted without a usable receipt identifier" };
   }
   return result;
 }

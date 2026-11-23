@@ -1,5 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { trainingReminderCandidates } from "./notification-queue";
+import { classifyTrainingReminderOutcome } from "./notification-delivery-outcome";
+import { trainingReminderProviderReceipt, type TrainingReminderDeliveryResult } from "./notification-delivery-provider";
 
 /**
  * Internal-only transaction primitives for a future notification worker.
@@ -69,11 +71,18 @@ export async function recordTrainingRenewalDeliveryOutcome(
     attemptCount: number;
     outcome: keyof typeof deliveryOutcomeAuditActions;
     error?: string;
+    providerMessageId?: string;
     actorUserId: string;
   },
 ): Promise<boolean> {
   if (!Number.isInteger(input.attemptCount) || input.attemptCount < 1) {
     throw new Error("Invalid attempt number");
+  }
+  const providerMessageId = input.outcome === "SENT" && input.providerMessageId !== undefined
+    ? trainingReminderProviderReceipt({ status: "accepted", providerMessageId: input.providerMessageId })
+    : null;
+  if (input.providerMessageId !== undefined && providerMessageId === null) {
+    throw new Error("Invalid provider receipt for notification outcome");
   }
   let lastError: string | null = null;
   switch (input.outcome) {
@@ -90,6 +99,7 @@ export async function recordTrainingRenewalDeliveryOutcome(
     SET "status" = ${input.outcome},
       "sentAt" = CASE WHEN ${input.outcome} = 'SENT' THEN CURRENT_TIMESTAMP ELSE NULL END,
       "lastError" = ${lastError},
+      "providerMessageId" = ${providerMessageId},
       "updatedAt" = CURRENT_TIMESTAMP
     WHERE "organizationId" = ${input.organizationId}::uuid
       AND "id" = ${input.deliveryId}::uuid
@@ -104,11 +114,31 @@ export async function recordTrainingRenewalDeliveryOutcome(
       metadata: {
         attemptCount: input.attemptCount,
         errorRecorded: input.outcome === "REVIEW_REQUIRED" || Boolean(input.error),
+        ...(providerMessageId !== null ? { providerReceiptRecorded: true } : {}),
         ...(input.outcome === "REVIEW_REQUIRED" ? { reason: "provider_delivery_unknown" } : {}),
       },
     } });
   }
   return result.length === 1;
+}
+
+/** Record the provider result for the exact claimed attempt without retaining provider diagnostics. */
+export function recordTrainingRenewalProviderResult(
+  tx: Transaction,
+  input: {
+    organizationId: string;
+    deliveryId: string;
+    attemptCount: number;
+    actorUserId: string;
+    result: TrainingReminderDeliveryResult;
+  },
+): Promise<boolean> {
+  const { result, ...attempt } = input;
+  return recordTrainingRenewalDeliveryOutcome(tx, {
+    ...attempt,
+    outcome: classifyTrainingReminderOutcome(result),
+    providerMessageId: trainingReminderProviderReceipt(result) ?? undefined,
+  });
 }
 
 /**
