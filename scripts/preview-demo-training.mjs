@@ -33,7 +33,7 @@ export function previewDemoTraining() {
     completionWalkthrough: [
       {
         step: 1,
-        action: "Select a synthetic learner and an active demonstration course",
+        action: "Select an active fictional employee linked to an active learner account in the demo tenant and an active demonstration course",
         expectedResult: "Training coordinator can review learner and course eligibility",
         recordCreated: false,
       },
@@ -45,7 +45,7 @@ export function previewDemoTraining() {
       },
       {
         step: 3,
-        action: "Record completion with a date, result, and optional AVAILABLE evidence file",
+        action: "Record official completion as a training manager after the learner passes any required published assessment. Attach an AVAILABLE governed evidence file when required.",
         expectedResult: "In an authorized demo only, completion would create an immutable TrainingRecord and mark the assignment COMPLETED",
         recordCreated: false,
       },
@@ -53,6 +53,12 @@ export function previewDemoTraining() {
         step: 4,
         action: "Review completion history and verify tenant-scoped evidence visibility",
         expectedResult: "Only authorized same-tenant users may view the completion and evidence",
+        recordCreated: false,
+      },
+      {
+        step: 5,
+        action: "Sign in as the linked learner and open My Training > Official training completion history > Print certificate",
+        expectedResult: "Print preview shows the course, learner, completion date, recorded result, and reference from the official completion",
         recordCreated: false,
       },
     ],
