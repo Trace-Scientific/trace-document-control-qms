@@ -14,7 +14,7 @@ For each case record exact commit SHA, environment identity, synthetic tenant ID
 | ISO-04 | Provisioning rejects wrong environment, database, collision, and replay | Read-only preflight and approved isolated test evidence; no production data or role changes | Repository guards exist; live acceptance outstanding |
 | ISO-05 | Synthetic demo users cannot reach platform administrator or another organization's data | Role-based UI/API negative checks for each demo persona; support access only through separately governed process | Not verified for live demo |
 | ISO-06 | External demo contains no PHI or real customer records | Data-classification review of users, documents, attachments, notifications, audit metadata, and exports | Not verified |
-| REC-01 | Backup is usable and restore is isolated | Timestamped backup, checksum, isolated restore transcript, post-restore checks and named reviewer | Prior isolated restore reported in provisioning contract; current target evidence requires revalidation |
+| REC-01 | Backup is usable and restore is isolated | Timestamped backup, checksum, isolated restore transcript, post-restore checks and named reviewer | November 23 checksum and isolated restore verified; independent reviewer acceptance pending |
 | REC-02 | Demo reset cannot affect production | Independently verified environment/database identity and approved rollback/restore test | Not verified |
 | OPS-01 | External access is approved | Signed product/security go/no-go decision, credential distribution process, expiry/revocation and incident contact | Not approved |
 
@@ -92,3 +92,7 @@ The historical snapshots above remain preserved as dated evidence, including old
 **Minimum next test decision:** First inventory whether two approved synthetic authenticated tenant personas already exist. The original demo is preserved; Lab B currently has no users or documents. If a second authenticated tenant fixture is necessary, obtain separately recorded authorization for activation, accounts, permissions and test data before making live writes. Until then, continue isolated CI regression and read-only evidence work only.
 
 See [detailed evidence reconciliation](acceptance-evidence-reconciliation-2026-11-18.md), [PR #458](https://github.com/Trace-Scientific/trace-document-control-qms/pull/458), [PR #457](https://github.com/Trace-Scientific/trace-document-control-qms/pull/457), and [issue #459](https://github.com/Trace-Scientific/trace-document-control-qms/issues/459).
+
+## REC-01 evidence on November 23, 2026
+
+The approved Railway demo restore [passed checksum verification and restored 216 application tables](https://railway.com/project/e6cc5f1e-3064-46d3-90bf-c763334f01a8/service/911b9c57-532d-48bd-972c-8cec81fc2bd9?environmentId=3bb1cae4-454f-4f6c-b2cb-fb38c8eb58a4&id=703ed20b-2a77-4c79-9a54-58c6cc94f7fb) from `trace-qms-demo-20261123T090224Z.backup` into disposable, local-only PostgreSQL 18. See the [recovery runbook](../demo-database-backup-recovery-runbook.md#verified-restore-on-november-23-2026) for the archive key and timestamps. Independent reviewer acceptance, application-level recovery, and REC-02 demo-reset verification remain open.
