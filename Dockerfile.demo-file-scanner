@@ -1,0 +1,7 @@
+FROM debian:trixie-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates clamav clamav-freshclam python3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY scripts/railway-demo-file-scanner.py /app/scanner.py
+USER clamav
+ENTRYPOINT ["python3", "-u", "/app/scanner.py"]
