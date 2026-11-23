@@ -16,6 +16,7 @@ type ReviewRow = {
   reminderType: string;
   lastAttemptAt: Date | null;
   updatedAt: Date;
+  reviewReason: "provider_delivery_unknown" | "interrupted_delivery_unknown" | null;
   disposition?: string | null;
   closedAt?: Date | null;
 };
@@ -51,7 +52,19 @@ export async function GET(request: NextRequest) {
     const rows = await db.$queryRaw<ReviewRow[]>(Prisma.sql`
       SELECT d."id", e."employeeNumber", c."code" AS "courseCode", c."title" AS "courseTitle",
         to_char(d."renewalDueDate", 'YYYY-MM-DD') AS "renewalDueDate",
-        d."reminderType", d."lastAttemptAt", d."updatedAt"
+        d."reminderType", d."lastAttemptAt", d."updatedAt",
+        (
+          SELECT CASE a."metadata" ->> 'reason'
+            WHEN 'provider_delivery_unknown' THEN 'provider_delivery_unknown'
+            WHEN 'interrupted_delivery_unknown' THEN 'interrupted_delivery_unknown'
+          END
+          FROM "AuditEvent" a
+          WHERE a."organizationId" = d."organizationId"
+            AND a."entityType" = 'TrainingRenewalNotificationDelivery' AND a."entityId" = d."id"
+            AND a."action" = 'TRAINING_NOTIFICATION_REVIEW_REQUIRED'
+          ORDER BY a."occurredAt" DESC, a."id" DESC
+          LIMIT 1
+        ) AS "reviewReason"
         ${closed ? Prisma.sql`, closure."disposition", closure."closedAt"` : Prisma.empty}
       FROM "TrainingRenewalNotificationDelivery" d
       JOIN "Employee" e ON e."organizationId" = d."organizationId" AND e."id" = d."employeeId"
