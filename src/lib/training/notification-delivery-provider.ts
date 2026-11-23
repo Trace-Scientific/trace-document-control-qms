@@ -27,8 +27,10 @@ export function trainingReminderProviderReceipt(result: TrainingReminderDelivery
 }
 
 export interface TrainingReminderProvider {
-  deliver(message: TrainingReminderMessage): Promise<TrainingReminderDeliveryResult>;
+  deliver(message: TrainingReminderMessage, signal: AbortSignal): Promise<TrainingReminderDeliveryResult>;
 }
+
+export const TRAINING_REMINDER_PROVIDER_TIMEOUT_MS = 15_000;
 
 export type DeliveryAuthorization = Readonly<{
   outboundEnabled: boolean;
@@ -72,12 +74,28 @@ export async function deliverTrainingReminder(
   if (!message.subject.trim() || !message.text.trim()) {
     throw new Error("Empty notification content");
   }
+  const controller = new AbortController();
+  const unknown: TrainingReminderDeliveryResult = {
+    status: "unknown",
+    reason: "Provider delivery could not be confirmed",
+  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<TrainingReminderDeliveryResult>((resolve) => {
+    timer = setTimeout(() => {
+      resolve(unknown);
+      controller.abort();
+    }, TRAINING_REMINDER_PROVIDER_TIMEOUT_MS);
+  });
+
   let result: TrainingReminderDeliveryResult;
   try {
-    result = await provider.deliver(message);
+    // Bound the wait even if the provider ignores cancellation.
+    result = await Promise.race([deadline, provider.deliver(message, controller.signal)]);
   } catch {
     // A transport failure can occur after the provider accepted the message.
-    return { status: "unknown", reason: "Provider delivery could not be confirmed" };
+    return unknown;
+  } finally {
+    clearTimeout(timer);
   }
   if (result.status === "accepted" && !trainingReminderProviderReceipt(result)) {
     return { status: "unknown", reason: "Provider accepted without a usable receipt identifier" };
