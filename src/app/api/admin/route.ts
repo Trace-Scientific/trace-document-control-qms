@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { authenticateRequest, AuthenticationRequiredError } from "@/lib/security/authenticated-request";
-import { requireAuthorization } from "@/lib/security/authorization";
+import { evaluateAuthorization, requireAuthorization } from "@/lib/security/authorization";
 import { db } from "@/lib/db";
 
 const responseOptions = {
@@ -25,6 +25,9 @@ export async function GET(request: NextRequest) {
   try {
     const context = await authenticateRequest(request);
     requireAuthorization(context, { organizationId: context.organizationId, permission: "administration.manage" });
+    const canLinkTrainingEmployees = ["training.manage", "personnel.read"].every((permission) =>
+      evaluateAuthorization(context, { organizationId: context.organizationId, permission }).allowed
+    );
     const [organization, sites, departments, users, roles, permissions, documentTypes, roleAssignments] = await Promise.all([
       db.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { displayName: true, loginCode: true } }),
       db.site.findMany({ where: { organizationId: context.organizationId }, orderBy: { name: "asc" } }),
@@ -40,7 +43,7 @@ export async function GET(request: NextRequest) {
         ORDER BY "assignedAt" ASC
       `),
     ]);
-    return NextResponse.json({ data: { organization, sites, departments, users, roles, permissions, documentTypes, roleAssignments } }, responseOptions);
+    return NextResponse.json({ data: { organization, sites, departments, users, roles, permissions, documentTypes, roleAssignments, canLinkTrainingEmployees } }, responseOptions);
   } catch (error) {
     if (error instanceof AuthenticationRequiredError) return NextResponse.json({ error: "Authentication required" }, { status: 401, ...responseOptions });
     if (error instanceof Error && error.message === "Access denied") return NextResponse.json({ error: "Access denied" }, { status: 403, ...responseOptions });
