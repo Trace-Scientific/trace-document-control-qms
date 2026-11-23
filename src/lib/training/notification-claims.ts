@@ -156,13 +156,22 @@ export async function quarantineStaleTrainingRenewalClaims(
     throw new Error("Invalid recovery age");
   }
   const rows = await tx.$queryRaw<Array<{ id: string; attemptCount: number }>>(Prisma.sql`
-    UPDATE "TrainingRenewalNotificationDelivery"
+    WITH stale AS (
+      SELECT "id"
+      FROM "TrainingRenewalNotificationDelivery"
+      WHERE "organizationId" = ${organizationId}::uuid AND "status" = 'SENDING'
+        AND "lastAttemptAt" < CURRENT_TIMESTAMP - (${olderThanMinutes} * INTERVAL '1 minute')
+      ORDER BY "lastAttemptAt", "id"
+      LIMIT 25
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE "TrainingRenewalNotificationDelivery" d
     SET "status" = 'REVIEW_REQUIRED',
       "lastError" = 'Delivery outcome unknown after interrupted processing',
       "updatedAt" = CURRENT_TIMESTAMP
-    WHERE "organizationId" = ${organizationId}::uuid AND "status" = 'SENDING'
-      AND "lastAttemptAt" < CURRENT_TIMESTAMP - (${olderThanMinutes} * INTERVAL '1 minute')
-    RETURNING "id", "attemptCount"
+    FROM stale
+    WHERE d."id" = stale."id" AND d."organizationId" = ${organizationId}::uuid
+    RETURNING d."id", d."attemptCount"
   `);
   for (const row of rows) {
     await tx.auditEvent.create({ data: {
