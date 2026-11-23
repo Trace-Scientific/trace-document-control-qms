@@ -3,6 +3,23 @@ import { Prisma } from "@prisma/client";
 type Transaction = Prisma.TransactionClient;
 type Run = { id: string; reservedAt: Date };
 
+// The reservation and readiness report use the same UTC schedule window.
+export const trainingReminderStagingWindow = Prisma.sql`
+  CROSS JOIN LATERAL (
+    SELECT GREATEST(
+      CURRENT_TIMESTAMP,
+      s."lastRunAt" + s."minimumIntervalHours" * INTERVAL '1 hour'
+    ) AT TIME ZONE 'UTC' AS "earliestUtc"
+  ) earliest
+  CROSS JOIN LATERAL (
+    SELECT (
+      GREATEST(earliest."earliestUtc",
+        date_trunc('day', earliest."earliestUtc") + s."hourUtc" * INTERVAL '1 hour'
+      ) AT TIME ZONE 'UTC'
+    ) AS "availableAt"
+  ) staging_window
+`;
+
 /**
  * Internal-only reservation: caller must provide an authenticated tenant actor.
  * Call through an authorized staging or delivery service.
@@ -16,13 +33,10 @@ export async function reserveTrainingNotificationScheduleRun(
   // Lock schedule row to serialize concurrent reservations for this tenant.
   const schedule = await tx.$queryRaw<Array<{ enabled: boolean; due: boolean }>>(Prisma.sql`
     SELECT s."enabled",
-      (s."enabled" AND p."enabled"
-        AND EXTRACT(HOUR FROM CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::integer >= s."hourUtc"
-        AND (s."lastRunAt" IS NULL OR
-          s."lastRunAt" <= CURRENT_TIMESTAMP - s."minimumIntervalHours" * INTERVAL '1 hour')
-      ) AS "due"
+      (s."enabled" AND p."enabled" AND staging_window."availableAt" <= CURRENT_TIMESTAMP) AS "due"
     FROM "TrainingNotificationSchedule" s
     JOIN "TrainingNotificationPreference" p ON p."organizationId" = s."organizationId"
+    ${trainingReminderStagingWindow}
     WHERE s."organizationId" = ${organizationId}::uuid
     FOR UPDATE OF s
   `);
