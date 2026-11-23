@@ -45,7 +45,42 @@ export async function GET(request: NextRequest) {
     const record = records[0];
     if (!record) return NextResponse.json({ error: "Official completion not found" }, { status: 404 });
     const date = record.completedAt.toISOString().slice(0, 10);
-    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Training completion record</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:Arial,sans-serif;max-width:760px;margin:70px auto;padding:30px;color:#182b40}main{border:3px solid #173c61;padding:48px;text-align:center}h1{font-size:30px}h2{font-size:25px}p{line-height:1.7}.reference{font-family:monospace;overflow-wrap:anywhere;font-size:13px}@media print{body{margin:0}button{display:none}}</style></head><body><main><h1>Training Completion Record</h1><p>This document reflects a manager-recorded completion in Trace QMS.</p><h2>${escapeHtml(record.firstName)} ${escapeHtml(record.lastName)}</h2><p>Completed: <strong>${escapeHtml(record.courseTitle)}</strong> (${escapeHtml(record.courseCode)})</p><p>Completion date: ${date}</p><p>Recorded result: ${escapeHtml(record.result ?? "Not specified")}</p><p class="reference">Record reference: ${escapeHtml(record.id)}</p><p><small>Generated from an existing controlled training completion. This document does not confer accreditation, continuing education credits, or regulatory certification. Verify the reference against the authenticated Trace QMS record.</small></p></main><p><button onclick="window.print()">Print or save as PDF</button></p></body></html>`;
+    const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Certificate of Training Completion | Trace QMS</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 760px; margin: 3rem auto; padding: 0 1.25rem; color: #182b40; }
+    main { border: 3px solid #173c61; padding: clamp(1.25rem, 6vw, 3rem); text-align: center; overflow-wrap: anywhere; }
+    h1, h2 { margin: 0 0 1rem; }
+    p { line-height: 1.5; }
+    .reference { font-family: monospace; }
+    .print-action { text-align: center; }
+    @page { margin: 0.65in; }
+    @media print {
+      body { max-width: none; margin: 0; padding: 0; }
+      main { break-inside: avoid; }
+      .print-action { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <p>Trace QMS</p>
+    <h1>Certificate of Training Completion</h1>
+    <p>This certifies that</p>
+    <h2>${escapeHtml(record.firstName)} ${escapeHtml(record.lastName)}</h2>
+    <p>Completed <strong>${escapeHtml(record.courseTitle)}</strong> (${escapeHtml(record.courseCode)})</p>
+    <p>Completion date: ${date}</p>
+    <p>Recorded result: ${escapeHtml(record.result ?? "Not specified")}</p>
+    <p class="reference">Record reference: ${escapeHtml(record.id)}</p>
+    <p><small>This certificate documents a manager-recorded completion in Trace QMS. Verify the reference against the authenticated training record. The certificate does not confer accreditation, continuing education credit, or regulatory certification.</small></p>
+  </main>
+  <p class="print-action"><button type="button" onclick="window.print()">Print or save as PDF</button></p>
+</body>
+</html>`;
     return new NextResponse(html, { headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "private, no-store",
