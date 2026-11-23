@@ -55,6 +55,10 @@ The existing Railway demo application was exercised manually with fictional user
 3. Run the tenant-isolation, restore/reset, and access-permission checks in Stage C.
 4. Prepare the prospect walkthrough and operator reset runbook, then record product/security sign-off.
 
+## Observed demo training certificate evidence — November 23, 2026
+
+An administrator linked the fictional Taylor Demo account to its active employee record through **Administration → Users & access → Training employee links**. Signed in as Taylor, the tester opened **My Training → Official training completion history → Print certificate** for **HIPAA Privacy Training (Demo)**. The certificate displayed the learner, course, November 18 completion date, recorded result, and reference. The remote browser did not expose its native print dialog, so the desktop print/PDF layout is still pending. This check covers the demo learner path and leaves the Stage C acceptance gates open.
+
 ## Commercial launch gates (separate from demo)
 Complete release traceability, critical-workflow UAT, backup/restore exercise, documented residual risks, controlled User Manual release, customer onboarding and subscription verification, and final quality/security/product approvals. A Railway SUCCESS deployment is not validation approval.
 
