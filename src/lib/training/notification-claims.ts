@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { trainingReminderCandidates } from "./notification-queue";
 
 /**
  * Internal-only transaction primitives for a future notification worker.
@@ -18,19 +19,19 @@ export async function claimTrainingRenewalNotifications(
     throw new Error("Invalid notification batch size");
   }
   const claims = await tx.$queryRaw<Claim[]>(Prisma.sql`
-    WITH eligible AS (
+    ${trainingReminderCandidates(organizationId)}, eligible AS (
       SELECT d."id"
       FROM "TrainingRenewalNotificationDelivery" d
-      JOIN "TrainingNotificationPreference" p
-        ON p."organizationId" = d."organizationId" AND p."enabled" = TRUE
+      JOIN candidate c
+        ON c."employeeId" = d."employeeId" AND c."courseId" = d."courseId"
+        AND c."completionId" = d."completionId" AND c."dueDate" = d."renewalDueDate"
+        AND c."reminderType" = d."reminderType"
+      JOIN "TrainingNotificationSchedule" s ON s."organizationId" = d."organizationId" AND s."enabled"
       WHERE d."organizationId" = ${organizationId}::uuid
         AND (d."status" = 'PENDING'
           OR (d."status" = 'FAILED' AND d."attemptCount" < 3
             AND d."updatedAt" < CURRENT_TIMESTAMP - INTERVAL '15 minutes'))
         AND d."attemptCount" < 3
-        AND ((d."reminderType" = 'DUE_30' AND p."remind30Days")
-          OR (d."reminderType" = 'DUE_7' AND p."remind7Days")
-          OR (d."reminderType" = 'OVERDUE' AND p."remindOverdue"))
       ORDER BY d."createdAt", d."id"
       LIMIT ${batchSize}
       FOR UPDATE OF d SKIP LOCKED
