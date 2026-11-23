@@ -34,9 +34,11 @@ test("offline enrollment scenarios are proposed only and contain no completion e
 
 test("completion walkthrough explains governed lifecycle without fabricating records", () => {
   const preview = previewDemoTraining();
-  assert.deepEqual(preview.completionWalkthrough.map((step) => step.step), [1, 2, 3, 4]);
+  assert.deepEqual(preview.completionWalkthrough.map((step) => step.step), [1, 2, 3, 4, 5]);
   assert.ok(preview.completionWalkthrough.every((step) => step.recordCreated === false));
   assert.equal(preview.completionsCreated, 0);
   assert.ok(preview.completionWalkthrough[2].expectedResult.includes("immutable TrainingRecord"));
   assert.ok(preview.completionWalkthrough[3].expectedResult.includes("same-tenant"));
+  assert.ok(preview.completionWalkthrough[4].action.includes("Print certificate"));
+  assert.ok(preview.completionWalkthrough[4].expectedResult.includes("reference from the official completion"));
 });
