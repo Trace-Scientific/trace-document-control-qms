@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 
 type QueryClient = Pick<Prisma.TransactionClient, "$queryRaw">;
 
-function reminderCandidates(organizationId: string) {
+export function trainingReminderCandidates(organizationId: string) {
   return Prisma.sql`
     WITH latest AS (
       SELECT DISTINCT ON (r."employeeId", r."courseId")
@@ -49,7 +49,7 @@ export function previewTrainingReminderQueue(client: QueryClient, organizationId
     eligible: bigint;
     alreadyRecorded: bigint;
   }>>(Prisma.sql`
-    ${reminderCandidates(organizationId)}
+    ${trainingReminderCandidates(organizationId)}
     SELECT c."reminderType", count(*) FILTER (WHERE d."id" IS NULL) AS eligible,
       count(*) FILTER (WHERE d."id" IS NOT NULL) AS "alreadyRecorded"
     FROM candidate c
@@ -71,7 +71,7 @@ export async function stageTrainingReminderQueue(
   }
 
   const staged = await tx.$queryRaw<Array<{ id: string; reminderType: string; actorUserId: string }>>(Prisma.sql`
-    ${reminderCandidates(organizationId)}, active_run AS (
+    ${trainingReminderCandidates(organizationId)}, active_run AS (
       SELECT r."actorUserId"
       FROM "TrainingNotificationScheduleRun" r
       JOIN "TrainingNotificationSchedule" s ON s."organizationId" = r."organizationId" AND s."enabled"
