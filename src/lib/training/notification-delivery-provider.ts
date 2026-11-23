@@ -52,6 +52,10 @@ export function assertTrainingReminderDeliveryAuthorized(
   }
 }
 
+export function isTrainingReminderEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 /** Explicit invocation only; never used by dry-run routes or schedulers. */
 export async function deliverTrainingReminder(
   provider: TrainingReminderProvider,
@@ -62,7 +66,7 @@ export async function deliverTrainingReminder(
   if (!message.deliveryId || !message.organizationId || !message.idempotencyKey) {
     throw new Error("Missing notification delivery identity");
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(message.recipientEmail)) {
+  if (!isTrainingReminderEmail(message.recipientEmail)) {
     throw new Error("Invalid notification recipient");
   }
   if (!message.subject.trim() || !message.text.trim()) {
