@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { authenticateRequest, AuthenticationRequiredError } from "@/lib/security/authenticated-request";
 import { requireAuthorization } from "@/lib/security/authorization";
+import { trainingReminderStagingWindow } from "@/lib/training/notification-schedule-runs";
 
 /** Report staging schedule settings and outbound delivery readiness. */
 export async function GET(request: NextRequest) {
@@ -17,12 +18,17 @@ export async function GET(request: NextRequest) {
       scheduleEnabled: boolean; hourUtc: number; minimumIntervalHours: number;
       lastRunAt: Date | null; preferencesEnabled: boolean;
       pending: bigint; failed: bigint; reviewRequired: bigint;
+      activeRun: boolean; stagingDue: boolean; stagingAvailableAt: Date;
     }>>(Prisma.sql`
       SELECT COALESCE(s."enabled", FALSE) AS "scheduleEnabled",
         COALESCE(s."hourUtc", 14) AS "hourUtc",
         COALESCE(s."minimumIntervalHours", 24) AS "minimumIntervalHours",
         s."lastRunAt",
         COALESCE(p."enabled", FALSE) AS "preferencesEnabled",
+        staging_window."availableAt" AS "stagingAvailableAt",
+        staging_window."availableAt" <= CURRENT_TIMESTAMP AS "stagingDue",
+        EXISTS (SELECT 1 FROM "TrainingNotificationScheduleRun" r
+          WHERE r."organizationId" = s."organizationId" AND r."status" = 'RESERVED') AS "activeRun",
         (SELECT COUNT(*) FROM "TrainingRenewalNotificationDelivery" d
           WHERE d."organizationId" = ${context.organizationId}::uuid AND d."status" = 'PENDING') AS "pending",
         (SELECT COUNT(*) FROM "TrainingRenewalNotificationDelivery" d
@@ -32,8 +38,13 @@ export async function GET(request: NextRequest) {
       FROM (SELECT 1) seed
       LEFT JOIN "TrainingNotificationSchedule" s ON s."organizationId" = ${context.organizationId}::uuid
       LEFT JOIN "TrainingNotificationPreference" p ON p."organizationId" = ${context.organizationId}::uuid
+      ${trainingReminderStagingWindow}
     `);
     const row = rows[0];
+    const stagingStatus = !row.scheduleEnabled ? "schedule_disabled"
+      : !row.preferencesEnabled ? "preferences_disabled"
+      : row.activeRun ? "run_active"
+      : row.stagingDue ? "ready" : "waiting";
     return NextResponse.json({
       data: {
         scheduleEnabled: row.scheduleEnabled,
@@ -44,6 +55,10 @@ export async function GET(request: NextRequest) {
         pending: Number(row.pending),
         failed: Number(row.failed),
         reviewRequired: Number(row.reviewRequired),
+        staging: {
+          status: stagingStatus,
+          nextRunAt: stagingStatus === "waiting" ? row.stagingAvailableAt : null,
+        },
         readyForActivation: false,
         blockers: [
           ...(!row.scheduleEnabled ? ["Schedule not authorized for this tenant"] : []),
