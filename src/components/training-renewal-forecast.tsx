@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { TrainingNotificationReview } from "./training-notification-review";
+import { TrainingReminderSchedule } from "./training-reminder-schedule";
 
 type Renewal = {
   employeeId: string; employeeNumber: string; firstName: string; lastName: string;
@@ -138,6 +139,11 @@ export function TrainingRenewalForecast() {
       <button type="button" onClick={() => void savePreferences()}>Save notification preferences</button>
       {preferenceStatus && <p role="status">{preferenceStatus}</p>}
     </fieldset>}
+    {preferences && <TrainingReminderSchedule disabled={processorBusy} onSaved={() => {
+      setProcessorPreview(null);
+      setStagingAvailable(false);
+      setStagingStatus("");
+    }} />}
     {preferences && <TrainingNotificationReview />}
     {preferences && <div><button type="button" disabled={processorBusy} onClick={() => void previewProcessor()}>Preview notification processing (dry run)</button>
       {processorError && <p role="alert">{processorError}</p>}
