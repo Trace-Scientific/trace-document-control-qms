@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { authenticateRequest, AuthenticationRequiredError } from "@/lib/security/authenticated-request";
 import { requireAuthorization } from "@/lib/security/authorization";
+import { countStaleTrainingRenewalClaims } from "@/lib/training/notification-claims";
 
 const pageSize = 25;
 
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
         LIMIT 1
       ) closure ON TRUE
     ` : Prisma.empty;
-    const rows = await db.$queryRaw<ReviewRow[]>(Prisma.sql`
+    const pageRows = db.$queryRaw<ReviewRow[]>(Prisma.sql`
       SELECT d."id", e."employeeNumber", c."code" AS "courseCode", c."title" AS "courseTitle",
         to_char(d."renewalDueDate", 'YYYY-MM-DD') AS "renewalDueDate",
         d."reminderType", d."lastAttemptAt", d."updatedAt",
@@ -76,8 +77,18 @@ export async function GET(request: NextRequest) {
       LIMIT ${pageSize + 1} OFFSET ${(page - 1) * pageSize}
     `);
 
+    const [rows, recoverableCount] = await Promise.all([
+      pageRows,
+      closed ? null : countStaleTrainingRenewalClaims(db, context.organizationId),
+    ]);
+
     return NextResponse.json(
-      { data: rows.slice(0, pageSize), page, hasMore: rows.length > pageSize },
+      {
+        data: rows.slice(0, pageSize),
+        page,
+        hasMore: rows.length > pageSize,
+        ...(recoverableCount === null ? {} : { recoverableCount }),
+      },
       { headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (error) {

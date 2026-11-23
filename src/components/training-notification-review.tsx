@@ -21,6 +21,7 @@ type ReviewView = "open" | "closed";
 type ReviewPage = {
   page: number;
   hasMore: boolean;
+  recoverableCount?: number;
   data: ReviewRow[];
 };
 
@@ -148,6 +149,7 @@ export function TrainingNotificationReview() {
 
   const busy = loading || closing || recovering;
   const showHistory = view === "closed";
+  const recoverableCount = result?.recoverableCount ?? 0;
 
   return (
     <section aria-label="Training reminder delivery reviews" aria-busy={busy}>
@@ -157,10 +159,17 @@ export function TrainingNotificationReview() {
       <button type="button" disabled={busy} onClick={() => void loadPage(1, "closed")}>
         {result && showHistory ? "Refresh closed review history" : "View closed review history"}
       </button>
-      {result && !showHistory && !selected && (
-        <button type="button" disabled={busy} onClick={() => void recoverInterruptedReminders()}>
-          Move attempts stalled for over an hour to review
-        </button>
+      {!showHistory && !selected && recoverableCount > 0 && (
+        <div>
+          <p role="status">
+            {recoverableCount === 1
+              ? "1 reminder attempt has stalled for over an hour."
+              : `${recoverableCount} reminder attempts have stalled for over an hour.`}
+          </p>
+          <button type="button" disabled={busy} onClick={() => void recoverInterruptedReminders()}>
+            Move up to 25 stalled attempts to review
+          </button>
+        </div>
       )}
       {recoveryError && <p role="alert">Interrupted reminders could not be moved to review. Try again.</p>}
       {recoveryMessage && <p role="status">{recoveryMessage}</p>}

@@ -29,7 +29,7 @@ function request(search = "") {
 
 beforeEach(() => {
   authenticate.mockReset().mockResolvedValue(manager);
-  query.mockReset().mockResolvedValue([]);
+  query.mockReset().mockImplementation(async (statement) => statement.text.includes("COUNT(*)") ? [{ count: BigInt(0) }] : []);
 });
 
 test("requires authentication before looking up deliveries", async () => {
@@ -72,7 +72,7 @@ test("returns a bounded page of tenant-scoped review entries", async () => {
     reviewReason: index === 0 ? "interrupted_delivery_unknown" : index === 1 ? "provider_delivery_unknown" : null,
     updatedAt: new Date("2026-11-28T18:15:00Z"),
   }));
-  query.mockResolvedValue(rows);
+  query.mockImplementation(async (statement) => statement.text.includes("COUNT(*)") ? [{ count: BigInt(27) }] : rows);
 
   const response = await GET(request("?page=2"));
 
@@ -82,6 +82,7 @@ test("returns a bounded page of tenant-scoped review entries", async () => {
     data: rows.slice(0, 25).map((row) => ({ ...row, updatedAt: row.updatedAt.toISOString() })),
     page: 2,
     hasMore: true,
+    recoverableCount: 27,
   });
   const statement = query.mock.calls[0][0];
   expect(statement.values).toEqual([manager.organizationId, 26, 25]);
@@ -93,12 +94,17 @@ test("returns a bounded page of tenant-scoped review entries", async () => {
   expect(statement.text).toContain(`WHEN 'provider_delivery_unknown' THEN 'provider_delivery_unknown'`);
   expect(statement.text).toContain(`WHEN 'interrupted_delivery_unknown' THEN 'interrupted_delivery_unknown'`);
   expect(statement.text).not.toMatch(/lastError|recipientEmail/);
+  expect(query).toHaveBeenCalledTimes(2);
+  const count = query.mock.calls[1][0];
+  expect(count.values).toEqual([manager.organizationId, 60]);
+  expect(count.text).toContain(`"status" = 'SENDING'`);
+  expect(count.text).toContain('"lastAttemptAt" < CURRENT_TIMESTAMP');
 });
 
 test("returns an empty first page when no reminders are flagged", async () => {
   const response = await GET(request());
 
-  expect(await response.json()).toEqual({ data: [], page: 1, hasMore: false });
+  expect(await response.json()).toEqual({ data: [], page: 1, hasMore: false, recoverableCount: 0 });
 });
 
 test("loads closed reviews from the tenant's matching closure audit events", async () => {
@@ -116,6 +122,7 @@ test("loads closed reviews from the tenant's matching closure audit events", asy
   });
   const statement = query.mock.calls[0][0];
   expect(statement.values).toEqual([manager.organizationId, 26, 25]);
+  expect(query).toHaveBeenCalledTimes(1);
   expect(statement.text).toContain(`d."status" = 'REVIEW_CLOSED'`);
   expect(statement.text).toContain('a."organizationId" = d."organizationId"');
   expect(statement.text).toContain('a."entityId" = d."id"');
