@@ -1,6 +1,11 @@
 import { Prisma } from "@prisma/client";
 import { expect, test, vi } from "vitest";
-import { claimTrainingRenewalNotifications, recordTrainingRenewalDeliveryOutcome, recordTrainingRenewalProviderResult } from "./notification-claims";
+import {
+  claimTrainingRenewalNotifications,
+  quarantineStaleTrainingRenewalClaims,
+  recordTrainingRenewalDeliveryOutcome,
+  recordTrainingRenewalProviderResult,
+} from "./notification-claims";
 import { classifyTrainingReminderOutcome } from "./notification-delivery-outcome";
 
 const organizationId = "19edf975-eb67-47f2-b3bf-b8d20653e72c";
@@ -144,4 +149,30 @@ test("records provider rejection without retaining the provider's raw error", as
     result: { status: "rejected", reason: "Provider response for trainee@example.test" },
   })).resolves.toBe(true);
   expect(query.mock.calls[0][0].values.slice(0, 4)).toEqual(["FAILED", "FAILED", "Delivery failed", null]);
+});
+
+test("recovers at most 25 stale attempts from the tenant and audits each moved attempt", async () => {
+  const row = { id: deliveryId, attemptCount: 2 };
+  const { transaction, query, audit } = mockTransaction([row]);
+
+  await expect(quarantineStaleTrainingRenewalClaims(transaction, organizationId, actorUserId)).resolves.toBe(1);
+
+  const statement = query.mock.calls[0][0];
+  expect(statement.values).toEqual([organizationId, 60, organizationId]);
+  expect(statement.text).toContain(`"status" = 'SENDING'`);
+  expect(statement.text).toContain('"lastAttemptAt" < CURRENT_TIMESTAMP');
+  expect(statement.text).toContain('ORDER BY "lastAttemptAt", "id"');
+  expect(statement.text).toContain("LIMIT 25");
+  expect(statement.text).toContain("FOR UPDATE SKIP LOCKED");
+  expect(statement.text).toContain(`SET "status" = 'REVIEW_REQUIRED'`);
+  expect(audit).toHaveBeenCalledExactlyOnceWith({
+    data: {
+      organizationId,
+      actorUserId,
+      action: "TRAINING_NOTIFICATION_REVIEW_REQUIRED",
+      entityType: "TrainingRenewalNotificationDelivery",
+      entityId: deliveryId,
+      metadata: { attemptCount: 2, reason: "interrupted_delivery_unknown" },
+    },
+  });
 });
