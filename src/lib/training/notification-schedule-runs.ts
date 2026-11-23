@@ -5,7 +5,7 @@ type Run = { id: string; reservedAt: Date };
 
 /**
  * Internal-only reservation: caller must provide an authenticated tenant actor.
- * Never invoked by an HTTP route, cron, mail sender or demo provisioning.
+ * Call through an authorized staging or delivery service.
  * Use within a short database transaction, not across outbound network calls.
  */
 export async function reserveTrainingNotificationScheduleRun(
