@@ -18,6 +18,9 @@ export function TrainingRenewalForecast() {
   const [preferenceStatus, setPreferenceStatus] = useState("");
   const [processorPreview, setProcessorPreview] = useState<{ reminderType: string; eligible: number; alreadyRecorded: number }[] | null>(null);
   const [processorError, setProcessorError] = useState("");
+  const [processorBusy, setProcessorBusy] = useState(false);
+  const [stagingAvailable, setStagingAvailable] = useState(false);
+  const [stagingStatus, setStagingStatus] = useState("");
   const [digest, setDigest] = useState<{ overdue: number; within7Days: number; within30Days: number } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -60,13 +63,58 @@ export function TrainingRenewalForecast() {
     } catch { setPreferenceStatus("Unable to save preferences."); }
   }
   async function previewProcessor() {
+    setProcessorBusy(true);
     setProcessorError("");
+    setStagingStatus("");
+    setStagingAvailable(false);
+    setProcessorPreview(null);
     try {
-      const response = await fetch("/api/training/notification-processor-preview", { credentials: "same-origin", cache: "no-store" });
+      const options = { credentials: "same-origin", cache: "no-store" } as const;
+      const [response, readiness] = await Promise.all([
+        fetch("/api/training/notification-processor-preview", options),
+        fetch("/api/training/notification-schedule-readiness", options).catch(() => null),
+      ]);
       if (!response.ok) throw new Error("Preview unavailable");
       const body: { data: { reminderType: string; eligible: number; alreadyRecorded: number }[] } = await response.json();
       setProcessorPreview(body.data);
-    } catch { setProcessorError("Unable to load processor preview."); }
+      if (readiness?.ok) {
+        const { data }: { data: { scheduleEnabled: boolean; preferencesEnabled: boolean } } = await readiness.json();
+        setStagingAvailable(data.scheduleEnabled && data.preferencesEnabled);
+      }
+    } catch {
+      setProcessorError("Unable to load notification processing status.");
+    } finally {
+      setProcessorBusy(false);
+    }
+  }
+  async function stageReminders() {
+    setProcessorBusy(true);
+    setProcessorError("");
+    setStagingStatus("");
+    try {
+      const response = await fetch("/api/training/notification-stage", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      if (response.status === 409) {
+        setStagingStatus("Staging is unavailable right now. Check the tenant schedule and try again when the next run is due.");
+        return;
+      }
+      if (!response.ok) throw new Error("Staging unavailable");
+      const { data }: { data: { stagedCount: number } } = await response.json();
+      setProcessorPreview(null);
+      setStagingAvailable(false);
+      const reminderLabel = data.stagedCount === 1 ? "reminder" : "reminders";
+      setStagingStatus(`${data.stagedCount} pending ${reminderLabel} staged. No messages sent.`);
+    } catch {
+      setProcessorError("Unable to stage training reminders. Run the preview again to check the ledger.");
+      setProcessorPreview(null);
+      setStagingAvailable(false);
+    } finally {
+      setProcessorBusy(false);
+    }
   }
   const overdue = rows.filter((row) => row.daysUntilDue < 0).length;
   const upcoming = rows.filter((row) => row.daysUntilDue >= 0 && row.daysUntilDue <= 30).length;
@@ -91,10 +139,16 @@ export function TrainingRenewalForecast() {
       {preferenceStatus && <p role="status">{preferenceStatus}</p>}
     </fieldset>}
     {preferences && <TrainingNotificationReview />}
-    <div><button type="button" onClick={() => void previewProcessor()}>Preview notification processing (dry run)</button>
+    {preferences && <div><button type="button" disabled={processorBusy} onClick={() => void previewProcessor()}>Preview notification processing (dry run)</button>
       {processorError && <p role="alert">{processorError}</p>}
+      {stagingStatus && <p role="status">{stagingStatus}</p>}
       {processorPreview && <p role="status">Dry run only — {processorPreview.reduce((sum, row) => sum + row.eligible, 0)} eligible reminders; {processorPreview.reduce((sum, row) => sum + row.alreadyRecorded, 0)} already recorded. No messages sent or records created.</p>}
-    </div>
+      {stagingAvailable && processorPreview?.some((row) => row.eligible > 0) && (
+        <button type="button" disabled={processorBusy} onClick={() => void stageReminders()}>
+          Stage one batch of pending reminders
+        </button>
+      )}
+    </div>}
     {digest && <p role="status">Notification preview (not sent): {digest.overdue} overdue, {digest.within7Days} due within 7 days, {digest.within30Days} due within 30 days. Automatic delivery is disabled.</p>}
     {status === "loading" && <p>Loading renewal forecast…</p>}
     {status === "error" && <p role="alert">Renewal forecast could not be loaded.</p>}
