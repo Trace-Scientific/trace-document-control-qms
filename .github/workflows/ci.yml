@@ -120,6 +120,38 @@ jobs:
             --build-arg APP_RELEASE_VERSION="$(node -p "require('./package.json').version")" \
             --build-arg APP_RELEASE_SHA="${{ github.sha }}" \
             --tag trace-document-control-qms:${{ github.sha }} .
+      - name: Verify the Railway restore worker with a disposable archive
+        run: |
+          restore_fixture="$(mktemp -d)"
+          chmod 755 "$restore_fixture"
+          backup_name="trace-qms-demo-20000101T000000Z.backup"
+          cp /tmp/trace-qms.dump "$restore_fixture/$backup_name"
+          (
+            cd "$restore_fixture"
+            sha256sum "$backup_name" > "$backup_name.sha256"
+          )
+          cat > "$restore_fixture/aws" <<'SCRIPT'
+          #!/bin/sh
+          set -eu
+          test "$1" = s3
+          test "$2" = cp
+          case "$3" in
+            s3://trace-qms-demo-db-backups/demo/postgres/trace-qms-demo-20000101T000000Z.backup|s3://trace-qms-demo-db-backups/demo/postgres/trace-qms-demo-20000101T000000Z.backup.sha256)
+              cp "/restore-fixture/${3##*/}" "$4"
+              ;;
+            *) exit 1 ;;
+          esac
+          SCRIPT
+          chmod a+r "$restore_fixture/$backup_name" "$restore_fixture/$backup_name.sha256"
+          chmod 755 "$restore_fixture/aws"
+          docker build --file Dockerfile.demo-s3-restore-validation --tag trace-qms-restore-validation .
+          docker run --rm --network none \
+            --env DEPLOYMENT_TIER=demo --env AWS_DEFAULT_REGION=us-east-2 \
+            --env AWS_ACCESS_KEY_ID=ci-fixture --env AWS_SECRET_ACCESS_KEY=ci-fixture \
+            --env S3_BACKUP_BUCKET=trace-qms-demo-db-backups --env RESTORE_BACKUP_NAME="$backup_name" \
+            --volume "$restore_fixture:/restore-fixture:ro" \
+            --volume "$restore_fixture/aws:/usr/local/bin/aws:ro" \
+            trace-qms-restore-validation
       - name: Build Railway preview container
         run: |
           docker build \
