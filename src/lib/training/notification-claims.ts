@@ -141,6 +141,26 @@ export function recordTrainingRenewalProviderResult(
   });
 }
 
+const recoveryAgeMinutes = 60;
+
+function staleTrainingReminderClaims(organizationId: string, olderThanMinutes: number) {
+  return Prisma.sql`"organizationId" = ${organizationId}::uuid AND "status" = 'SENDING'
+    AND "lastAttemptAt" < CURRENT_TIMESTAMP - (${olderThanMinutes} * INTERVAL '1 minute')`;
+}
+
+/** Count attempts eligible for the manager's recovery action. */
+export async function countStaleTrainingRenewalClaims(
+  db: Pick<Transaction, "$queryRaw">,
+  organizationId: string,
+): Promise<number> {
+  const [row] = await db.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+    SELECT COUNT(*) AS "count"
+    FROM "TrainingRenewalNotificationDelivery"
+    WHERE ${staleTrainingReminderClaims(organizationId, recoveryAgeMinutes)}
+  `);
+  return Number(row.count);
+}
+
 /**
  * Mark abandoned in-flight attempts for manual reconciliation. A crashed worker
  * may have delivered the message before losing its acknowledgement. Never retry
@@ -150,7 +170,7 @@ export async function quarantineStaleTrainingRenewalClaims(
   tx: Transaction,
   organizationId: string,
   actorUserId: string,
-  olderThanMinutes = 60,
+  olderThanMinutes = recoveryAgeMinutes,
 ): Promise<number> {
   if (!Number.isInteger(olderThanMinutes) || olderThanMinutes < 15 || olderThanMinutes > 10080) {
     throw new Error("Invalid recovery age");
@@ -159,8 +179,7 @@ export async function quarantineStaleTrainingRenewalClaims(
     WITH stale AS (
       SELECT "id"
       FROM "TrainingRenewalNotificationDelivery"
-      WHERE "organizationId" = ${organizationId}::uuid AND "status" = 'SENDING'
-        AND "lastAttemptAt" < CURRENT_TIMESTAMP - (${olderThanMinutes} * INTERVAL '1 minute')
+      WHERE ${staleTrainingReminderClaims(organizationId, olderThanMinutes)}
       ORDER BY "lastAttemptAt", "id"
       LIMIT 25
       FOR UPDATE SKIP LOCKED
