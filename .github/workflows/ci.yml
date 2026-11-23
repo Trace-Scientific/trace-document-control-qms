@@ -67,6 +67,8 @@ jobs:
       - run: npx prisma migrate deploy
       - run: npx prisma db execute --file prisma/tests/integrity.sql --schema prisma/schema.prisma
       - name: Verify database backup and restore
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/trace_qms_restore
         run: |
           docker run --rm --network host \
             --env PGPASSWORD=postgres postgres:17-alpine \
@@ -81,8 +83,8 @@ jobs:
             postgres:17-alpine pg_restore --host 127.0.0.1 \
             --username postgres --dbname trace_qms_restore --exit-on-error \
             /tmp/trace-qms.dump
-          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trace_qms_restore \
-            npx prisma db execute --file prisma/tests/integrity.sql --schema prisma/schema.prisma
+          npx prisma migrate deploy
+          npx prisma db execute --file prisma/tests/integrity.sql --schema prisma/schema.prisma
       - name: Verify commercial proposal transactions in isolated PostgreSQL
         run: |
           docker exec ${{ job.services.postgres.id }} createdb -U postgres trace_qms_integration_test
@@ -130,8 +132,9 @@ jobs:
             --build-arg APP_RELEASE_VERSION="$(node -p "require('./package.json').version")" \
             --build-arg APP_RELEASE_SHA="${{ github.sha }}" \
             --tag trace-document-control-qms-migration:${{ github.sha }} .
-      - name: Run production smoke checks
+      - name: Run production smoke checks on the restored database
         env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/trace_qms_restore
           APP_RELEASE_VERSION: 0.1.0-rc.9
           APP_RELEASE_SHA: ${{ github.sha }}
         run: |
