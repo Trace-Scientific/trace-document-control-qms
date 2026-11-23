@@ -63,6 +63,8 @@ To set up the learner, open **Administration → Users & access → Training emp
 
 Keep the exercise in the demo tenant. Verify the completion in Trace QMS using its record reference before presenting the certificate.
 
+**Rehearsal on November 23, 2026.** In the Railway demo, Taylor Demo signed in as the linked learner and opened the official **HIPAA Privacy Training (Demo)** certificate. The certificate showed the learner name, course title and code, November 18 completion date, recorded result, and record reference. The remote browser did not expose its native print dialog. Check the printed layout in a desktop browser before demonstrating PDF output.
+
 ## Demo acceptance checklist
 
 - [ ] Synthetic organization is isolated from every other tenant.
@@ -72,7 +74,8 @@ Keep the exercise in the demo tenant. Verify the completion in Trace QMS using i
 - [ ] Revision history and audit events reflect actual application actions.
 - [ ] Approval/e-signature capabilities are shown only after functionality and controls are verified.
 - [ ] All URLs and login accounts are confirmed to be demo-only.
-- [ ] A linked demo learner can open and print their official training certificate from completion history.
+- [x] A linked demo learner can open their official training certificate from completion history.
+- [ ] Verify the certificate in desktop print preview or a saved PDF.
 - [ ] Demo can be reset safely without deleting required audit history.
 - [ ] A rehearsed 15-minute walkthrough completes without privileged workarounds.
 
