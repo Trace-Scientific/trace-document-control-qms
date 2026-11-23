@@ -67,7 +67,9 @@ Keep the exercise in the demo tenant. Verify the completion in Trace QMS using i
 
 **Automated PDF verification on November 23, 2026.** [GitHub Actions run 45248866166](https://github.com/Trace-Scientific/trace-document-control-qms/actions/runs/45248866166) printed a synthetic response from the certificate route through headless Chrome. The PDF had one page, included all completion fields and the record reference, and omitted the print control.
 
-For the live demo, use the existing **HIPAA Privacy Training (Demo)** completion under Taylor Demo. Open it from completion history and confirm the same fields in a desktop print preview before presenting the PDF workflow.
+**Bloodborne Pathogens rehearsal on November 23, 2026.** The manager's completion history showed **Bloodborne Pathogens Safety (Demo)** (`DEMO-BBP`) as **Passed** at 2:05 PM Pacific with the governed checklist available. Signed in as Taylor Demo, the tester opened the certificate and verified the learner, course, completion date, result, and record reference `4aa8eeda-45b3-4eb9-a32f-05b1942d8246`. A separate synthetic upload confirmed the evidence picker updates in place and preserves the draft result. The [scanner runbook](../operations/railway-demo-file-scanner.md#live-acceptance-on-november-23-2026) records the matching audit events.
+
+For the live walkthrough, open Taylor Demo's **Bloodborne Pathogens Safety (Demo)** certificate from **My Training → Official training completion history**. Use the prerecorded completion to show the certificate immediately. If the session includes printing or saving a PDF, rehearse desktop print preview beforehand.
 
 ## Demo acceptance checklist
 
@@ -79,7 +81,8 @@ For the live demo, use the existing **HIPAA Privacy Training (Demo)** completion
 - [ ] Approval/e-signature capabilities are shown only after functionality and controls are verified.
 - [ ] All URLs and login accounts are confirmed to be demo-only.
 - [x] The saved links table shows the intended demo account and employee record, both active.
-- [x] A linked demo learner can open their official training certificate from completion history.
+- [x] The linked demo learner opened both official training certificates from completion history.
+- [x] A synthetic evidence file became selectable after a clean scan while the form stayed open, and the demo Audit trail recorded the scan.
 - [x] Verify the one-page PDF and its text using the synthetic certificate test in CI.
 - [ ] Verify the live demo certificate in desktop print preview or a saved PDF.
 - [ ] Demo can be reset safely without deleting required audit history.
