@@ -94,6 +94,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      - run: python3 scripts/railway-demo-file-scanner-test.py
       - name: Verify training certificate PDF output
         run: |
           if ! command -v pdftotext >/dev/null || ! command -v pdfinfo >/dev/null; then
