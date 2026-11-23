@@ -60,11 +60,17 @@ export function TrainingNotificationReview() {
   const [closeError, setCloseError] = useState("");
   const [closedMessage, setClosedMessage] = useState("");
 
+  const [recovering, setRecovering] = useState(false);
+  const [recoveryError, setRecoveryError] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState("");
+
   async function loadPage(page: number, nextView = view) {
     if (nextView !== view) {
       setView(nextView);
       setResult(null);
       setClosedMessage("");
+      setRecoveryMessage("");
+      setRecoveryError(false);
     }
     setLoading(true);
     setError(false);
@@ -114,7 +120,33 @@ export function TrainingNotificationReview() {
     }
   }
 
-  const busy = loading || closing;
+  async function recoverInterruptedReminders() {
+    setRecovering(true);
+    setRecoveryError(false);
+    setRecoveryMessage("");
+    setClosedMessage("");
+    try {
+      const response = await fetch("/api/training/notification-recovery", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      if (!response.ok) throw new Error("Reminder recovery unavailable");
+
+      const { data } = await response.json() as { data: { movedForReview: number } };
+      await loadPage(1, "open");
+      setRecoveryMessage(data.movedForReview === 0
+        ? "No interrupted reminders were available for review."
+        : `Moved ${data.movedForReview} interrupted reminder${data.movedForReview === 1 ? "" : "s"} to review.`);
+    } catch {
+      setRecoveryError(true);
+    } finally {
+      setRecovering(false);
+    }
+  }
+
+  const busy = loading || closing || recovering;
   const showHistory = view === "closed";
 
   return (
@@ -125,6 +157,13 @@ export function TrainingNotificationReview() {
       <button type="button" disabled={busy} onClick={() => void loadPage(1, "closed")}>
         {result && showHistory ? "Refresh closed review history" : "View closed review history"}
       </button>
+      {result && !showHistory && !selected && (
+        <button type="button" disabled={busy} onClick={() => void recoverInterruptedReminders()}>
+          Move attempts stalled for over an hour to review
+        </button>
+      )}
+      {recoveryError && <p role="alert">Interrupted reminders could not be moved to review. Try again.</p>}
+      {recoveryMessage && <p role="status">{recoveryMessage}</p>}
       {loading && <p role="status">{showHistory ? "Loading closed reviews…" : "Loading reminders for review…"}</p>}
       {error && <p role="alert">{showHistory ? "Closed reviews could not be loaded." : "Reminders requiring review could not be loaded."}</p>}
       {closeError && <p role="alert">{closeError}</p>}
