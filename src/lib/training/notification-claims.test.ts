@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { expect, test, vi } from "vitest";
-import { claimTrainingRenewalNotifications, recordTrainingRenewalDeliveryOutcome } from "./notification-claims";
+import { claimTrainingRenewalNotifications, recordTrainingRenewalDeliveryOutcome, recordTrainingRenewalProviderResult } from "./notification-claims";
 import { classifyTrainingReminderOutcome } from "./notification-delivery-outcome";
 
 const organizationId = "19edf975-eb67-47f2-b3bf-b8d20653e72c";
@@ -33,11 +33,12 @@ test("records an uncertain provider outcome for review without retaining provide
     "REVIEW_REQUIRED",
     "REVIEW_REQUIRED",
     "Provider delivery could not be confirmed",
+    null,
     organizationId,
     deliveryId,
     2,
   ]);
-  expect(statement.text).toContain('AND "status" = \'SENDING\' AND "attemptCount" = $6');
+  expect(statement.text).toContain('AND "status" = \'SENDING\' AND "attemptCount" = $7');
   expect(audit).toHaveBeenCalledExactlyOnceWith({
     data: {
       organizationId,
@@ -105,4 +106,42 @@ test("claims only reminders that still match a current eligible renewal and an e
       metadata: { attemptCount: 2, reminderType: "DUE_7" },
     },
   });
+});
+
+test("retains an accepted receipt on the claim and audits only its presence", async () => {
+  const { transaction, query, audit } = mockTransaction([{ id: deliveryId }]);
+  await expect(recordTrainingRenewalProviderResult(transaction, {
+    ...attempt,
+    result: { status: "accepted", providerMessageId: " receipt-123 " },
+  })).resolves.toBe(true);
+  expect(query.mock.calls[0][0].values).toEqual([
+    "SENT", "SENT", null, "receipt-123", organizationId, deliveryId, 2,
+  ]);
+  expect(audit).toHaveBeenCalledExactlyOnceWith({
+    data: {
+      organizationId, actorUserId, action: "TRAINING_NOTIFICATION_SENT",
+      entityType: "TrainingRenewalNotificationDelivery", entityId: deliveryId,
+      metadata: { attemptCount: 2, errorRecorded: false, providerReceiptRecorded: true },
+    },
+  });
+});
+
+test.each([" ", "two words", "x".repeat(513)])("sends an unusable acceptance receipt to review", async (providerMessageId) => {
+  const { transaction, query } = mockTransaction([{ id: deliveryId }]);
+  await expect(recordTrainingRenewalProviderResult(transaction, {
+    ...attempt,
+    result: { status: "accepted", providerMessageId },
+  })).resolves.toBe(true);
+  expect(query.mock.calls[0][0].values.slice(0, 4)).toEqual([
+    "REVIEW_REQUIRED", "REVIEW_REQUIRED", "Provider delivery could not be confirmed", null,
+  ]);
+});
+
+test("records provider rejection without retaining the provider's raw error", async () => {
+  const { transaction, query } = mockTransaction([{ id: deliveryId }]);
+  await expect(recordTrainingRenewalProviderResult(transaction, {
+    ...attempt,
+    result: { status: "rejected", reason: "Provider response for trainee@example.test" },
+  })).resolves.toBe(true);
+  expect(query.mock.calls[0][0].values.slice(0, 4)).toEqual(["FAILED", "FAILED", "Delivery failed", null]);
 });
