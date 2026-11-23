@@ -59,6 +59,8 @@ The existing Railway demo application was exercised manually with fictional user
 
 An administrator linked the fictional Taylor Demo account to its active employee record through **Administration → Users & access → Training employee links**. Signed in as Taylor, the tester opened **My Training → Official training completion history → Print certificate** for **HIPAA Privacy Training (Demo)**. The certificate displayed the learner, course, November 18 completion date, recorded result, and reference. The remote browser did not expose its native print dialog, so the desktop print/PDF layout is still pending. This check covers the demo learner path and leaves the Stage C acceptance gates open.
 
+**Automated PDF verification on November 23, 2026.** [GitHub Actions run 45248866166](https://github.com/Trace-Scientific/trace-document-control-qms/actions/runs/45248866166) printed a synthetic response from the certificate route through headless Chrome. The PDF had one page, included all completion fields and the record reference, and omitted the print control. The live desktop print check and the broader Stage C acceptance checks are still open.
+
 ## Commercial launch gates (separate from demo)
 Complete release traceability, critical-workflow UAT, backup/restore exercise, documented residual risks, controlled User Manual release, customer onboarding and subscription verification, and final quality/security/product approvals. A Railway SUCCESS deployment is not validation approval.
 
