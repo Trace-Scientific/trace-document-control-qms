@@ -1,4 +1,4 @@
-import type { TrainingReminderDeliveryResult } from "./notification-delivery-provider";
+import { trainingReminderProviderReceipt, type TrainingReminderDeliveryResult } from "./notification-delivery-provider";
 
 /**
  * Delivery outcome classification for the transaction layer.
@@ -11,7 +11,7 @@ export function classifyTrainingReminderOutcome(
 ): "SENT" | "FAILED" | "REVIEW_REQUIRED" {
   switch (result.status) {
     case "accepted":
-      return result.providerMessageId.trim() ? "SENT" : "REVIEW_REQUIRED";
+      return trainingReminderProviderReceipt(result) ? "SENT" : "REVIEW_REQUIRED";
     case "rejected":
       return "FAILED";
     case "unknown":
