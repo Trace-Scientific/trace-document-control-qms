@@ -33,6 +33,14 @@ On October 30, 2026, the backup `trace-qms-demo-20261030T171011Z.backup` passed 
 5. Never point the restore worker at the running demo or production database. Never restore into an existing database without a separately reviewed recovery plan.
 6. For complete disaster recovery readiness, additionally validate application startup, migrations compatibility, access controls, file/object storage dependencies, and end-user workflows in an isolated environment.
 
+## Verified restore on November 23, 2026
+
+- **Archive:** `demo/postgres/trace-qms-demo-20261123T090224Z.backup` and matching `.sha256` in the private demo bucket.
+- **Checksum:** SHA-256 verification returned `OK` at 3:12:21 PM Pacific.
+- **Outcome:** Disposable, local-only PostgreSQL 18 restored **216 application tables** at 3:12:23 PM Pacific. The validator reported zero contact with running Railway databases.
+- **Evidence:** [Railway restore-validation deployment `703ed20b-2a77-4c79-9a54-58c6cc94f7fb`](https://railway.com/project/e6cc5f1e-3064-46d3-90bf-c763334f01a8/service/911b9c57-532d-48bd-972c-8cec81fc2bd9?environmentId=3bb1cae4-454f-4f6c-b2cb-fb38c8eb58a4&id=703ed20b-2a77-4c79-9a54-58c6cc94f7fb) reached `SUCCESS`.
+- **Acceptance:** The drill verifies logical database restoration for this archive. Independent reviewer acceptance and application-level recovery remain open.
+
 ## Proposed retention (NOT YET CONFIGURED)
 
 For this synthetic-only demo database, recommend 30 days of retained daily backups. AWS S3 versioning should remain enabled. Before configuring an S3 Lifecycle rule, explicitly review how current and noncurrent versions, delete markers, and incomplete multipart uploads will be treated. Confirm retention requirements with the owner and preserve any backups under investigation or legal hold. Never apply this demo rule to production buckets.
