@@ -33,6 +33,12 @@ On October 30, 2026, the backup `trace-qms-demo-20261030T171011Z.backup` passed 
 5. Never point the restore worker at the running demo or production database. Never restore into an existing database without a separately reviewed recovery plan.
 6. For complete disaster recovery readiness, additionally validate application startup, migrations compatibility, access controls, file/object storage dependencies, and end-user workflows in an isolated environment.
 
+## Application startup check in CI
+
+GitHub Actions dumps and restores its disposable PostgreSQL fixture, runs Prisma migrations and database integrity checks against the restored copy, then starts the built Trace QMS app using that copy. The smoke test checks database-backed readiness and verifies that an unauthenticated document request receives HTTP 401.
+
+This check uses a local CI fixture. Application recovery against the Railway demo archive still requires an isolated app run, including authenticated workflows and object storage.
+
 ## Verified restore on November 23, 2026
 
 - **Archive:** `demo/postgres/trace-qms-demo-20261123T090224Z.backup` and matching `.sha256` in the private demo bucket.
