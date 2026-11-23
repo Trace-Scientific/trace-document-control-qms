@@ -54,7 +54,7 @@ All content must be clearly labeled **SYNTHETIC / FOR DEMONSTRATION ONLY**. Do n
 
 Rehearse this workflow in the approved demo tenant before a customer session. Use a fictional employee linked to an active demo learner account, a training manager in the same tenant, and an active demonstration course. Prepare one recorded completion in advance so the customer session can start with the certificate.
 
-To set up the learner, open **Administration → Users & access → Training employee links**. An organization-wide administrator with training management and personnel read access can select the active demo account and employee, review the pair, and confirm the link. The link is audited and gives the learner access to their own training history.
+To set up the learner, open **Administration → Users & access → Training employee links**. An organization-wide administrator with training management and personnel read access can select the active demo account and employee, review the pair, and confirm the link. The link is audited and gives the learner access to their own training history. In **Saved training employee links**, check that the row pairs the intended account with the intended employee and that both status columns show `ACTIVE`.
 
 1. In **Training management**, assign the course to the fictional employee. If the assignment uses a published course version, sign in as the learner and pass its recorded assessment in **My Training** before the manager records completion.
 2. In **Training management → Record completion**, enter a completion date and result for that assignment. The completion date must follow the assignment and any required passing assessment. For courses coded `DEMO-HIPAA` or `DEMO-BBP`, attach a synthetic governed evidence file in `AVAILABLE` status. Practice quiz scores alone cannot create an official completion.
@@ -63,7 +63,7 @@ To set up the learner, open **Administration → Users & access → Training emp
 
 Keep the exercise in the demo tenant. Verify the completion in Trace QMS using its record reference before presenting the certificate.
 
-**Rehearsal on November 23, 2026.** In the Railway demo, Taylor Demo signed in as the linked learner and opened the official **HIPAA Privacy Training (Demo)** certificate. The certificate showed the learner name, course title and code, November 18 completion date, recorded result, and record reference. The remote browser did not expose its native print dialog. Check the printed layout in a desktop browser before demonstrating PDF output.
+**Rehearsal on November 23, 2026.** In the Railway demo, an administrator verified that **Saved training employee links** paired `taylor.demo@example.com` with `DEMO-EMP-001` (Taylor Demo). The user account and employee record both showed `ACTIVE`. Taylor Demo signed in as the linked learner and opened the official **HIPAA Privacy Training (Demo)** certificate. The certificate showed the learner name, course title and code, November 18 completion date, recorded result, and record reference. The remote browser did not expose its native print dialog. Check the printed layout in a desktop browser before demonstrating PDF output.
 
 **Automated PDF verification on November 23, 2026.** [GitHub Actions run 45248866166](https://github.com/Trace-Scientific/trace-document-control-qms/actions/runs/45248866166) printed a synthetic response from the certificate route through headless Chrome. The PDF had one page, included all completion fields and the record reference, and omitted the print control.
 
@@ -78,6 +78,7 @@ For the live demo, use the existing **HIPAA Privacy Training (Demo)** completion
 - [ ] Revision history and audit events reflect actual application actions.
 - [ ] Approval/e-signature capabilities are shown only after functionality and controls are verified.
 - [ ] All URLs and login accounts are confirmed to be demo-only.
+- [x] The saved links table shows the intended demo account and employee record, both active.
 - [x] A linked demo learner can open their official training certificate from completion history.
 - [x] Verify the one-page PDF and its text using the synthetic certificate test in CI.
 - [ ] Verify the live demo certificate in desktop print preview or a saved PDF.
