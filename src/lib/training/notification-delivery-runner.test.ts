@@ -2,7 +2,13 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { AuthorizationContext } from "../security/authorization";
 import { runTrainingReminderDelivery } from "./notification-delivery-runner";
-import { RecordingTrainingReminderProvider, type DeliveryAuthorization } from "./notification-delivery-provider";
+import {
+  RecordingTrainingReminderProvider,
+  TRAINING_REMINDER_PROVIDER_TIMEOUT_MS,
+  type DeliveryAuthorization,
+  type TrainingReminderDeliveryResult,
+  type TrainingReminderProvider,
+} from "./notification-delivery-provider";
 
 const { claimNext, resolveMessage, recordResult, recordOutcome } = vi.hoisted(() => ({
   claimNext: vi.fn(), resolveMessage: vi.fn(), recordResult: vi.fn(), recordOutcome: vi.fn(),
@@ -86,7 +92,7 @@ test("calls the provider once outside the claim and outcome transactions", async
   });
   expect(claimNext).toHaveBeenCalledExactlyOnceWith(tx, context.organizationId, 1, context.userId);
   expect(resolveMessage).toHaveBeenCalledExactlyOnceWith(db, attempt);
-  expect(deliver).toHaveBeenCalledExactlyOnceWith(message);
+  expect(deliver).toHaveBeenCalledExactlyOnceWith(message, expect.any(AbortSignal));
   expect(recordResult).toHaveBeenCalledExactlyOnceWith(tx, {
     ...attempt, result: { status: "accepted", providerMessageId: "test-1" },
   });
@@ -107,7 +113,7 @@ test("makes no provider call when current eligibility or recipient resolution fa
   });
 });
 
-test("passes a provider timeout to manual review after one call", async () => {
+test("passes a provider exception to manual review after one call", async () => {
   const { db, tx } = mockDb();
   const deliver = vi.fn().mockRejectedValue(new Error("Provider timeout"));
   await expect(runTrainingReminderDelivery(db, context, { deliver }, authorization)).resolves.toEqual({
@@ -117,6 +123,43 @@ test("passes a provider timeout to manual review after one call", async () => {
   expect(recordResult).toHaveBeenCalledExactlyOnceWith(tx, {
     ...attempt, result: { status: "unknown", reason: "Provider delivery could not be confirmed" },
   });
+});
+
+test("records a stalled provider for review and ignores late acceptance", async () => {
+  vi.useFakeTimers();
+  try {
+    const { db, tx } = mockDb();
+    let accept: (result: TrainingReminderDeliveryResult) => void = () => {
+      throw new Error("Provider was never called");
+    };
+    const pending = new Promise<TrainingReminderDeliveryResult>((resolve) => {
+      accept = resolve;
+    });
+    const deliver = vi.fn<TrainingReminderProvider["deliver"]>(() => pending);
+    const run = runTrainingReminderDelivery(db, context, { deliver }, authorization);
+
+    await vi.advanceTimersByTimeAsync(TRAINING_REMINDER_PROVIDER_TIMEOUT_MS - 1);
+    expect(deliver).toHaveBeenCalledTimes(1);
+    const signal = deliver.mock.calls[0][1];
+    expect(signal.aborted).toBe(false);
+    expect(recordResult).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(run).resolves.toEqual({
+      status: "outcome_recorded", deliveryId: claim.id, outcome: "REVIEW_REQUIRED",
+    });
+    expect(signal.aborted).toBe(true);
+    expect(recordResult).toHaveBeenCalledExactlyOnceWith(tx, {
+      ...attempt, result: { status: "unknown", reason: "Provider delivery could not be confirmed" },
+    });
+
+    accept({ status: "accepted", providerMessageId: "late-receipt" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(recordResult).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("reports when a provider response could not be applied and does not send a second time", async () => {
