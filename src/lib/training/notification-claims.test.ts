@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { expect, test, vi } from "vitest";
-import { recordTrainingRenewalDeliveryOutcome } from "./notification-claims";
+import { claimTrainingRenewalNotifications, recordTrainingRenewalDeliveryOutcome } from "./notification-claims";
 import { classifyTrainingReminderOutcome } from "./notification-delivery-outcome";
 
 const organizationId = "19edf975-eb67-47f2-b3bf-b8d20653e72c";
@@ -80,4 +80,29 @@ test("does not audit duplicate, wrong-tenant, or stale attempts that update no r
   })).resolves.toBe(false);
 
   expect(audit).not.toHaveBeenCalled();
+});
+
+test("claims only reminders that still match a current eligible renewal and an enabled schedule", async () => {
+  const claim = { id: deliveryId, organizationId, attemptCount: 2, reminderType: "DUE_7" };
+  const { transaction, query, audit } = mockTransaction([claim]);
+
+  await expect(claimTrainingRenewalNotifications(transaction, organizationId, 10, actorUserId)).resolves.toEqual([claim]);
+
+  const statement = query.mock.calls[0][0];
+  expect(statement.values).toEqual([...Array(5).fill(organizationId), 10, organizationId]);
+  expect(statement.text).toContain('c."completionId" = d."completionId" AND c."dueDate" = d."renewalDueDate"');
+  expect(statement.text).toContain('c."reminderType" = d."reminderType"');
+  expect(statement.text).toContain(`WHERE e."status"::text = 'ACTIVE'`);
+  expect(statement.text).toContain('s."organizationId" = d."organizationId" AND s."enabled"');
+  expect(statement.text).toContain("FOR UPDATE OF d SKIP LOCKED");
+  expect(audit).toHaveBeenCalledExactlyOnceWith({
+    data: {
+      organizationId,
+      actorUserId,
+      action: "TRAINING_NOTIFICATION_CLAIMED",
+      entityType: "TrainingRenewalNotificationDelivery",
+      entityId: deliveryId,
+      metadata: { attemptCount: 2, reminderType: "DUE_7" },
+    },
+  });
 });
