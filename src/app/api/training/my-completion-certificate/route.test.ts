@@ -1,3 +1,9 @@
+import { execFile } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import { Prisma } from "@prisma/client";
 import { NextRequest } from "next/server";
 import { beforeEach, expect, test, vi } from "vitest";
@@ -59,7 +65,7 @@ test("uses the tenant, linked employee, and official completed assignment to loc
   expect(statement.text).toContain('a."employeeId" = r."employeeId"');
 });
 
-test("renders a private, printable certificate with escaped record details", async () => {
+function useSampleCompletion() {
   query.mockResolvedValueOnce([{
     id: completionId,
     completedAt: new Date("2026-11-23T09:00:00Z"),
@@ -69,7 +75,10 @@ test("renders a private, printable certificate with escaped record details", asy
     courseCode: "TS-101",
     result: "Passed",
   }]);
+}
 
+test("renders a private, printable certificate with escaped record details", async () => {
+  useSampleCompletion();
   const response = await GET(request());
   expect(response.status).toBe(200);
   expect(response.headers.get("Content-Type")).toContain("text/html");
@@ -84,3 +93,44 @@ test("renders a private, printable certificate with escaped record details", asy
   expect(html).toContain("Print or save as PDF");
   expect(html).toContain(".print-action { display: none; }");
 });
+
+const chrome = process.env.TRACE_QMS_CERTIFICATE_PRINT_CHROME;
+const run = promisify(execFile);
+
+test.skipIf(!chrome)("prints the training certificate as one complete page without browser controls", async () => {
+  useSampleCompletion();
+  const response = await GET(request());
+  expect(response.status).toBe(200);
+
+  const directory = await mkdtemp(join(tmpdir(), "trace-qms-certificate-"));
+  try {
+    const source = join(directory, "certificate.html");
+    const pdf = join(directory, "certificate.pdf");
+    await writeFile(source, await response.text());
+    await run(chrome!, [
+      "--headless",
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--no-pdf-header-footer",
+      `--user-data-dir=${join(directory, "chrome-profile")}`,
+      `--print-to-pdf=${pdf}`,
+      pathToFileURL(source).href,
+    ], { timeout: 30_000 });
+
+    const [{ stdout: properties }, { stdout: content }] = await Promise.all([
+      run("pdfinfo", [pdf], { env: { ...process.env, LC_ALL: "C" } }),
+      run("pdftotext", [pdf, "-"]),
+    ]);
+    expect(properties).toMatch(/^Pages:\s+1\s*$/m);
+    const printedText = content.replace(/\s+/g, " ").trim();
+    expect(printedText).toContain("Certificate of Training Completion");
+    expect(printedText).toContain("Taylor O'Neil");
+    expect(printedText).toContain("Lab <Safety> & Quality (TS-101)");
+    expect(printedText).toContain("Completion date: 2026-11-23");
+    expect(printedText).toContain("Recorded result: Passed");
+    expect(printedText).toContain(completionId);
+    expect(printedText).not.toContain("Print or save as PDF");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 45_000);
