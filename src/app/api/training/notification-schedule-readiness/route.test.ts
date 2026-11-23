@@ -3,15 +3,16 @@ import { NextRequest } from "next/server";
 import { beforeEach, expect, test, vi } from "vitest";
 import { AuthenticationRequiredError } from "@/lib/security/authenticated-request";
 import type { AuthorizationContext } from "@/lib/security/authorization";
-import { PUT } from "./route";
+import { GET, PUT } from "./route";
 
-const { authenticate, transaction, execute, audit } = vi.hoisted(() => ({
+const { authenticate, transaction, execute, audit, query } = vi.hoisted(() => ({
   authenticate: vi.fn<() => Promise<AuthorizationContext>>(),
   transaction: vi.fn(),
   execute: vi.fn<(statement: Prisma.Sql) => Promise<number>>(),
   audit: vi.fn(),
+  query: vi.fn(),
 }));
-vi.mock("@/lib/db", () => ({ db: { $transaction: transaction } }));
+vi.mock("@/lib/db", () => ({ db: { $transaction: transaction, $queryRaw: query } }));
 vi.mock("@/lib/security/authenticated-request", () => ({
   authenticateRequest: authenticate,
   AuthenticationRequiredError: class extends Error {},
@@ -39,6 +40,7 @@ beforeEach(() => {
   transaction.mockReset().mockImplementation((run) => run({ $executeRaw: execute, auditEvent: { create: audit } }));
   execute.mockReset().mockResolvedValue(1);
   audit.mockReset().mockResolvedValue(undefined);
+  query.mockReset();
 });
 
 test("requires an authenticated organization-wide training manager", async () => {
@@ -94,4 +96,34 @@ test("reports a failed audit transaction as a failed save", async () => {
   const response = await PUT(request());
   expect(response.status).toBe(500);
   expect(await response.json()).toEqual({ error: "Unable to save the staging schedule" });
+});
+
+const nextRunAt = new Date("2026-11-23T23:00:00.000Z");
+
+test.each([
+  [{ scheduleEnabled: false }, "schedule_disabled"],
+  [{ preferencesEnabled: false }, "preferences_disabled"],
+  [{ activeRun: true }, "run_active"],
+  [{ stagingDue: false }, "waiting"],
+  [{}, "ready"],
+])("reports staging availability and returns a time only for a scheduled wait", async (override, status) => {
+  query.mockResolvedValue([{
+    ...settings,
+    preferencesEnabled: true,
+    activeRun: false,
+    stagingDue: true,
+    stagingAvailableAt: nextRunAt,
+    lastRunAt: null,
+    pending: 0n, failed: 0n, reviewRequired: 0n,
+    ...override,
+  }]);
+  const response = await GET(new NextRequest("https://qms.example.test/api/training/notification-schedule-readiness"));
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    data: {
+      staging: { status, nextRunAt: status === "waiting" ? nextRunAt.toISOString() : null },
+      readyForActivation: false,
+    },
+    deliveryActive: false,
+  });
 });

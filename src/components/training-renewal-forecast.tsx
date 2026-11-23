@@ -10,6 +10,17 @@ type Renewal = {
   completedAt: string; intervalMonths: number; renewalDueAt: string; daysUntilDue: number;
 };
 
+type StagingReadiness = {
+  status: "schedule_disabled" | "preferences_disabled" | "run_active" | "waiting" | "ready";
+  nextRunAt: string | null;
+};
+
+const stagingMessages = {
+  schedule_disabled: "Enable manual staging in Reminder staging schedule.",
+  preferences_disabled: "Enable reminder preferences to stage a batch.",
+  run_active: "A staging run is already in progress.",
+};
+
 export function TrainingRenewalForecast() {
   const [rows, setRows] = useState<Renewal[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -20,7 +31,7 @@ export function TrainingRenewalForecast() {
   const [processorPreview, setProcessorPreview] = useState<{ reminderType: string; eligible: number; alreadyRecorded: number }[] | null>(null);
   const [processorError, setProcessorError] = useState("");
   const [processorBusy, setProcessorBusy] = useState(false);
-  const [stagingAvailable, setStagingAvailable] = useState(false);
+  const [stagingReadiness, setStagingReadiness] = useState<StagingReadiness | null>(null);
   const [stagingStatus, setStagingStatus] = useState("");
   const [digest, setDigest] = useState<{ overdue: number; within7Days: number; within30Days: number } | null>(null);
   useEffect(() => {
@@ -67,7 +78,7 @@ export function TrainingRenewalForecast() {
     setProcessorBusy(true);
     setProcessorError("");
     setStagingStatus("");
-    setStagingAvailable(false);
+    setStagingReadiness(null);
     setProcessorPreview(null);
     try {
       const options = { credentials: "same-origin", cache: "no-store" } as const;
@@ -79,8 +90,8 @@ export function TrainingRenewalForecast() {
       const body: { data: { reminderType: string; eligible: number; alreadyRecorded: number }[] } = await response.json();
       setProcessorPreview(body.data);
       if (readiness?.ok) {
-        const { data }: { data: { scheduleEnabled: boolean; preferencesEnabled: boolean } } = await readiness.json();
-        setStagingAvailable(data.scheduleEnabled && data.preferencesEnabled);
+        const { data }: { data: { staging: StagingReadiness } } = await readiness.json();
+        setStagingReadiness(data.staging);
       }
     } catch {
       setProcessorError("Unable to load notification processing status.");
@@ -100,19 +111,20 @@ export function TrainingRenewalForecast() {
         body: "{}",
       });
       if (response.status === 409) {
-        setStagingStatus("Staging is unavailable right now. Check the tenant schedule and try again when the next run is due.");
+        setStagingReadiness(null);
+        setStagingStatus("Staging availability changed. Run the preview again for the latest schedule.");
         return;
       }
       if (!response.ok) throw new Error("Staging unavailable");
       const { data }: { data: { stagedCount: number } } = await response.json();
       setProcessorPreview(null);
-      setStagingAvailable(false);
+      setStagingReadiness(null);
       const reminderLabel = data.stagedCount === 1 ? "reminder" : "reminders";
       setStagingStatus(`${data.stagedCount} pending ${reminderLabel} staged. No messages sent.`);
     } catch {
       setProcessorError("Unable to stage training reminders. Run the preview again to check the ledger.");
       setProcessorPreview(null);
-      setStagingAvailable(false);
+      setStagingReadiness(null);
     } finally {
       setProcessorBusy(false);
     }
@@ -141,7 +153,7 @@ export function TrainingRenewalForecast() {
     </fieldset>}
     {preferences && <TrainingReminderSchedule disabled={processorBusy} onSaved={() => {
       setProcessorPreview(null);
-      setStagingAvailable(false);
+      setStagingReadiness(null);
       setStagingStatus("");
     }} />}
     {preferences && <TrainingNotificationReview />}
@@ -149,7 +161,20 @@ export function TrainingRenewalForecast() {
       {processorError && <p role="alert">{processorError}</p>}
       {stagingStatus && <p role="status">{stagingStatus}</p>}
       {processorPreview && <p role="status">Dry run only — {processorPreview.reduce((sum, row) => sum + row.eligible, 0)} eligible reminders; {processorPreview.reduce((sum, row) => sum + row.alreadyRecorded, 0)} already recorded. No messages sent or records created.</p>}
-      {stagingAvailable && processorPreview?.some((row) => row.eligible > 0) && (
+      {stagingReadiness?.status === "waiting" && stagingReadiness.nextRunAt && (
+        <p role="status">Earliest next staging run{" "}
+          <time dateTime={stagingReadiness.nextRunAt}>
+            {new Date(stagingReadiness.nextRunAt).toLocaleString(undefined, {
+              year: "numeric", month: "short", day: "numeric",
+              hour: "numeric", minute: "2-digit", timeZoneName: "short",
+            })}
+          </time>.
+        </p>
+      )}
+      {stagingReadiness && stagingReadiness.status in stagingMessages && (
+        <p role="status">{stagingMessages[stagingReadiness.status as keyof typeof stagingMessages]}</p>
+      )}
+      {stagingReadiness?.status === "ready" && processorPreview?.some((row) => row.eligible > 0) && (
         <button type="button" disabled={processorBusy} onClick={() => void stageReminders()}>
           Stage one batch of pending reminders
         </button>
