@@ -11,6 +11,7 @@ type ReviewRow = {
   reminderType: string;
   lastAttemptAt: string | null;
   updatedAt: string;
+  reviewReason?: string | null;
   disposition?: string | null;
   closedAt?: string | null;
 };
@@ -28,6 +29,17 @@ const reminderLabels: Record<string, string> = {
   DUE_7: "7-day reminder",
   OVERDUE: "Overdue reminder",
 };
+
+function reviewReasonLabel(reason: ReviewRow["reviewReason"]) {
+  switch (reason) {
+    case "provider_delivery_unknown":
+      return "Provider acceptance could not be confirmed";
+    case "interrupted_delivery_unknown":
+      return "Delivery processing was interrupted";
+    default:
+      return "Reason unavailable";
+  }
+}
 
 const reviewOutcomes: Record<string, string> = {
   PROVIDER_ACCEPTANCE_CONFIRMED: "Provider acceptance confirmed",
@@ -149,6 +161,7 @@ export function TrainingNotificationReview() {
                     <th scope="col">Renewal due</th>
                     <th scope="col">Last attempt</th>
                     <th scope="col">{showHistory ? "Review closed" : "Flagged for review"}</th>
+                    <th scope="col">Review reason</th>
                     <th scope="col">Delivery reference</th>
                     <th scope="col">{showHistory ? "Recorded outcome" : "Action"}</th>
                   </tr>
@@ -164,6 +177,7 @@ export function TrainingNotificationReview() {
                       <td>{showHistory
                         ? row.closedAt ? dateTime.format(new Date(row.closedAt)) : "Unavailable"
                         : dateTime.format(new Date(row.updatedAt))}</td>
+                      <td>{reviewReasonLabel(row.reviewReason)}</td>
                       <td><code>{row.id}</code></td>
                       <td>
                         {showHistory ? (reviewOutcomes[row.disposition ?? ""] ?? "Unavailable") : <button
