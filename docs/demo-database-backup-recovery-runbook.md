@@ -37,7 +37,9 @@ On October 30, 2026, the backup `trace-qms-demo-20261030T171011Z.backup` passed 
 
 GitHub Actions dumps and restores its disposable PostgreSQL fixture, runs Prisma migrations and database integrity checks against the restored copy, then starts the built Trace QMS app using that copy. The smoke test checks database-backed readiness and verifies that an unauthenticated document request receives HTTP 401.
 
-This check uses a local CI fixture. Application recovery against the Railway demo archive still requires an isolated app run, including authenticated workflows and object storage.
+CI also builds the Railway restore worker and runs it against the disposable archive with external networking disabled. The archive and checksum are read from a local fixture in CI.
+
+On Railway the worker reads the selected archive and checksum from private demo S3, restores to disposable PostgreSQL, and starts the app against that copy. Both processes listen only on loopback. The app starts with an explicit local database URL and a fresh environment without storage credentials. Require the `PASS: Trace QMS started against the restored database` line in addition to the checksum and table-count messages. Authenticated workflows and object storage recovery require separate verification.
 
 ## Verified restore on November 23, 2026
 
