@@ -66,6 +66,12 @@ jobs:
       - run: npm run db:validate
       - run: npx prisma migrate deploy
       - run: npx prisma db execute --file prisma/tests/integrity.sql --schema prisma/schema.prisma
+      - name: Seed the synthetic document recovery fixture
+        run: |
+          recovery_password="$(node -p 'require("node:crypto").randomBytes(24).toString("base64url")')"
+          echo "::add-mask::$recovery_password"
+          RESTORE_DEMO_PASSWORD="$recovery_password" node --experimental-strip-types scripts/seed-demo-recovery-ci-fixture.mjs
+          printf 'RESTORE_DEMO_PASSWORD=%s\n' "$recovery_password" >> "$GITHUB_ENV"
       - name: Verify database backup and restore
         env:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/trace_qms_restore
@@ -148,6 +154,7 @@ jobs:
           docker run --rm --network none \
             --env DEPLOYMENT_TIER=demo --env AWS_DEFAULT_REGION=us-east-2 \
             --env AWS_ACCESS_KEY_ID=ci-fixture --env AWS_SECRET_ACCESS_KEY=ci-fixture \
+            --env RESTORE_DEMO_PASSWORD \
             --env S3_BACKUP_BUCKET=trace-qms-demo-db-backups --env RESTORE_BACKUP_NAME="$backup_name" \
             --volume "$restore_fixture:/restore-fixture:ro" \
             --volume "$restore_fixture/aws:/usr/local/bin/aws:ro" \

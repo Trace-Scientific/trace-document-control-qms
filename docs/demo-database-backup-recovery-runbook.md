@@ -39,7 +39,9 @@ GitHub Actions dumps and restores its disposable PostgreSQL fixture, runs Prisma
 
 CI also builds the Railway restore worker and runs it against the disposable archive with external networking disabled. The archive and checksum are read from a local fixture in CI.
 
-On Railway the worker reads the selected archive and checksum from private demo S3, restores to disposable PostgreSQL, and starts the app against that copy. Both processes listen only on loopback. The app starts with an explicit local database URL and a fresh environment without storage credentials. Require the `PASS: Trace QMS started against the restored database` line in addition to the checksum and table-count messages. Authenticated workflows and object storage recovery require separate verification.
+On Railway the worker reads the selected archive and checksum from private demo S3, restores to disposable PostgreSQL, and starts the app against that copy. Both processes listen only on loopback. The app starts with an explicit local database URL and a fresh environment without storage credentials. Require the `PASS: Trace QMS started against the restored database` line in addition to the checksum and table-count messages. The startup drill also tests authenticated document recovery when the validator has a sealed, temporary `RESTORE_DEMO_PASSWORD` for the existing Alex Morgan account in `trace-demo-lab`. The password must match the selected archive. The probe uses the ordinary login route and requires a new session before reading `TEST-001`. Require the authenticated `PASS` log line and remove the temporary variable after the drill. A run that logs `SKIP` establishes startup coverage only. GitHub Actions generates its own fixture password and seeds the synthetic document before creating its disposable backup.
+
+Object storage recovery requires additional verification using an approved private-file recovery target and credentials scoped to that target.
 
 ## Verified restore on November 23, 2026
 
@@ -47,7 +49,8 @@ On Railway the worker reads the selected archive and checksum from private demo 
 - **Checksum:** SHA-256 verification returned `OK` at 3:12:21 PM Pacific.
 - **Outcome:** Disposable, local-only PostgreSQL 18 restored **216 application tables** at 3:12:23 PM Pacific. The validator reported zero contact with running Railway databases.
 - **Evidence:** [Railway restore-validation deployment `703ed20b-2a77-4c79-9a54-58c6cc94f7fb`](https://railway.com/project/e6cc5f1e-3064-46d3-90bf-c763334f01a8/service/911b9c57-532d-48bd-972c-8cec81fc2bd9?environmentId=3bb1cae4-454f-4f6c-b2cb-fb38c8eb58a4&id=703ed20b-2a77-4c79-9a54-58c6cc94f7fb) reached `SUCCESS`.
-- **Acceptance:** The drill verifies logical database restoration for this archive. Independent reviewer acceptance and application-level recovery remain open.
+- **Application startup:** A [second Railway run](https://railway.com/project/e6cc5f1e-3064-46d3-90bf-c763334f01a8/service/911b9c57-532d-48bd-972c-8cec81fc2bd9?environmentId=3bb1cae4-454f-4f6c-b2cb-fb38c8eb58a4&id=e666c9f3-c792-4bb5-82ac-056362805952) restored the same archive at 3:57 PM Pacific, started Trace QMS on loopback, and verified database readiness and HTTP 401 for an unauthenticated document request.
+- **Acceptance:** Independent reviewer acceptance, the authenticated Railway drill, and private-file recovery remain open.
 
 ## Proposed retention (NOT YET CONFIGURED)
 
