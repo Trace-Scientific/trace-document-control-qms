@@ -83,3 +83,10 @@ For this synthetic-only demo database, recommend 30 days of retained daily backu
 - Keep the backup worker's restart policy `NEVER`.
 - Configure independent failure alerting and periodically perform isolated restore drills; a daily cron schedule alone does not send failure notifications.
 - Record the date, selected S3 key, worker deployment ID, checksum result, restore outcome, and application table count after each drill.
+
+## Live four-file recovery on November 24, 2026
+
+- **Scope and input.** The demo restore validator used the retained archive `trace-qms-demo-20261124T192006Z.backup` and its paired manifest for the four AVAILABLE private files in synthetic tenant `trace-demo-lab`. The validator ran commit `73e2504683e8ecef90e2fb68d0909f89c6d1f10d` from PR #632. [Railway deployment `66bb2849-d26b-44fc-a151-61d8b5d2aeac`](https://railway.com/project/e6cc5f1e-3064-46d3-90bf-c763334f01a8/service/911b9c57-532d-48bd-972c-8cec81fc2bd9?environmentId=3bb1cae4-454f-4f6c-b2cb-fb38c8eb58a4&id=66bb2849-d26b-44fc-a151-61d8b5d2aeac) reached SUCCESS.
+- **Database and manifest.** The archive SHA-256 passed at 20:19:36 UTC. Disposable, local-only PostgreSQL 18 restored 216 application tables at 20:19:38 UTC. At 20:19:43 UTC the validator reconciled the manifest exactly against the restored tenant inventory and verified the size and SHA-256 of all four stored files.
+- **Application checks.** At 20:19:44 UTC, the restored application passed readiness, anonymous document access returned HTTP 401, and the synthetic demo account signed in and found `TEST-001`. Each private file returned HTTP 401 before sign-in, returned HTTP 200 with the expected size and SHA-256 after sign-in, and returned HTTP 409 when the loopback storage fixture served altered content. The validator logs report the aggregate file result. The application used disposable PostgreSQL and loopback object storage for the drill.
+- **Disposition.** Technical recovery passed for the four files in the selected archive. Validator configuration cleanup and independent reviewer acceptance are pending. Unattended scheduled execution, full-bucket recovery and REC-02 require separate evidence.
