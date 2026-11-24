@@ -52,6 +52,7 @@ docker run --rm --network none \
   -e DEMO_FILE_SOURCE_REGION=us-east-2 -e DEMO_FILE_SOURCE_ACCESS_KEY_ID=source-fixture -e DEMO_FILE_SOURCE_SECRET_ACCESS_KEY=fixture \
   -v "$fixture:/fixture" -v "$fixture/aws:/usr/local/bin/aws:ro" -v "$fixture/pg_dump:/usr/local/bin/pg_dump:ro" \
   trace-qms-backup-ci
+sudo chmod a+r "$fixture/out/"*
 cmp "$fixture/object" "$fixture/out/502d9cb2-2280-4f80-899e-e9a45f664101"
 node - "$fixture/out" <<'JS'
 const fs = require("node:fs"), path = require("node:path"), assert = require("node:assert/strict"), crypto = require("node:crypto");
