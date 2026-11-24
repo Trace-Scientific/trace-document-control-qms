@@ -27,6 +27,7 @@ cd "$work"
 echo "Downloading demo backup and checksum"
 aws s3 cp "s3://$S3_BACKUP_BUCKET/demo/postgres/$RESTORE_BACKUP_NAME" "$RESTORE_BACKUP_NAME" --only-show-errors
 aws s3 cp "s3://$S3_BACKUP_BUCKET/demo/postgres/$RESTORE_BACKUP_NAME.sha256" "$RESTORE_BACKUP_NAME.sha256" --only-show-errors
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 sha256sum -c "$RESTORE_BACKUP_NAME.sha256"
 pg_restore --list "$RESTORE_BACKUP_NAME" >/dev/null
 mkdir -m 700 "$work/socket"
@@ -74,6 +75,36 @@ while (Date.now() < deadline) {
 assert.ok(ready, "Restored database readiness did not pass");
 const documents = await request("/api/documents");
 assert.equal(documents.status, 401, "Unauthenticated document request must be denied");
+
+const password = process.env.RESTORE_DEMO_PASSWORD;
+if (password) {
+  const root = "http://127.0.0.1:3000";
+  const login = await fetch(root + "/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      organizationCode: "trace-demo-lab", email: "alex.morgan@example.com", password,
+    }),
+    signal: AbortSignal.timeout(5000),
+  });
+  assert.equal(login.status, 200, "Restored demo account login did not succeed");
+  const session = login.headers.getSetCookie()
+    .find((cookie) => cookie.startsWith("qms_session="))?.split(";")[0];
+  assert.ok(session, "Restored demo login did not issue a session");
+
+  const response = await fetch(root + "/api/documents?query=TEST-001", {
+    headers: { Cookie: session },
+    signal: AbortSignal.timeout(5000),
+  });
+  assert.equal(response.status, 200, "Restored document lookup did not succeed");
+  const { data } = await response.json();
+  assert.ok(data.items.some((item) => item.documentNumber === "TEST-001"
+    && item.title === "QMS Workflow Verification — Demo"),
+    "Expected synthetic document is missing from the restored demo tenant");
+  console.log("PASS: authenticated demo login and restored TEST-001 document lookup");
+} else {
+  console.log("SKIP: authenticated restore check requires RESTORE_DEMO_PASSWORD");
+}
 NODE
 then
   tail -30 "$work/app.log" >&2
