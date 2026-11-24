@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { createHash } from "node:crypto";
-const { findFirst, get } = vi.hoisted(() => ({ findFirst: vi.fn(), get: vi.fn() }));
-vi.mock("@/lib/db", () => ({ db: { fileObject: { findFirst } } }));
+const { findFirst, get, audit } = vi.hoisted(() => ({ findFirst: vi.fn(), get: vi.fn(), audit: vi.fn() }));
+vi.mock("@/lib/db", () => ({ db: { fileObject: { findFirst }, auditEvent: { create: audit } } }));
 vi.mock("@/lib/storage/s3", () => ({ PrivateObjectStorage: class { get = get; } }));
 import { GET } from "./route";
 
@@ -32,6 +32,9 @@ test("exports only verified available files from the active synthetic tenant", a
   expect(response.status).toBe(200);
   expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
   expect(findFirst).toHaveBeenCalledWith({ where: { id, status: "AVAILABLE", organization: { loginCode: "trace-demo-lab", active: true } } });
+  expect(audit).toHaveBeenCalledTimes(1);
+  audit.mockRejectedValueOnce(new Error("audit unavailable"));
+  expect((await GET(request())).status).toBe(503);
   get.mockResolvedValue(Buffer.from("corrupt"));
   expect((await GET(request())).status).toBe(409);
   findFirst.mockResolvedValue(null);
