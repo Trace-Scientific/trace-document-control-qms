@@ -1767,7 +1767,7 @@ export function DocumentControlDashboard({
                 <div className="form-note" role="note">
                   <Icon name="file" />
                   <span>
-                    <strong>Draft → Review → Approval.</strong> Enter the document details and content below. After saving, open the draft and select Submit for review. The submission form will let you choose the technical reviewer and final approver. Do not create the draft again.
+                    <strong>Draft → Review → Approval.</strong> Enter the document details and content below. After saving, the submission form opens for your new draft. Choose the technical reviewer and final approver, then confirm submission. If you close the form, reopen the draft and select Submit for review.
                   </span>
                 </div>
                 <label>
