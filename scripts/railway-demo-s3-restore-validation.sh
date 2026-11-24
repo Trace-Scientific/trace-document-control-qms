@@ -25,25 +25,33 @@ cleanup() {
 trap cleanup EXIT
 cd "$work"
 storage_env=()
-if [[ "${RESTORE_PRIVATE_FILE_CI:-}" == 1 ]]; then
-  [[ "$RESTORE_BACKUP_NAME" == trace-qms-demo-20000101T000000Z.backup &&
-     "$AWS_ACCESS_KEY_ID" == ci-fixture && "$AWS_SECRET_ACCESS_KEY" == ci-fixture &&
-     -n "${RESTORE_DEMO_PASSWORD:-}" && -s /restore-fixture/recovery-fixture.txt ]] || {
-    echo "REFUSED: private-file recovery requires the disposable CI fixtures"
+file_id="${RESTORE_PRIVATE_FILE_ID:-}"
+if [[ -n "$file_id" ]]; then
+  [[ "$file_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ &&
+     -n "${RESTORE_DEMO_PASSWORD:-}" ]] || {
+    echo "REFUSED: private-file validation requires a file UUID and restored demo login"
     exit 1
   }
-  cp /restore-fixture/recovery-fixture.txt "$work/recovery-fixture.txt"
   storage_env=(
     OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:9000
     OBJECT_STORAGE_REGION=us-east-2
-    OBJECT_STORAGE_BUCKET=restore-ci-files
-    OBJECT_STORAGE_ACCESS_KEY_ID=ci-fixture
-    OBJECT_STORAGE_SECRET_ACCESS_KEY=ci-fixture
+    OBJECT_STORAGE_BUCKET=restore-files
+    OBJECT_STORAGE_ACCESS_KEY_ID=loopback-only
+    OBJECT_STORAGE_SECRET_ACCESS_KEY=loopback-only
   )
 fi
 echo "Downloading demo backup and checksum"
 aws s3 cp "s3://$S3_BACKUP_BUCKET/demo/postgres/$RESTORE_BACKUP_NAME" "$RESTORE_BACKUP_NAME" --only-show-errors
 aws s3 cp "s3://$S3_BACKUP_BUCKET/demo/postgres/$RESTORE_BACKUP_NAME.sha256" "$RESTORE_BACKUP_NAME.sha256" --only-show-errors
+if [[ -n "$file_id" ]]; then
+  echo "Downloading the selected archive's private-file backup"
+  aws s3 cp "s3://$S3_BACKUP_BUCKET/demo/private-files/$RESTORE_BACKUP_NAME/$file_id" \
+    recovery-object --only-show-errors
+  [[ -s recovery-object && "$(wc -c < recovery-object)" -le 26214400 ]] || {
+    echo "FAIL: private-file backup must be between 1 byte and 25 MiB"
+    exit 1
+  }
+fi
 unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 sha256sum -c "$RESTORE_BACKUP_NAME.sha256"
 pg_restore --list "$RESTORE_BACKUP_NAME" >/dev/null
@@ -57,6 +65,20 @@ table_count="$(psql -h "$work/socket" -U postgres -d restore_validation -Atqc "S
 [[ "$table_count" =~ ^[0-9]+$ ]] && (( table_count > 0 )) || { echo "FAIL: no application tables restored"; exit 1; }
 echo "PASS: isolated restore completed; application tables: $table_count"
 echo "No running Railway database was contacted or modified."
+
+if [[ -n "$file_id" ]]; then
+  psql -h "$work/socket" -U postgres -d restore_validation -XAt \
+    -v ON_ERROR_STOP=1 -v "file_id=$file_id" -f - > object-key <<'SQL'
+SELECT f."storageKey"
+FROM "FileObject" f
+JOIN "Organization" o ON o.id = f."organizationId"
+WHERE f.id = :'file_id'::uuid
+  AND o."loginCode" = 'trace-demo-lab'
+  AND f.status = 'AVAILABLE'
+  AND f."storageKey" = f."organizationId"::text || '/' || f.id::text || '/' || f."originalName";
+SQL
+  [[ -s object-key ]] || { echo "FAIL: selected private-file metadata is missing from the restored demo archive"; exit 1; }
+fi
 
 echo "Starting Trace QMS on loopback against the restored database"
 (
@@ -124,10 +146,11 @@ if (password) {
     "Expected synthetic document is missing from the restored demo tenant");
   console.log("PASS: authenticated demo login and restored TEST-001 document lookup");
 
-  if (process.env.RESTORE_PRIVATE_FILE_CI === "1") {
-    const fileId = "502d9cb2-2280-4f80-899e-e9a45f664101";
-    const objectPath = `/restore-ci-files/32e089a4-1deb-4db1-aa29-6c9b12e3ceb1/${fileId}/recovery-fixture.txt`;
-    const bytes = await readFile("recovery-fixture.txt");
+  const fileId = process.env.RESTORE_PRIVATE_FILE_ID;
+  if (fileId) {
+    const key = (await readFile("object-key", "utf8")).trimEnd();
+    const objectPath = `/restore-files/${key.split("/").map(encodeURIComponent).join("/")}`;
+    const bytes = await readFile("recovery-object");
     const sha256 = (value) => createHash("sha256").update(value).digest("hex");
     let corrupt = false;
     const storage = createServer((req, res) => {
@@ -158,7 +181,7 @@ if (password) {
     corrupt = true;
     const mismatched = await download();
     assert.equal(mismatched.status, 409, "Restored database hash must reject corrupted object bytes");
-    console.log("PASS: restored private file download, SHA-256, and denial checks in CI");
+    console.log("PASS: restored private file download, SHA-256, and denial checks");
   }
 } else {
   console.log("SKIP: authenticated restore check requires RESTORE_DEMO_PASSWORD");

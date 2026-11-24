@@ -135,7 +135,8 @@ jobs:
           chmod 755 "$restore_fixture"
           backup_name="trace-qms-demo-20000101T000000Z.backup"
           cp /tmp/trace-qms.dump "$restore_fixture/$backup_name"
-          cp "$RUNNER_TEMP/trace-qms-recovery-fixture.txt" "$restore_fixture/recovery-fixture.txt"
+          file_id="502d9cb2-2280-4f80-899e-e9a45f664101"
+          cp "$RUNNER_TEMP/trace-qms-recovery-fixture.txt" "$restore_fixture/$file_id"
           (
             cd "$restore_fixture"
             sha256sum "$backup_name" > "$backup_name.sha256"
@@ -149,17 +150,20 @@ jobs:
             s3://trace-qms-demo-db-backups/demo/postgres/trace-qms-demo-20000101T000000Z.backup|s3://trace-qms-demo-db-backups/demo/postgres/trace-qms-demo-20000101T000000Z.backup.sha256)
               cp "/restore-fixture/${3##*/}" "$4"
               ;;
+            s3://trace-qms-demo-db-backups/demo/private-files/trace-qms-demo-20000101T000000Z.backup/502d9cb2-2280-4f80-899e-e9a45f664101)
+              cp "/restore-fixture/${3##*/}" "$4"
+              ;;
             *) exit 1 ;;
           esac
           SCRIPT
           chmod a+r "$restore_fixture/$backup_name" "$restore_fixture/$backup_name.sha256" \
-            "$restore_fixture/recovery-fixture.txt"
+            "$restore_fixture/$file_id"
           chmod 755 "$restore_fixture/aws"
           docker build --file Dockerfile.demo-s3-restore-validation --tag trace-qms-restore-validation .
           docker run --rm --network none \
             --env DEPLOYMENT_TIER=demo --env AWS_DEFAULT_REGION=us-east-2 \
             --env AWS_ACCESS_KEY_ID=ci-fixture --env AWS_SECRET_ACCESS_KEY=ci-fixture \
-            --env RESTORE_DEMO_PASSWORD --env RESTORE_PRIVATE_FILE_CI=1 \
+            --env RESTORE_DEMO_PASSWORD --env RESTORE_PRIVATE_FILE_ID="$file_id" \
             --env S3_BACKUP_BUCKET=trace-qms-demo-db-backups --env RESTORE_BACKUP_NAME="$backup_name" \
             --volume "$restore_fixture:/restore-fixture:ro" \
             --volume "$restore_fixture/aws:/usr/local/bin/aws:ro" \
