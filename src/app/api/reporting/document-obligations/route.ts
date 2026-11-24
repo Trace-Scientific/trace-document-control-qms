@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequest, AuthenticationRequiredError } from "@/lib/security/authenticated-request";
+import { db } from "@/lib/db";
 import { evaluateAuthorization } from "@/lib/security/authorization";
 import { DocumentReviewService } from "@/lib/reviews/service";
 import { PrismaReviewStore } from "@/lib/reviews/prisma-store";
@@ -20,7 +21,20 @@ export async function GET(request: NextRequest) {
       reviewAccess ? new ApprovalAssignmentService(new PrismaApprovalAssignmentStore()).list(context, organizationId) : null,
       distributionAccess ? new AcknowledgmentService(new PrismaAcknowledgmentStore()).listOutstanding(context, organizationId) : null,
     ]);
+    const versions = acknowledgments?.length ? await db.documentVersion.findMany({ where: { organizationId, id: { in: acknowledgments.map(row => row.documentVersionId) } }, select: { id: true, revisionLabel: true, document: { select: { documentNumber: true, title: true } } } }) : [];
+    const recipients = acknowledgments?.length ? await db.user.findMany({ where: { organizationId, id: { in: acknowledgments.map(row => row.recipientUserId) } }, select: { id: true, firstName: true, lastName: true } }) : [];
+    const versionMap = new Map(versions.map(row => [row.id, row]));
+    const recipientMap = new Map(recipients.map(row => [row.id, row]));
     return NextResponse.json({ data: {
+      details: [
+        ...(reviews ?? []).map(row => ({ id: row.id, document: row.documentNumber, title: row.title, revision: row.revisionLabel, action: "Periodic review", assignee: null, dueAt: row.dueAt, overdue: row.overdue })),
+        ...(approvals?.tasks ?? []).map(row => ({ id: row.id, document: row.documentNumber, title: row.title, revision: row.revisionLabel, action: "Final approval", assignee: row.assigneeUserId ? approvals?.approvers.find(user => user.id === row.assigneeUserId)?.name ?? "Assigned (not currently eligible)" : "Unassigned", dueAt: null, overdue: false })),
+        ...(acknowledgments ?? []).map(row => {
+          const version = versionMap.get(row.documentVersionId);
+          const recipient = recipientMap.get(row.recipientUserId);
+          return { id: row.assignmentId, document: version?.document.documentNumber ?? "Unavailable", title: version?.document.title ?? "", revision: version?.revisionLabel ?? "", action: "Acknowledgment", assignee: recipient ? `${recipient.firstName} ${recipient.lastName}`.trim() || "Unnamed employee" : "Unavailable", dueAt: row.dueAt, overdue: row.overdue };
+        }),
+      ],
       periodicReviews: reviews === null ? null : reviews.length,
       overduePeriodicReviews: reviews === null ? null : reviews.filter(row => row.overdue).length,
       pendingApprovals: approvals === null ? null : approvals.tasks.length,
