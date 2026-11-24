@@ -79,3 +79,17 @@ Stop and escalate immediately on any of: production identity or database detecte
 - [Restricted provisioner role plan](restricted-railway-provisioner-role-plan.md)
 
 **Release boundary:** Completing this runbook does not satisfy the independent restore test, tenant isolation tests, external customer access approval, or commercial release gates.
+
+## REC-02 readiness evidence and proposed isolated exercise — November 23, 2026
+
+Read-only Railway inventory confirms project `e6cc5f1e-3064-46d3-90bf-c763334f01a8` contains demo environment `3bb1cae4-454f-4f6c-b2cb-fb38c8eb58a4` and production environment `a9b203fd-e19f-4dea-929c-4dac40a14ed1`. Demo application service `9c8676bd-5d9b-4306-8e85-062bd95bf72c` and database service `7f2ad369-c21a-486a-8ac4-4a170b1674d3` differ from production application `6e01faf0-7687-4a8f-b8ec-b15dfc884290` and database `59bc4f68-5df5-4011-9add-7baacf431b7d`. Inventory is not proof of actual database connection identity or reset safety. No production connection or write was attempted.
+
+Proposed exercise (not authorized for execution by this document):
+
+1. Independently attest target database identity and demo-only configuration without exposing credentials; reject missing or mismatched identity.
+2. Restore the verified archive into disposable local PostgreSQL with no live database connectivity. Record baseline synthetic tenant, controlled versions, audit continuity and signed records.
+3. Identify and review the actual reset implementation and its allowed mutation set before execution. If no suitable implementation exists, stop and prepare a separate implementation proposal.
+4. Exercise the reviewed reset against disposable data only, including wrong-target denial and preservation of required audit and signed records. Compare before/after evidence and test rollback using the verified archive.
+5. Record commit, archive, timestamps, assertions, discrepancies, operator and independent reviewer. A disposable exercise does not authorize a live reset; obtain separate written approval for any live execution.
+
+REC-01 reviewer record: archive `trace-qms-demo-20261124T015518Z.backup`, deployment `6253d997-fa5c-4e4d-bb34-3b4965aff7e9`, operator James Ramsey, technical PASS for one synthetic file. Independent reviewer name, review date, evidence examined, exceptions and accept/reject decision remain blank pending actual review. Cleanup deployment `fc83c6f6-edd1-4e07-a432-bd59815daaa5` subsequently reported SUCCESS. Full-bucket recovery and scheduled file backups remain open.
