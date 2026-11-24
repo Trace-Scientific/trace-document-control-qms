@@ -23,14 +23,6 @@ if [ "$1" = s3 ] && [ "$2" = cp ]; then
   cp "$3" "/fixture/out/${4##*/}"
 elif [ "$1" = s3api ] && [ "$2" = head-object ]; then
   echo '{}'
-elif [ "$1" = --endpoint-url ]; then
-  test "$AWS_ACCESS_KEY_ID" = source-fixture
-  test "$2" = https://fixture.invalid
-  test "$3" = s3api
-  test "$4" = get-object
-  test "$6" = source-fixture-bucket
-  test "$8" = 32e089a4-1deb-4db1-aa29-6c9b12e3ceb1/502d9cb2-2280-4f80-899e-e9a45f664101/recovery-fixture.txt
-  cp /fixture/object "$9"
 elif [ "$1" = s3api ] && [ "$2" = put-object ]; then
   test "$AWS_ACCESS_KEY_ID" = destination-fixture
   test "$4" = trace-qms-demo-db-backups
@@ -41,6 +33,16 @@ else
   exit 1
 fi
 SH
+cat > "$fixture/export-fixture.cjs" <<'JS'
+const fs = require("node:fs");
+global.fetch = async (url, options) => {
+  if (String(url) !== "https://trace-qms-demo-demo.up.railway.app/api/internal/demo-backup-export?id=502d9cb2-2280-4f80-899e-e9a45f664101" ||
+      options.headers.authorization !== "Bearer synthetic-ci-export-secret-not-real" ||
+      options.redirect !== "error") throw new Error("Unexpected export request");
+  return new Response(fs.readFileSync("/fixture/object"));
+};
+JS
+chmod 644 "$fixture/export-fixture.cjs"
 chmod 755 "$fixture/aws" "$fixture/pg_dump"
 docker build -f Dockerfile.demo-s3-backup -t trace-qms-backup-ci .
 docker run --rm --network none \
@@ -48,8 +50,8 @@ docker run --rm --network none \
   -e PGHOST=postgres-6qrb.railway.internal -e PGPORT=5432 -e PGDATABASE=railway -e PGUSER=fixture -e PGPASSWORD=fixture \
   -e AWS_ACCESS_KEY_ID=destination-fixture -e AWS_SECRET_ACCESS_KEY=fixture -e AWS_DEFAULT_REGION=us-east-2 \
   -e S3_BACKUP_BUCKET=trace-qms-demo-db-backups -e DEMO_PRIVATE_BACKUP_ENABLED=1 \
-  -e DEMO_FILE_SOURCE_ENDPOINT=https://fixture.invalid -e DEMO_FILE_SOURCE_BUCKET=source-fixture-bucket \
-  -e DEMO_FILE_SOURCE_REGION=us-east-2 -e DEMO_FILE_SOURCE_ACCESS_KEY_ID=source-fixture -e DEMO_FILE_SOURCE_SECRET_ACCESS_KEY=fixture \
+  -e DEMO_BACKUP_EXPORT_SECRET=synthetic-ci-export-secret-not-real -e NODE_OPTIONS=--require=/fixture/export-fixture.cjs \
+
   -v "$fixture:/fixture" -v "$fixture/aws:/usr/local/bin/aws:ro" -v "$fixture/pg_dump:/usr/local/bin/pg_dump:ro" \
   trace-qms-backup-ci
 sudo chmod a+r "$fixture/out/"*
