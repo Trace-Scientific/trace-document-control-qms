@@ -84,10 +84,15 @@ For the live walkthrough, open Taylor Demo's **Bloodborne Pathogens Safety (Demo
 - [x] The linked demo learner opened both official training certificates from completion history.
 - [x] A synthetic evidence file became selectable after a clean scan while the form stayed open, and the demo Audit trail recorded the scan.
 - [x] Verify the one-page PDF and its text using the synthetic certificate test in CI.
-- [ ] Verify the live demo certificate in desktop print preview or a saved PDF.
+- [x] Verify the live demo certificate in a saved PDF (Bloodborne Pathogens; evidence below).
+- [ ] Rehearse native desktop print preview if printing will be demonstrated live.
 - [ ] Demo can be reset safely without deleting required audit history.
 - [ ] A rehearsed 15-minute walkthrough completes without privileged workarounds.
 
 ## Open questions before data population
 
 Confirm which workflow, acknowledgment/training, e-signature and reset features are actually implemented in the deployed demo build. Confirm the exact seeded content import path and owner approval for demo-only writes. Until then, this document is a script and catalog, **not an executable seeding specification**.
+
+## Saved certificate evidence reconciliation
+
+The retained Bloodborne Pathogens certificate PDF was retrieved and its text checked: Taylor Demo, DEMO-BBP, November 23, 2026, Passed, reference `4aa8eeda-45b3-4eb9-a32f-05b1942d8246`. This satisfies the saved-PDF content alternative, not native desktop print-preview rehearsal. The retained copy is labeled PDF copy of the Trace QMS demo certificate; it is not independent proof of native browser printing.
