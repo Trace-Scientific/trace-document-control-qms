@@ -105,6 +105,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      - run: node --test scripts/demo-private-backup-integrity.test.mjs
       - run: python3 scripts/railway-demo-file-scanner-test.py
       - name: Verify training certificate PDF output
         run: |
