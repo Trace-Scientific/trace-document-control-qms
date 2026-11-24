@@ -26,7 +26,11 @@ export async function GET(request: Request) {
         file.originalName === "." || file.originalName === "..") return reject(409);
     const bytes = await new PrivateObjectStorage().get(file.storageKey);
     if (BigInt(bytes.length) !== file.sizeBytes || hash(bytes).toString("hex") !== file.sha256) return reject(409);
-    console.info("Demo backup export verified", { fileId: file.id });
+    await db.auditEvent.create({ data: {
+      organizationId: file.organizationId, action: "DEMO_BACKUP_FILE_EXPORTED",
+      entityType: "FileObject", entityId: file.id, newHash: file.sha256,
+      metadata: { service: "demo-backup-worker" },
+    } });
     return new Response(Buffer.from(bytes), { headers: { ...headers, "Content-Type": "application/octet-stream" } });
   } catch {
     return reject(503);
