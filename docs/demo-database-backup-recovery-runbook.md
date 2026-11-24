@@ -41,7 +41,9 @@ CI also builds the Railway restore worker and runs it against the disposable arc
 
 On Railway the worker reads the selected archive and checksum from private demo S3, restores to disposable PostgreSQL, and starts the app against that copy. Both processes listen only on loopback. The app starts with an explicit local database URL and a fresh environment without storage credentials. Require the `PASS: Trace QMS started against the restored database` line in addition to the checksum and table-count messages. The startup drill also tests authenticated document recovery when the validator has a sealed, temporary `RESTORE_DEMO_PASSWORD` for the existing Alex Morgan account in `trace-demo-lab`. The password must match the selected archive. The probe uses the ordinary login route and requires a new session before reading `TEST-001`. Require the authenticated `PASS` log line and remove the temporary variable after the drill. A run that logs `SKIP` establishes startup coverage only. GitHub Actions generates its own fixture password and seeds the synthetic document before creating its disposable backup.
 
-Object storage recovery requires additional verification using an approved private-file recovery target and credentials scoped to that target.
+CI also tests recovery of one synthetic private file. It restores the file metadata with the PostgreSQL archive and loads the separately supplied file bytes into a disposable loopback object-store fixture. The ordinary private-file endpoint must return HTTP 401 before sign-in, return the expected bytes after sign-in, and return HTTP 409 when the stored bytes no longer match the restored SHA-256. The worker runs with external networking disabled for this check.
+
+Live Railway object storage recovery requires a separate private-file backup paired with the selected database archive, an approved isolated recovery target, and credentials scoped to that target. Run the same access and digest checks against the restored object before accepting live private-file recovery.
 
 ## Verified restore on November 23, 2026
 

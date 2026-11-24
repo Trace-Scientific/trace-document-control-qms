@@ -24,6 +24,23 @@ cleanup() {
 }
 trap cleanup EXIT
 cd "$work"
+storage_env=()
+if [[ "${RESTORE_PRIVATE_FILE_CI:-}" == 1 ]]; then
+  [[ "$RESTORE_BACKUP_NAME" == trace-qms-demo-20000101T000000Z.backup &&
+     "$AWS_ACCESS_KEY_ID" == ci-fixture && "$AWS_SECRET_ACCESS_KEY" == ci-fixture &&
+     -n "${RESTORE_DEMO_PASSWORD:-}" && -s /restore-fixture/recovery-fixture.txt ]] || {
+    echo "REFUSED: private-file recovery requires the disposable CI fixtures"
+    exit 1
+  }
+  cp /restore-fixture/recovery-fixture.txt "$work/recovery-fixture.txt"
+  storage_env=(
+    OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:9000
+    OBJECT_STORAGE_REGION=us-east-2
+    OBJECT_STORAGE_BUCKET=restore-ci-files
+    OBJECT_STORAGE_ACCESS_KEY_ID=ci-fixture
+    OBJECT_STORAGE_SECRET_ACCESS_KEY=ci-fixture
+  )
+fi
 echo "Downloading demo backup and checksum"
 aws s3 cp "s3://$S3_BACKUP_BUCKET/demo/postgres/$RESTORE_BACKUP_NAME" "$RESTORE_BACKUP_NAME" --only-show-errors
 aws s3 cp "s3://$S3_BACKUP_BUCKET/demo/postgres/$RESTORE_BACKUP_NAME.sha256" "$RESTORE_BACKUP_NAME.sha256" --only-show-errors
@@ -47,12 +64,16 @@ echo "Starting Trace QMS on loopback against the restored database"
   exec env -i PATH="$PATH" HOME="$work" NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 \
     HOSTNAME=127.0.0.1 PORT=3000 \
     DATABASE_URL=postgresql://postgres@127.0.0.1:5432/restore_validation \
-    node server.js
+    "${storage_env[@]}" node server.js
 ) >"$work/app.log" 2>&1 &
 app_pid=$!
 
 if ! node --input-type=module <<'NODE'
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { once } from "node:events";
+import { readFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { setTimeout } from "node:timers/promises";
 
 const base = "http://127.0.0.1:3000";
@@ -102,6 +123,43 @@ if (password) {
     && item.title === "QMS Workflow Verification — Demo"),
     "Expected synthetic document is missing from the restored demo tenant");
   console.log("PASS: authenticated demo login and restored TEST-001 document lookup");
+
+  if (process.env.RESTORE_PRIVATE_FILE_CI === "1") {
+    const fileId = "502d9cb2-2280-4f80-899e-e9a45f664101";
+    const objectPath = `/restore-ci-files/32e089a4-1deb-4db1-aa29-6c9b12e3ceb1/${fileId}/recovery-fixture.txt`;
+    const bytes = await readFile("recovery-fixture.txt");
+    const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+    let corrupt = false;
+    const storage = createServer((req, res) => {
+      if (req.method !== "GET" || req.url !== objectPath) {
+        res.writeHead(404).end();
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "text/plain" })
+        .end(corrupt ? "Intentionally corrupted recovery fixture" : bytes);
+    });
+    storage.listen(9000, "127.0.0.1");
+    storage.unref();
+    await once(storage, "listening");
+
+    const filePath = `/api/files/${fileId}`;
+    const unauthenticated = await request(filePath);
+    assert.equal(unauthenticated.status, 401, "Private file must require authentication");
+
+    const download = () => fetch(base + filePath, {
+      headers: { Cookie: session },
+      signal: AbortSignal.timeout(5000),
+    });
+    const recovered = await download();
+    assert.equal(recovered.status, 200, "Restored private file could not be downloaded");
+    assert.equal(sha256(Buffer.from(await recovered.arrayBuffer())), sha256(bytes),
+      "Downloaded private file does not match the recovered object bytes");
+
+    corrupt = true;
+    const mismatched = await download();
+    assert.equal(mismatched.status, 409, "Restored database hash must reject corrupted object bytes");
+    console.log("PASS: restored private file download, SHA-256, and denial checks in CI");
+  }
 } else {
   console.log("SKIP: authenticated restore check requires RESTORE_DEMO_PASSWORD");
 }
