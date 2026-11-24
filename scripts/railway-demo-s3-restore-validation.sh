@@ -26,12 +26,18 @@ trap cleanup EXIT
 cd "$work"
 storage_env=()
 file_id="${RESTORE_PRIVATE_FILE_ID:-}"
+all_files="${RESTORE_PRIVATE_FILES_ALL:-0}"
+if [[ "$all_files" == 1 ]]; then
+  [[ -z "$file_id" && -n "${RESTORE_DEMO_PASSWORD:-}" ]] || { echo "REFUSED: manifest recovery requires restored login and no single-file selection"; exit 1; }
+fi
 if [[ -n "$file_id" ]]; then
   [[ "$file_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ &&
      -n "${RESTORE_DEMO_PASSWORD:-}" ]] || {
     echo "REFUSED: private-file validation requires a file UUID and restored demo login"
     exit 1
   }
+fi
+if [[ -n "$file_id" || "$all_files" == 1 ]]; then
   storage_env=(
     OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:9000
     OBJECT_STORAGE_REGION=us-east-2
@@ -51,6 +57,24 @@ if [[ -n "$file_id" ]]; then
     echo "FAIL: private-file backup must be between 1 byte and 25 MiB"
     exit 1
   }
+fi
+if [[ "$all_files" == 1 ]]; then
+  aws s3 cp "s3://$S3_BACKUP_BUCKET/demo/private-files/$RESTORE_BACKUP_NAME/manifest.json" manifest.json --only-show-errors
+  mkdir -m 700 objects
+  node --input-type=module <<'MANIFEST'
+import assert from "node:assert/strict";
+import { readFileSync, writeFileSync } from "node:fs";
+const m = JSON.parse(readFileSync("manifest.json", "utf8"));
+assert.equal(m.archive, process.env.RESTORE_BACKUP_NAME);
+assert.ok(Array.isArray(m.files) && m.files.length > 0);
+const ids = m.files.map(f => f.id);
+assert.ok(ids.every(id => typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)));
+assert.equal(new Set(ids).size, ids.length);
+writeFileSync("ids", ids.join("\n") + "\n");
+MANIFEST
+  while IFS= read -r id; do
+    aws s3 cp "s3://$S3_BACKUP_BUCKET/demo/private-files/$RESTORE_BACKUP_NAME/$id" "objects/$id" --only-show-errors
+  done < ids
 fi
 unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 sha256sum -c "$RESTORE_BACKUP_NAME.sha256"
@@ -80,6 +104,28 @@ SQL
   [[ -s object-key ]] || { echo "FAIL: selected private-file metadata is missing from the restored demo archive"; exit 1; }
 fi
 
+if [[ "$all_files" == 1 ]]; then
+  psql -h "$work/socket" -U postgres -d restore_validation -XAt -v ON_ERROR_STOP=1 > inventory.json <<'SQL'
+SELECT coalesce(json_agg(json_build_object('id', f.id, 'storageKey', f."storageKey", 'sizeBytes', f."sizeBytes", 'sha256', f.sha256) ORDER BY f.id), '[]'::json)
+FROM "FileObject" f JOIN "Organization" o ON o.id = f."organizationId"
+WHERE o."loginCode" = 'trace-demo-lab' AND f.status = 'AVAILABLE';
+SQL
+  node --input-type=module <<'VERIFY'
+import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+const rows = JSON.parse(readFileSync("inventory.json", "utf8"));
+const manifest = JSON.parse(readFileSync("manifest.json", "utf8"));
+assert.deepEqual(manifest.files, rows.map(({id,sizeBytes,sha256}) => ({id,sizeBytes,sha256})));
+assert.deepEqual(readdirSync("objects").sort(), rows.map(r => r.id).sort());
+for (const row of rows) {
+  const bytes = readFileSync("objects/" + row.id);
+  assert.equal(bytes.length, row.sizeBytes);
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), row.sha256);
+}
+console.log("PASS: manifest reconciled with restored database; verified files:", rows.length);
+VERIFY
+fi
 echo "Starting Trace QMS on loopback against the restored database"
 (
   cd /opt/trace-qms
@@ -146,6 +192,34 @@ if (password) {
     "Expected synthetic document is missing from the restored demo tenant");
   console.log("PASS: authenticated demo login and restored TEST-001 document lookup");
 
+  if (process.env.RESTORE_PRIVATE_FILES_ALL === "1") {
+    const rows = JSON.parse(await readFile("inventory.json", "utf8"));
+    const objects = new Map();
+    for (const row of rows) {
+      objects.set("/restore-files/" + row.storageKey.split("/").map(encodeURIComponent).join("/"), await readFile("objects/" + row.id));
+    }
+    let corrupt = false;
+    const storage = createServer((req, res) => {
+      const bytes = objects.get(req.url);
+      if (req.method !== "GET" || !bytes) return res.writeHead(404).end();
+      res.writeHead(200).end(corrupt ? Buffer.concat([bytes, Buffer.from("corrupt")]) : bytes);
+    });
+    storage.listen(9000, "127.0.0.1");
+    storage.unref();
+    await once(storage, "listening");
+    for (const row of rows) {
+      const path = "/api/files/" + row.id;
+      assert.equal((await request(path)).status, 401);
+      const download = () => fetch(base + path, {headers: {Cookie: session}, signal: AbortSignal.timeout(5000)});
+      const response = await download();
+      assert.equal(response.status, 200);
+      assert.equal(createHash("sha256").update(Buffer.from(await response.arrayBuffer())).digest("hex"), row.sha256);
+      corrupt = true;
+      assert.equal((await download()).status, 409);
+      corrupt = false;
+    }
+    console.log("PASS: authenticated recovery and denial checks; files:", rows.length);
+  }
   const fileId = process.env.RESTORE_PRIVATE_FILE_ID;
   if (fileId) {
     const key = (await readFile("object-key", "utf8")).trimEnd();
