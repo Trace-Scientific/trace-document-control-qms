@@ -26,12 +26,14 @@ echo "Creating demo-only logical backup at $stamp"
 pg_dump --format=custom --compress=6 --no-owner --no-acl --file="$archive"
 pg_restore --list "$archive" >/dev/null
 sha256sum "$archive" | sed "s|$workdir/||" > "$archive.sha256"
+if [ "${DEMO_BACKUP_EXPORT_PREFLIGHT:-0}" != 1 ]; then
 echo "Uploading backup and checksum to private S3"
 aws s3 cp "$archive" "s3://$S3_BACKUP_BUCKET/$key" --only-show-errors
 aws s3 cp "$archive.sha256" "s3://$S3_BACKUP_BUCKET/$key.sha256" --only-show-errors
 aws s3api head-object --bucket "$S3_BACKUP_BUCKET" --key "$key" --query '{Size:ContentLength,Encryption:ServerSideEncryption}' --output json
 echo "Demo backup uploaded: s3://$S3_BACKUP_BUCKET/$key"
-if [ "${DEMO_PRIVATE_BACKUP_ENABLED:-0}" = 1 ]; then
+fi
+if [ "${DEMO_PRIVATE_BACKUP_ENABLED:-0}" = 1 ] || [ "${DEMO_BACKUP_EXPORT_PREFLIGHT:-0}" = 1 ]; then
   # Extract inventory from an isolated Unix-socket restore.
   (
     unset PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD PGSSLMODE DATABASE_URL
