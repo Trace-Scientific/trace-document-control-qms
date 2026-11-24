@@ -16,7 +16,12 @@ export function AcknowledgmentDistribution() {
   async function load() {
     setBusy(true);
     setError("");
-    const response = await fetch("/api/documents/acknowledgment-role-audience", { credentials: "same-origin" });
+    const response = await fetch("/api/documents/acknowledgment-role-audience", { credentials: "same-origin" }).catch(() => null);
+    if (!response) {
+      setBusy(false);
+      setError("Unable to reach the server. Check your connection and try again.");
+      return;
+    }
     const body = await response.json().catch(() => null);
     setBusy(false);
     if (!response.ok) {
@@ -47,7 +52,12 @@ export function AcknowledgmentDistribution() {
         versionId: String(form.get("versionId")),
         dueAt: String(form.get("dueAt")),
       }),
-    });
+    }).catch(() => null);
+    if (!response) {
+      setBusy(false);
+      setError("Unable to reach the server. Check your connection and try again.");
+      return;
+    }
     const body = await response.json().catch(() => null);
     setBusy(false);
     if (!response.ok) {
