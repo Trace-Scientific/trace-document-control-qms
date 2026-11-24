@@ -15,7 +15,10 @@ const filePath = process.env.RESTORE_FILE_FIXTURE_PATH;
 if (!filePath) throw new Error("Missing synthetic file fixture path");
 const fileBytes = await readFile(filePath);
 if (!fileBytes.length) throw new Error("Synthetic file fixture is empty");
-const fileHash = createHash("sha256").update(fileBytes).digest("hex");
+const secondPath = process.env.RESTORE_SECOND_FILE_FIXTURE_PATH;
+if (!secondPath) throw new Error("Missing second synthetic file fixture path");
+const secondBytes = await readFile(secondPath);
+if (!secondBytes.length) throw new Error("Second synthetic file fixture is empty");
 const fileId = "502d9cb2-2280-4f80-899e-e9a45f664101";
 const db = new PrismaClient({ datasourceUrl: databaseUrl });
 
@@ -50,19 +53,28 @@ try {
         title: "QMS Workflow Verification — Demo",
       },
     });
-    await tx.fileObject.create({
-      data: {
-        id: fileId,
-        organizationId,
-        storageKey: `${organizationId}/${fileId}/recovery-fixture.txt`,
-        originalName: "recovery-fixture.txt",
-        mimeType: "text/plain",
-        sizeBytes: BigInt(fileBytes.length),
-        sha256: fileHash,
-        status: "AVAILABLE",
-        uploadedByUserId: user.id,
+    for (const fixture of [
+      { id: fileId, originalName: "recovery-fixture.txt", bytes: fileBytes },
+      {
+        id: "502d9cb2-2280-4f80-899e-e9a45f664102",
+        originalName: "recovery fixture 2.txt",
+        bytes: secondBytes,
       },
-    });
+    ]) {
+      await tx.fileObject.create({
+        data: {
+          id: fixture.id,
+          organizationId,
+          storageKey: `${organizationId}/${fixture.id}/${fixture.originalName}`,
+          originalName: fixture.originalName,
+          mimeType: "text/plain",
+          sizeBytes: BigInt(fixture.bytes.length),
+          sha256: createHash("sha256").update(fixture.bytes).digest("hex"),
+          status: "AVAILABLE",
+          uploadedByUserId: user.id,
+        },
+      });
+    }
     await tx.documentVersion.create({
       data: {
         organizationId, documentId: document.id, authoredByUserId: user.id, versionNumber: 1,

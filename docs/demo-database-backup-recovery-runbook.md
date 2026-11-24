@@ -29,7 +29,7 @@ On October 30, 2026, the backup `trace-qms-demo-20261030T171011Z.backup` passed 
 1. Select a specific backup and its matching checksum from the private S3 prefix.
 2. Run the dedicated restore-validation service using the approved `RESTORE_BACKUP_NAME` (basename only).
 3. The worker must download the two S3 objects, verify SHA-256, create a **disposable local-only** PostgreSQL 18 instance, restore with `--exit-on-error`, and check restored application tables.
-4. Require explicit log evidence: `backup: OK`, `PASS: isolated restore completed`, and an application table count greater than zero.
+4. Require explicit log evidence: `PASS: archive checksum verified`, `PASS: isolated restore completed`, and an application table count greater than zero.
 5. Never point the restore worker at the running demo or production database. Never restore into an existing database without a separately reviewed recovery plan.
 6. For complete disaster recovery readiness, additionally validate application startup, migrations compatibility, access controls, file/object storage dependencies, and end-user workflows in an isolated environment.
 
@@ -52,6 +52,16 @@ CI also tests recovery of one synthetic private file. It restores the file metad
 5. Record the archive, file UUID, deployment ID, verification result, and reviewer. Remove the temporary password and file UUID from the validator after the drill.
 
 This drill verifies one separately backed-up demo object. A scheduled private-file backup and full-bucket recovery need separate evidence.
+
+## Paired private-file recovery drill
+
+1. Verify that the demo validator deployment contains the reviewed restore code and that CI passed the disposable two-file restore and denial checks.
+2. Save the validator's baseline archive setting. Select the paired archive with `RESTORE_BACKUP_NAME`, enable `RESTORE_PRIVATE_FILES_ALL=1`, and supply a temporary sealed `RESTORE_DEMO_PASSWORD` matching the selected archive. Leave `RESTORE_PRIVATE_FILE_ID` unset.
+3. The validator checks the archive checksum, restores disposable PostgreSQL, reconciles the completed manifest with the restored `trace-demo-lab` inventory of AVAILABLE private files, and verifies file sizes and hashes. It reads only the reconciled UUIDs and serves the checked copies over loopback.
+4. Verify the file count against the paired backup. Require the manifest reconciliation and authenticated recovery log lines with the same count, the `TEST-001` lookup, and the readiness result. The authenticated recovery line covers anonymous denial, a matching authenticated download, and corrupted-byte denial for each selected file.
+5. Remove the temporary password and multi-file flag, restore the baseline archive setting, and verify the cleanup deployment and variable inventory. Record the selected archive, commit, deployment IDs, UTC timestamps, file count, checks and independent reviewer decision.
+
+The paired drill covers only the eligible files in the selected synthetic tenant and archive. Scheduled executions and full-bucket recovery require separate evidence.
 
 ## Verified restore on November 23, 2026
 

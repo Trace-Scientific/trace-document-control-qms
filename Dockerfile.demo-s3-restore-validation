@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends awscli ca-certi
 COPY --from=app-build /usr/local/bin/node /usr/local/bin/node
 COPY --from=app-build --chown=postgres:postgres /app/.next/standalone /opt/trace-qms
 COPY --from=app-build --chown=postgres:postgres /app/.next/static /opt/trace-qms/.next/static
+COPY scripts/demo-private-restore.mjs scripts/demo-private-backup-integrity.mjs /opt/demo-restore/
 COPY --chmod=0755 scripts/railway-demo-s3-restore-validation.sh /usr/local/bin/validate-demo-restore
 USER postgres
 ENTRYPOINT ["/usr/local/bin/validate-demo-restore"]
