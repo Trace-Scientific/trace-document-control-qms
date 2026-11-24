@@ -51,7 +51,6 @@ docker run --rm --network none \
   -e AWS_ACCESS_KEY_ID=destination-fixture -e AWS_SECRET_ACCESS_KEY=fixture -e AWS_DEFAULT_REGION=us-east-2 \
   -e S3_BACKUP_BUCKET=trace-qms-demo-db-backups -e DEMO_PRIVATE_BACKUP_ENABLED=1 \
   -e DEMO_BACKUP_EXPORT_SECRET=synthetic-ci-export-secret-not-real -e NODE_OPTIONS=--require=/fixture/export-fixture.cjs \
-
   -v "$fixture:/fixture" -v "$fixture/aws:/usr/local/bin/aws:ro" -v "$fixture/pg_dump:/usr/local/bin/pg_dump:ro" \
   trace-qms-backup-ci
 sudo chmod a+r "$fixture/out/"*
