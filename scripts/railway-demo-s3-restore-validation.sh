@@ -9,7 +9,10 @@ umask 077
 [[ "${DEPLOYMENT_TIER:-}" == "demo" ]] || { echo "REFUSED: demo tier required"; exit 1; }
 [[ "$S3_BACKUP_BUCKET" == "trace-qms-demo-db-backups" && "$AWS_DEFAULT_REGION" == "us-east-2" ]] || { echo "REFUSED: unexpected S3 target"; exit 1; }
 [[ "$RESTORE_BACKUP_NAME" =~ ^trace-qms-demo-[0-9]{8}T[0-9]{6}Z\.backup$ ]] || { echo "REFUSED: invalid backup filename"; exit 1; }
-unset PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD PGSSLMODE DATABASE_URL || true
+# libpq must resolve every connection to the disposable cluster.
+for variable in "${!PG@}"; do unset "$variable"; done
+unset DATABASE_URL
+restore_helpers=/opt/demo-restore
 work="$(mktemp -d)"
 app_pid=""
 cleanup() {
@@ -23,10 +26,14 @@ cleanup() {
   rm -rf "$work"
 }
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 cd "$work"
 storage_env=()
 file_id="${RESTORE_PRIVATE_FILE_ID:-}"
 all_files="${RESTORE_PRIVATE_FILES_ALL:-0}"
+[[ "$all_files" == 0 || "$all_files" == 1 ]] || { echo "REFUSED: invalid multi-file opt-in"; exit 1; }
 if [[ "$all_files" == 1 ]]; then
   [[ -z "$file_id" && -n "${RESTORE_DEMO_PASSWORD:-}" ]] || { echo "REFUSED: manifest recovery requires restored login and no single-file selection"; exit 1; }
 fi
@@ -46,52 +53,46 @@ if [[ -n "$file_id" || "$all_files" == 1 ]]; then
     OBJECT_STORAGE_SECRET_ACCESS_KEY=loopback-only
   )
 fi
+aws_copy() {
+  env -i PATH="$PATH" HOME="$work" AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+    AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}" \
+    AWS_DEFAULT_REGION="$AWS_DEFAULT_REGION" AWS_EC2_METADATA_DISABLED=true \
+    AWS_CONFIG_FILE=/dev/null AWS_SHARED_CREDENTIALS_FILE=/dev/null \
+    aws s3 cp "$1" "$2" --only-show-errors
+}
 echo "Downloading demo backup and checksum"
-aws s3 cp "s3://$S3_BACKUP_BUCKET/demo/postgres/$RESTORE_BACKUP_NAME" "$RESTORE_BACKUP_NAME" --only-show-errors
-aws s3 cp "s3://$S3_BACKUP_BUCKET/demo/postgres/$RESTORE_BACKUP_NAME.sha256" "$RESTORE_BACKUP_NAME.sha256" --only-show-errors
+aws_copy "s3://$S3_BACKUP_BUCKET/demo/postgres/$RESTORE_BACKUP_NAME" "$RESTORE_BACKUP_NAME"
+aws_copy "s3://$S3_BACKUP_BUCKET/demo/postgres/$RESTORE_BACKUP_NAME.sha256" "$RESTORE_BACKUP_NAME.sha256"
 if [[ -n "$file_id" ]]; then
   echo "Downloading the selected archive's private-file backup"
-  aws s3 cp "s3://$S3_BACKUP_BUCKET/demo/private-files/$RESTORE_BACKUP_NAME/$file_id" \
-    recovery-object --only-show-errors
+  aws_copy "s3://$S3_BACKUP_BUCKET/demo/private-files/$RESTORE_BACKUP_NAME/$file_id" \
+    recovery-object
   [[ -s recovery-object && "$(wc -c < recovery-object)" -le 26214400 ]] || {
     echo "FAIL: private-file backup must be between 1 byte and 25 MiB"
     exit 1
   }
 fi
-if [[ "$all_files" == 1 ]]; then
-  aws s3 cp "s3://$S3_BACKUP_BUCKET/demo/private-files/$RESTORE_BACKUP_NAME/manifest.json" manifest.json --only-show-errors
-  mkdir -m 700 objects
-  node --input-type=module <<'MANIFEST'
-import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
-const m = JSON.parse(readFileSync("manifest.json", "utf8"));
-assert.equal(m.archive, process.env.RESTORE_BACKUP_NAME);
-assert.ok(Array.isArray(m.files) && m.files.length > 0);
-const ids = m.files.map(f => f.id);
-assert.ok(ids.every(id => typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)));
-assert.equal(new Set(ids).size, ids.length);
-writeFileSync("ids", ids.join("\n") + "\n");
-MANIFEST
-  while IFS= read -r id; do
-    aws s3 cp "s3://$S3_BACKUP_BUCKET/demo/private-files/$RESTORE_BACKUP_NAME/$id" "objects/$id" --only-show-errors
-  done < ids
-fi
-unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
-sha256sum -c "$RESTORE_BACKUP_NAME.sha256"
+# Check the digest for this exact file before invoking PostgreSQL.
+sha256sum "$RESTORE_BACKUP_NAME" | cmp -s - "$RESTORE_BACKUP_NAME.sha256" || {
+  echo "FAIL: archive checksum mismatch"
+  exit 1
+}
+echo "PASS: archive checksum verified"
 pg_restore --list "$RESTORE_BACKUP_NAME" >/dev/null
 mkdir -m 700 "$work/socket"
-initdb -D "$work/pgdata" --auth=trust --no-instructions >/dev/null
-pg_ctl -D "$work/pgdata" -o "-c listen_addresses='127.0.0.1' -c unix_socket_directories=$work/socket" -w start >/dev/null
-createdb -h "$work/socket" -U postgres restore_validation
+initdb -D "$work/pgdata" -U postgres --auth=trust --no-instructions >/dev/null
+env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN -u RESTORE_DEMO_PASSWORD \
+  pg_ctl -D "$work/pgdata" -l "$work/postgres.log" -o "-c listen_addresses='127.0.0.1' -c unix_socket_directories=$work/socket" -w start >/dev/null
+createdb -p 5432 -h "$work/socket" -U postgres restore_validation
 echo "Restoring into disposable, local-only PostgreSQL 18"
-pg_restore -h "$work/socket" -U postgres -d restore_validation --no-owner --no-acl --exit-on-error "$RESTORE_BACKUP_NAME"
-table_count="$(psql -h "$work/socket" -U postgres -d restore_validation -Atqc "SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema')")"
+pg_restore -p 5432 -h "$work/socket" -U postgres -d restore_validation --no-owner --no-acl --exit-on-error "$RESTORE_BACKUP_NAME"
+table_count="$(psql -p 5432 -h "$work/socket" -U postgres -d restore_validation -XAtqc "SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema')")"
 [[ "$table_count" =~ ^[0-9]+$ ]] && (( table_count > 0 )) || { echo "FAIL: no application tables restored"; exit 1; }
 echo "PASS: isolated restore completed; application tables: $table_count"
 echo "No running Railway database was contacted or modified."
 
 if [[ -n "$file_id" ]]; then
-  psql -h "$work/socket" -U postgres -d restore_validation -XAt \
+  psql -p 5432 -h "$work/socket" -U postgres -d restore_validation -XAt \
     -v ON_ERROR_STOP=1 -v "file_id=$file_id" -f - > object-key <<'SQL'
 SELECT f."storageKey"
 FROM "FileObject" f
@@ -105,27 +106,24 @@ SQL
 fi
 
 if [[ "$all_files" == 1 ]]; then
-  psql -h "$work/socket" -U postgres -d restore_validation -XAt -v ON_ERROR_STOP=1 > inventory.json <<'SQL'
-SELECT coalesce(json_agg(json_build_object('id', f.id, 'storageKey', f."storageKey", 'sizeBytes', f."sizeBytes", 'sha256', f.sha256) ORDER BY f.id), '[]'::json)
+  psql -p 5432 -h "$work/socket" -U postgres -d restore_validation -XAt -v ON_ERROR_STOP=1 > inventory.json <<'SQL'
+SELECT coalesce(json_agg(json_build_object(
+  'id', f.id, 'organizationId', f."organizationId", 'originalName', f."originalName",
+  'storageKey', f."storageKey", 'sizeBytes', f."sizeBytes", 'sha256', f.sha256
+) ORDER BY f.id), '[]'::json)
 FROM "FileObject" f JOIN "Organization" o ON o.id = f."organizationId"
 WHERE o."loginCode" = 'trace-demo-lab' AND f.status = 'AVAILABLE';
 SQL
-  node --input-type=module <<'VERIFY'
-import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
-import { createHash } from "node:crypto";
-const rows = JSON.parse(readFileSync("inventory.json", "utf8"));
-const manifest = JSON.parse(readFileSync("manifest.json", "utf8"));
-assert.deepEqual(manifest.files, rows.map(({id,sizeBytes,sha256}) => ({id,sizeBytes,sha256})));
-assert.deepEqual(readdirSync("objects").sort(), rows.map(r => r.id).sort());
-for (const row of rows) {
-  const bytes = readFileSync("objects/" + row.id);
-  assert.equal(bytes.length, row.sizeBytes);
-  assert.equal(createHash("sha256").update(bytes).digest("hex"), row.sha256);
-}
-console.log("PASS: manifest reconciled with restored database; verified files:", rows.length);
-VERIFY
+  prefix="s3://$S3_BACKUP_BUCKET/demo/private-files/$RESTORE_BACKUP_NAME"
+  aws_copy "$prefix/manifest.json" manifest.json
+  node "$restore_helpers/demo-private-restore.mjs" list "$RESTORE_BACKUP_NAME" > ids
+  mkdir -m 700 objects
+  while IFS= read -r id; do
+    aws_copy "$prefix/$id" "objects/$id"
+  done < ids
+  node "$restore_helpers/demo-private-restore.mjs" verify "$RESTORE_BACKUP_NAME"
 fi
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 echo "Starting Trace QMS on loopback against the restored database"
 (
   cd /opt/trace-qms
@@ -140,9 +138,11 @@ if ! node --input-type=module <<'NODE'
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
+import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { setTimeout } from "node:timers/promises";
+import { pipeline } from "node:stream/promises";
 
 const base = "http://127.0.0.1:3000";
 const request = (path) => fetch(base + path, { signal: AbortSignal.timeout(1500) });
@@ -194,29 +194,50 @@ if (password) {
 
   if (process.env.RESTORE_PRIVATE_FILES_ALL === "1") {
     const rows = JSON.parse(await readFile("inventory.json", "utf8"));
-    const objects = new Map();
-    for (const row of rows) {
-      objects.set("/restore-files/" + row.storageKey.split("/").map(encodeURIComponent).join("/"), await readFile("objects/" + row.id));
-    }
+    const objects = new Map(rows.map((row) => [
+      "/restore-files/" + row.storageKey.split("/").map(encodeURIComponent).join("/"),
+      row.id,
+    ]));
     let corrupt = false;
     const storage = createServer((req, res) => {
-      const bytes = objects.get(req.url);
-      if (req.method !== "GET" || !bytes) return res.writeHead(404).end();
-      res.writeHead(200).end(corrupt ? Buffer.concat([bytes, Buffer.from("corrupt")]) : bytes);
+      const id = objects.get(req.url);
+      if (req.method !== "GET" || !id) return res.writeHead(404).end();
+      if (id === corrupt?.id) {
+        return res.writeHead(200).end(Buffer.alloc(corrupt.sizeBytes === 0 ? 1 : 0));
+      }
+      void pipeline(createReadStream("objects/" + id), res).catch(() => res.destroy());
     });
     storage.listen(9000, "127.0.0.1");
-    storage.unref();
     await once(storage, "listening");
-    for (const row of rows) {
-      const path = "/api/files/" + row.id;
-      assert.equal((await request(path)).status, 401);
-      const download = () => fetch(base + path, {headers: {Cookie: session}, signal: AbortSignal.timeout(5000)});
-      const response = await download();
-      assert.equal(response.status, 200);
-      assert.equal(createHash("sha256").update(Buffer.from(await response.arrayBuffer())).digest("hex"), row.sha256);
-      corrupt = true;
-      assert.equal((await download()).status, 409);
-      corrupt = false;
+    try {
+      for (const row of rows) {
+        const path = "/api/files/" + row.id;
+        const denied = await request(path);
+        assert.equal(denied.status, 401, "Private file must require authentication");
+        await denied.body?.cancel();
+        const download = () => fetch(base + path, {
+          headers: { Cookie: session }, signal: AbortSignal.timeout(30000),
+        });
+        const recovered = await download();
+        assert.equal(recovered.status, 200, "Restored private file could not be downloaded");
+        const hash = createHash("sha256");
+        let size = 0;
+        for await (const chunk of recovered.body) {
+          size += chunk.length;
+          assert.ok(size <= row.sizeBytes, "Recovered response exceeds expected size");
+          hash.update(chunk);
+        }
+        assert.equal(size, row.sizeBytes, "Recovered download size mismatch");
+        assert.equal(hash.digest("hex"), row.sha256, "Recovered download SHA-256 mismatch");
+        corrupt = row;
+        const mismatched = await download();
+        assert.equal(mismatched.status, 409, "Restored database hash must reject corrupted object bytes");
+        await mismatched.body?.cancel();
+        corrupt = false;
+      }
+    } finally {
+      storage.close();
+      storage.closeAllConnections();
     }
     console.log("PASS: authenticated recovery and denial checks; files:", rows.length);
   }

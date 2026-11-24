@@ -4,8 +4,11 @@ fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
 chmod 755 "$fixture"
 cp /tmp/trace-qms.dump "$fixture/archive"
-cp "$RUNNER_TEMP/trace-qms-recovery-fixture.txt" "$fixture/object"
-chmod 644 "$fixture/archive" "$fixture/object"
+first_id=502d9cb2-2280-4f80-899e-e9a45f664101
+second_id=502d9cb2-2280-4f80-899e-e9a45f664102
+cp "$RUNNER_TEMP/trace-qms-recovery-fixture.txt" "$fixture/$first_id"
+cp "$RUNNER_TEMP/trace-qms-recovery-fixture-2.txt" "$fixture/$second_id"
+chmod 644 "$fixture/archive" "$fixture/$first_id" "$fixture/$second_id"
 mkdir "$fixture/out"
 chmod 777 "$fixture/out"
 cat > "$fixture/pg_dump" <<'SH'
@@ -36,10 +39,12 @@ SH
 cat > "$fixture/export-fixture.cjs" <<'JS'
 const fs = require("node:fs");
 global.fetch = async (url, options) => {
-  if (String(url) !== "https://trace-qms-demo-demo.up.railway.app/api/internal/demo-backup-export?id=502d9cb2-2280-4f80-899e-e9a45f664101" ||
+  const id = url.searchParams.get("id");
+  if (!/^502d9cb2-2280-4f80-899e-e9a45f66410[12]$/.test(id) ||
+      String(url) !== "https://trace-qms-demo-demo.up.railway.app/api/internal/demo-backup-export?id=" + id ||
       options.headers.authorization !== "Bearer synthetic-ci-export-secret-not-real" ||
       options.redirect !== "error") throw new Error("Unexpected export request");
-  return new Response(fs.readFileSync("/fixture/object"));
+  return new Response(fs.readFileSync("/fixture/" + id));
 };
 JS
 chmod 644 "$fixture/export-fixture.cjs"
@@ -54,13 +59,16 @@ docker run --rm --network none \
   -v "$fixture:/fixture" -v "$fixture/aws:/usr/local/bin/aws:ro" -v "$fixture/pg_dump:/usr/local/bin/pg_dump:ro" \
   trace-qms-backup-ci
 sudo chmod a+r "$fixture/out/"*
-cmp "$fixture/object" "$fixture/out/502d9cb2-2280-4f80-899e-e9a45f664101"
+cmp "$fixture/$first_id" "$fixture/out/$first_id"
+cmp "$fixture/$second_id" "$fixture/out/$second_id"
 node - "$fixture/out" <<'JS'
 const fs = require("node:fs"), path = require("node:path"), assert = require("node:assert/strict"), crypto = require("node:crypto");
 const dir = process.argv[2], manifest = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json")));
-assert.equal(manifest.files.length, 1);
+assert.equal(manifest.files.length, 2);
 assert.ok(fs.existsSync(path.join(dir, manifest.archive)));
-const row = manifest.files[0], bytes = fs.readFileSync(path.join(dir, row.id));
-assert.equal(row.sizeBytes, bytes.length);
-assert.equal(row.sha256, crypto.createHash("sha256").update(bytes).digest("hex"));
+for (const row of manifest.files) {
+  const bytes = fs.readFileSync(path.join(dir, row.id));
+  assert.equal(row.sizeBytes, bytes.length);
+  assert.equal(row.sha256, crypto.createHash("sha256").update(bytes).digest("hex"));
+}
 JS
