@@ -94,6 +94,8 @@ jobs:
             /tmp/trace-qms.dump
           npx prisma migrate deploy
           npx prisma db execute --file prisma/tests/integrity.sql --schema prisma/schema.prisma
+      - name: Verify offline demo backup worker
+        run: bash scripts/demo-backup-worker-ci.sh
       - name: Verify commercial proposal transactions in isolated PostgreSQL
         run: |
           docker exec ${{ job.services.postgres.id }} createdb -U postgres trace_qms_integration_test

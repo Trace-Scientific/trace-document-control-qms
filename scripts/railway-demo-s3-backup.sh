@@ -36,9 +36,9 @@ if [ "${DEMO_PRIVATE_BACKUP_ENABLED:-0}" = 1 ]; then
   (
     unset PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD PGSSLMODE DATABASE_URL
     mkdir -m 700 "$workdir/socket"
-    initdb -D "$workdir/pgdata" --auth=trust --no-instructions >/dev/null
+    initdb -D "$workdir/pgdata" -U postgres --auth=trust --no-instructions >/dev/null
     trap 'pg_ctl -D "$workdir/pgdata" -m immediate -w stop >/dev/null 2>&1 || true' EXIT
-    pg_ctl -D "$workdir/pgdata" -o "-c listen_addresses='' -c unix_socket_directories=$workdir/socket" -w start >/dev/null
+    pg_ctl -D "$workdir/pgdata" -l "$workdir/postgres.log" -o "-c listen_addresses='' -c unix_socket_directories=$workdir/socket" -w start >/dev/null
     createdb -h "$workdir/socket" -U postgres inventory
     # Restore full archive to preserve schema dependencies; no live database access.
     pg_restore -h "$workdir/socket" -U postgres -d inventory --no-owner --no-acl --exit-on-error "$archive"
