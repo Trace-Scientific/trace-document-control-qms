@@ -31,4 +31,28 @@ aws s3 cp "$archive" "s3://$S3_BACKUP_BUCKET/$key" --only-show-errors
 aws s3 cp "$archive.sha256" "s3://$S3_BACKUP_BUCKET/$key.sha256" --only-show-errors
 aws s3api head-object --bucket "$S3_BACKUP_BUCKET" --key "$key" --query '{Size:ContentLength,Encryption:ServerSideEncryption}' --output json
 echo "Demo backup uploaded: s3://$S3_BACKUP_BUCKET/$key"
+if [ "${DEMO_PRIVATE_BACKUP_ENABLED:-0}" = 1 ]; then
+  # Extract inventory from an isolated Unix-socket restore.
+  (
+    unset PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD PGSSLMODE DATABASE_URL
+    mkdir -m 700 "$workdir/socket"
+    initdb -D "$workdir/pgdata" --auth=trust --no-instructions >/dev/null
+    trap 'pg_ctl -D "$workdir/pgdata" -m immediate -w stop >/dev/null 2>&1 || true' EXIT
+    pg_ctl -D "$workdir/pgdata" -o "-c listen_addresses='' -c unix_socket_directories=$workdir/socket" -w start >/dev/null
+    createdb -h "$workdir/socket" -U postgres inventory
+    # Restore full archive to preserve schema dependencies; no live database access.
+    pg_restore -h "$workdir/socket" -U postgres -d inventory --no-owner --no-acl --exit-on-error "$archive"
+    psql -h "$workdir/socket" -U postgres -d inventory -XAt -v ON_ERROR_STOP=1 > "$workdir/files.json" <<'SQL'
+SELECT coalesce(json_agg(json_build_object(
+  'id', f.id, 'organizationId', f."organizationId", 'loginCode', o."loginCode",
+  'status', f.status, 'originalName', f."originalName", 'storageKey', f."storageKey",
+  'sizeBytes', f."sizeBytes", 'sha256', f.sha256) ORDER BY f.id), '[]'::json)
+FROM "FileObject" f JOIN "Organization" o ON o.id = f."organizationId"
+WHERE o."loginCode" = 'trace-demo-lab' AND f.status = 'AVAILABLE';
+SQL
+  )
+  node /opt/demo-backup/demo-private-backup-aws.mjs "$(basename "$archive")" "$workdir/files.json"
+else
+  echo "Private-file backup disabled; database-only backup"
+fi
 echo "A separate isolated restore test is still required before declaring recovery verified."

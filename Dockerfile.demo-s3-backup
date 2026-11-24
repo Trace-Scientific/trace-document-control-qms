@@ -1,8 +1,9 @@
 # Dedicated demo-only PostgreSQL logical backup worker. Not used by the web app.
 FROM postgres:18-bookworm
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends awscli ca-certificates coreutils \
+    && apt-get install -y --no-install-recommends awscli ca-certificates coreutils nodejs \
     && rm -rf /var/lib/apt/lists/*
 COPY --chmod=755 scripts/railway-demo-s3-backup.sh /usr/local/bin/demo-s3-backup
+COPY scripts/demo-private-backup-*.mjs /opt/demo-backup/
 USER postgres
 ENTRYPOINT ["/usr/local/bin/demo-s3-backup"]
