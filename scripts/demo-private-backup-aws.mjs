@@ -27,7 +27,19 @@ async function aws(args, credentials) {
   try { await run("aws", args, { env: credentials, timeout: 300000 }); }
   catch { throw new Error("Private backup storage transfer failed"); }
 }
+const preflight = env.DEMO_BACKUP_EXPORT_PREFLIGHT === "1";
 try {
+  if (preflight) {
+    if (!rows.length) throw new Error("Preflight requires at least one archived file");
+    const url = new URL("/api/internal/demo-backup-export", exportOrigin);
+    url.searchParams.set("id", rows[0].id);
+    for (const headers of [{}, { authorization: "Bearer invalid-preflight-token" }]) {
+      const response = await fetch(url, { headers, redirect: "error", signal: AbortSignal.timeout(30000) });
+      if (response.status !== 401) throw new Error("Unauthorized export denial failed");
+      await response.body?.cancel();
+    }
+    console.log("PASS: missing and invalid export credentials denied");
+  }
   const manifest = await collectPrivateBackup({
     tier: env.DEPLOYMENT_TIER, archive, rows,
     download: async (key, path) => {
@@ -42,10 +54,11 @@ try {
       await writeFile(path, new Uint8Array(await response.arrayBuffer()), { mode: 0o600, flag: "wx" });
     },
     publish: async ({ key, path, body }) => {
+      if (preflight) return;
       if (!path) { path = join(work, "manifest.json"); await writeFile(path, body, { mode: 0o600 }); }
       await aws(["s3api", "put-object", "--bucket", env.S3_BACKUP_BUCKET,
         "--key", key, "--body", path, "--server-side-encryption", "AES256"], destination);
     },
   });
-  console.log("PASS: paired private-file backup published; files:", manifest.files.length);
+  console.log(preflight ? "PASS: export preflight verified without publication; files:" : "PASS: paired private-file backup published; files:", manifest.files.length);
 } finally { await rm(work, { recursive: true, force: true }); }
