@@ -1,5 +1,6 @@
 "use client";
 import { useEffect,useMemo,useState } from "react";
+import { DocumentObligationSummary } from "./document-obligation-summary";
 
 type SourceKey="QUALITY_EVENT_SUMMARY"|"EQUIPMENT_SUMMARY";
 type Definition={id:string;code:string;name:string;sourceKey:SourceKey};
@@ -52,6 +53,8 @@ export function ReportingWorkspace({canManage,canExport}:{canManage:boolean;canE
 
   return <section className="workspace-section reporting-workspace" aria-labelledby="reporting-workspace-title">
     <div className="workspace-heading"><div><p className="eyebrow">Reporting & analytics</p><h2 id="reporting-workspace-title">Reporting & Analytics</h2><p>Run governed reports, apply approved filters, save personal views, review execution history, and access finalized report exports.</p></div></div>
+
+    <DocumentObligationSummary />
 
     <div className="stat-grid reporting-stat-grid">
       <article><strong>{definitions.length}</strong><span>Governed reports</span></article>
