@@ -6,7 +6,7 @@ type Question = { prompt: string; choices: string[] };
 type Assessment = { passingScorePercent: number; questions: Question[] };
 type Result = { attemptId: string; scorePercent: number; passed: boolean; correctCount: number; questionCount: number };
 
-export function AssignedTrainingAssessment({ assignmentId, assessment }: { assignmentId: string; assessment: Assessment }) {
+export function AssignedTrainingAssessment({ assignmentId, assessment, onRecorded }: { assignmentId: string; assessment: Assessment; onRecorded?: () => void }) {
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -31,6 +31,7 @@ export function AssignedTrainingAssessment({ assignmentId, assessment }: { assig
       const body: { data?: Result; error?: string } = await response.json();
       if (!response.ok || !body.data) throw new Error(body.error || "Assessment submission failed.");
       setResult(body.data);
+      onRecorded?.();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Assessment submission failed.");
     } finally {
@@ -56,7 +57,8 @@ export function AssignedTrainingAssessment({ assignmentId, assessment }: { assig
     {result && <div role="status">
       <strong>{result.passed ? "Passed" : "Not passed"} — {result.scorePercent}%</strong>
       <p>{result.correctCount} of {result.questionCount} answers correct. Required score: {assessment.passingScorePercent}%.</p>
-      <p>Assessment attempt recorded. Official training completion requires the separate governed completion workflow.</p>
+      <p>{result.passed ? "Passing assessment recorded. Your training manager must verify and record official completion before your certificate becomes available." : "Assessment attempt recorded. Review the course material before trying again."}</p>
+      {!result.passed && <button type="button" disabled={busy} onClick={() => { setAnswers({}); setResult(null); setError(""); }}>Retry assessment</button>}
     </div>}
   </section>;
 }
