@@ -35,6 +35,10 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [section, setSection] = useState<Section>("status");
+  const [workspaceStatus, setWorkspaceStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [statusQuery, setStatusQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [activeOnly, setActiveOnly] = useState(true);
   const [historyQuery, setHistoryQuery] = useState("");
   const [historyEmployeeId, setHistoryEmployeeId] = useState("");
   const [historyFromDate, setHistoryFromDate] = useState("");
@@ -60,6 +64,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     setEmployees(data.employees);
     setPrograms(data.programs);
     setAssessments(data.assessments);
+    setWorkspaceStatus("ready");
   }
 
   async function load() {
@@ -79,7 +84,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     let cancelled = false;
     void fetchWorkspaceData()
       .then((data) => { if (!cancelled) applyWorkspaceData(data); })
-      .catch(() => { if (!cancelled) setNotice("Unable to load competency records. Refresh the page to retry."); });
+      .catch(() => { if (!cancelled) { setWorkspaceStatus("error"); setNotice("Unable to load competency records. Refresh to retry."); } });
     return () => { cancelled = true; };
   }, []);
 
@@ -111,7 +116,19 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
   const programById = useMemo(() => new Map(programs.map((program) => [program.id, program])), [programs]);
   const evidenceById = useMemo(() => new Map(evidenceFiles.map((file) => [file.id, file])), [evidenceFiles]);
   const rollups = useMemo(() => competencyRollups(assessments, today), [assessments, today]);
-  const dashboard = useMemo(() => competencyDashboard(rollups), [rollups]);
+  const scopedRollups = rollups.filter(row => !activeOnly || (employeeById.get(row.employeeId)?.status === "ACTIVE" && programById.get(row.programId)?.active));
+  const dashboard = competencyDashboard(scopedRollups);
+  const visibleRollups = scopedRollups.filter(row => {
+    if (statusFilter === "ATTENTION" ? row.status === "CURRENT" : statusFilter !== "ALL" && row.status !== statusFilter) return false;
+    const employee = employeeById.get(row.employeeId);
+    const program = programById.get(row.programId);
+    const search = [employee?.employeeNumber, employee?.firstName, employee?.lastName, program?.code, program?.title].filter(Boolean).join(" ").toLowerCase();
+    return statusQuery.trim().toLowerCase().split(/\s+/).filter(Boolean).every(word => search.includes(word));
+  });
+  async function refreshStatus() {
+    setWorkspaceStatus("loading");
+    try { await load(); } catch { setWorkspaceStatus("error"); }
+  }
   const historyWords = historyQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const visibleHistory = [...assessments].filter((assessment) => {
     if (historyEmployeeId && assessment.employeeId !== historyEmployeeId) return false;
@@ -245,6 +262,10 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     {notice && <p role="status">{notice}</p>}
 
     {section === "status" && <div className="module-section-stack">
+      <button type="button" disabled={busy || workspaceStatus === "loading"} onClick={() => void refreshStatus()}>Refresh competency status</button>
+      {workspaceStatus !== "ready" ? <p role="status">{workspaceStatus === "loading" ? "Loading competency records…" : "Competency status unavailable. Refresh to retry."}</p> : <>
+      <p>Counts reflect recorded employee-program assessments only. Employees without assessments are not represented; these counts do not establish laboratory-wide compliance.</p>
+      <label><input type="checkbox" checked={activeOnly} onChange={event => setActiveOnly(event.target.checked)} /> Active employees and programs only</label>
       <div className="stat-grid">
         <article><strong>{dashboard.total}</strong><span>Tracked</span></article>
         <article><strong>{dashboard.current}</strong><span>Current</span></article>
@@ -253,7 +274,10 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
         <article><strong>{dashboard.notQualified}</strong><span>Not qualified</span></article>
         <article><strong>{dashboard.conditional}</strong><span>Conditional</span></article>
       </div>
-      <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Latest assessment</th><th>Expires</th><th>Status</th>{canManage && <th>Action</th>}</tr></thead><tbody>{rollups.map((rollup) => { const employee = employeeById.get(rollup.employeeId); const program = programById.get(rollup.programId); return <tr key={`${rollup.employeeId}:${rollup.programId}`}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : rollup.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : rollup.programId}</td><td>{new Date(rollup.assessedAt).toLocaleDateString()}</td><td>{formatDateOnly(rollup.expiresAt)}</td><td>{rollup.status}</td>{canManage && <td>{employee?.status === "ACTIVE" && program?.active && <button type="button" disabled={busy} onClick={() => startReassessment(rollup.employeeId, rollup.programId)}>Reassess</button>}</td>}</tr>; })}{!rollups.length && <tr><td colSpan={canManage ? 6 : 5}>No competency assessments have been recorded.</td></tr>}</tbody></table></div>
+      <label>Search competency status<input type="search" value={statusQuery} onChange={event => setStatusQuery(event.target.value)} placeholder="Employee or program" /></label>
+      <label>Status<select value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>{[["ALL","All statuses"],["ATTENTION","Requires attention"],["CURRENT","Current"],["DUE_SOON","Due within 30 days"],["EXPIRED","Expired"],["NOT_QUALIFIED","Not qualified"],["CONDITIONAL","Conditional"]].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Latest assessment</th><th>Expires</th><th>Status</th>{canManage && <th>Action</th>}</tr></thead><tbody>{visibleRollups.map((rollup) => { const employee = employeeById.get(rollup.employeeId); const program = programById.get(rollup.programId); return <tr key={`${rollup.employeeId}:${rollup.programId}`}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : rollup.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : rollup.programId}</td><td>{new Date(rollup.assessedAt).toLocaleDateString()}</td><td>{formatDateOnly(rollup.expiresAt)}</td><td>{rollup.status}</td>{canManage && <td>{employee?.status === "ACTIVE" && program?.active && <button type="button" disabled={busy} onClick={() => startReassessment(rollup.employeeId, rollup.programId)}>Reassess</button>}</td>}</tr>; })}{!visibleRollups.length && <tr><td colSpan={canManage ? 6 : 5}>No recorded competency statuses match this view.</td></tr>}</tbody></table></div>
+      </>}
     </div>}
 
     {section === "history" && <div className="module-section-stack">
