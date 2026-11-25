@@ -67,6 +67,9 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [preselectedAssignmentId, setPreselectedAssignmentId] = useState("");
   const [completionAssignmentId, setCompletionAssignmentId] = useState("");
   const [completionEvidenceFileId, setCompletionEvidenceFileId] = useState("");
+  const [employeeOverviewQuery, setEmployeeOverviewQuery] = useState("");
+  const [employeeAttentionOnly, setEmployeeAttentionOnly] = useState(false);
+  const [assignmentEmployeeId, setAssignmentEmployeeId] = useState("");
   const [assignmentQuery, setAssignmentQuery] = useState("");
   const [assignmentStatus, setAssignmentStatus] = useState("ALL");
   const [completionQuery, setCompletionQuery] = useState("");
@@ -243,6 +246,13 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     return due !== null && due >= todayStart && due <= dueSoonEnd;
   }).length;
   const unscheduledCount = activeAssignments.filter((assignment) => !assignment.dueAt).length;
+  const employeeOverview = employees.filter(employee => employee.status === "ACTIVE").map(employee => {
+    const rows = assignments.filter(assignment => assignment.employeeId === employee.id && assignment.status !== "CANCELLED");
+    const completed = rows.filter(assignment => assignment.status === "COMPLETED").length;
+    const outstanding = rows.filter(assignment => assignment.status === "ASSIGNED");
+    const overdue = outstanding.filter(assignment => { const due = dateOnlyTime(assignment.dueAt); return due !== null && due < todayStart; }).length;
+    return { employee, completed, outstanding: outstanding.length, overdue, total: rows.length };
+  }).filter(row => (!employeeAttentionOnly || row.outstanding > 0) && employeeOverviewQuery.trim().toLowerCase().split(/\s+/).filter(Boolean).every(word => `${row.employee.employeeNumber} ${row.employee.firstName} ${row.employee.lastName}`.toLowerCase().includes(word))).sort((a, b) => b.overdue - a.overdue || b.outstanding - a.outstanding || a.employee.lastName.localeCompare(b.employee.lastName));
   const queryWords = assignmentQuery.trim().toLowerCase().split(/\\s+/).filter(Boolean);
   const visibleAssignments = assignments.map((assignment) => {
     const dueTime = dateOnlyTime(assignment.dueAt);
@@ -254,7 +264,8 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     const employeeLabel = employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assignment.employeeId;
     const courseLabel = course ? `${course.code} · ${course.title}` : assignment.courseId;
     return { assignment, status, employeeLabel, courseLabel };
-  }).filter(({ status, employeeLabel, courseLabel }) => {
+  }).filter(({ assignment, status, employeeLabel, courseLabel }) => {
+    if (assignmentEmployeeId && assignment.employeeId !== assignmentEmployeeId) return false;
     if (assignmentStatus !== "ALL" && status !== assignmentStatus) return false;
     const searchText = `${employeeLabel} ${courseLabel}`.toLowerCase();
     return queryWords.every((word) => searchText.includes(word));
@@ -531,11 +542,20 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
           <div className="table-wrap"><table><thead><tr><th>Course</th><th>Completed</th><th>Outstanding</th><th>Completion</th></tr></thead><tbody>{courses.map(course => { const rows = assignments.filter(assignment => assignment.courseId === course.id && assignment.status !== "CANCELLED"); const done = rows.filter(assignment => assignment.status === "COMPLETED").length; return <tr key={course.id}><td>{course.title}</td><td>{done}</td><td>{rows.length - done}</td><td>{rows.length ? Math.round(done / rows.length * 1000) / 10 + "%" : "Not applicable"}</td></tr>; })}</tbody></table></div>
         </>}
       </section>
+      {overviewStatus === "ready" && <section aria-label="Employee training assignment summary">
+        <h3>Employee training summary</h3>
+        <p>Active employees visible to your account. Historical non-cancelled assignment completion is not proof of current competency or renewal compliance.</p>
+        <label>Search employees<input type="search" value={employeeOverviewQuery} onChange={event => setEmployeeOverviewQuery(event.target.value)} /></label>
+        <label><input type="checkbox" checked={employeeAttentionOnly} onChange={event => setEmployeeAttentionOnly(event.target.checked)} /> Outstanding assignments only</label>
+        <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Completed</th><th>Outstanding</th><th>Overdue</th><th>Completion</th><th>Action</th></tr></thead><tbody>{employeeOverview.map(row => <tr key={row.employee.id}><td>{row.employee.employeeNumber} · {row.employee.lastName}, {row.employee.firstName}</td><td>{row.completed}</td><td>{row.outstanding}</td><td>{row.overdue}</td><td>{row.total ? Math.round(row.completed / row.total * 1000) / 10 + "%" : "Not applicable"}</td><td><button type="button" onClick={() => { setAssignmentEmployeeId(row.employee.id); setAssignmentQuery(""); setAssignmentStatus("ALL"); document.getElementById("training-assignment-list")?.scrollIntoView({block:"start"}); }}>View assignments</button></td></tr>)}</tbody></table></div>
+        {!employeeOverview.length && <p>No visible active employees match these filters. Employee directory access may be restricted.</p>}
+      </section>}
       <TrainingRenewalForecast />
-      <div className="section-heading"><div><h3>Training assignments</h3><p>Browse governed training assignments and their current lifecycle state.</p></div></div>
+      <div id="training-assignment-list" className="section-heading"><div><h3>Training assignments</h3><p>Browse governed training assignments and their current lifecycle state.</p></div></div>
       <p role="status"><strong>{overdueCount} overdue</strong> · <strong>{dueSoonCount} due within 30 days</strong> · {unscheduledCount} assigned without a due date. Counts include only open assignments.</p>
       <p>Due dates are taken from existing training assignments. Recurring renewal intervals and automatic reassignments are not configured by this view.</p>
       <div className="admin-form">
+        {assignmentEmployeeId && <p>Filtered to {employeeById.get(assignmentEmployeeId)?.employeeNumber ?? assignmentEmployeeId} <button type="button" onClick={() => setAssignmentEmployeeId("")}>Clear employee filter</button></p>}
         <label>Search assignments<input type="search" value={assignmentQuery} onChange={(event) => setAssignmentQuery(event.target.value)} placeholder="Employee name, number, or course" /></label>
         <label>Assignment status<select value={assignmentStatus} onChange={(event) => setAssignmentStatus(event.target.value)}>
           <option value="ALL">All statuses</option>
