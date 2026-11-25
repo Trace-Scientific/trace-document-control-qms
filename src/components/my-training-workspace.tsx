@@ -19,6 +19,7 @@ export function MyTrainingWorkspace() {
   const [lessonError, setLessonError] = useState("");
   const [completions, setCompletions] = useState<Completion[]>([]);
   const [attempts, setAttempts] = useState<AssessmentAttempt[]>([]);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
   const [attemptLoading, setAttemptLoading] = useState(true);
   const [attemptError, setAttemptError] = useState("");
   const [completionLoading, setCompletionLoading] = useState(true);
@@ -35,6 +36,10 @@ export function MyTrainingWorkspace() {
       })
       .catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Training assignments could not be loaded."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, []);
+  useEffect(() => {
+    const controller = new AbortController();
     void fetch("/api/training/my-assessment-history", { credentials: "same-origin", cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(response.status === 403 ? "Your account is not linked to an active employee." : "Assessment history could not be loaded.");
@@ -52,7 +57,7 @@ export function MyTrainingWorkspace() {
       .catch((reason: unknown) => { if (!controller.signal.aborted) setCompletionError(reason instanceof Error ? reason.message : "Completion history could not be loaded."); })
       .finally(() => { if (!controller.signal.aborted) setCompletionLoading(false); });
     return () => controller.abort();
-  }, []);
+  }, [historyRefresh]);
   useEffect(() => () => lessonRequest.current?.abort(), []);
   function selectPractice(id: string) {
     lessonRequest.current?.abort();
@@ -112,7 +117,7 @@ export function MyTrainingWorkspace() {
     {selected && published && <section aria-label="Approved assigned lessons"><h3>Approved course version {published.version}</h3>
       {published.lessons.map((lesson, index) => <article key={index}><h4>{lesson.heading}</h4><p style={{ whiteSpace: "pre-wrap" }}>{lesson.content}</p></article>)}
       <p>Assessment: {published.assessment.questions.length} questions. Passing threshold: {published.assessment.passingScorePercent}%. Submit your answers below for a recorded assessment result.</p>
-      <AssignedTrainingAssessment key={selected.id} assignmentId={selected.id} assessment={published.assessment} />
+      <AssignedTrainingAssessment key={selected.id} assignmentId={selected.id} assessment={published.assessment} onRecorded={() => { setAttemptLoading(true); setAttemptError(""); setHistoryRefresh(value => value + 1); }} />
       <p>Viewing lessons does not mark training complete.</p>
     </section>}
     {selected && selected.status === "ASSIGNED" && !selected.publishedVersion && ["DEMO-HIPAA", "DEMO-BBP"].includes(selected.courseCode) && <DemoTrainingLesson key={selected.id} courseCode={selected.courseCode} assignmentId={selected.id} employeePractice />}
@@ -134,6 +139,7 @@ export function MyTrainingWorkspace() {
     </section>
     <section aria-labelledby="completion-history-heading">
       <h3 id="completion-history-heading">Official training completion history</h3>
+      <button type="button" disabled={completionLoading || attemptLoading} onClick={() => { setCompletionLoading(true); setAttemptLoading(true); setCompletionError(""); setAttemptError(""); setHistoryRefresh(value => value + 1); }}>Refresh training history</button>
       <p>These are recorded training completions, separate from demonstration quiz practice scores.</p>
       {completionLoading && <p role="status">Loading completion history…</p>}
       {completionError && <p role="alert">{completionError}</p>}
