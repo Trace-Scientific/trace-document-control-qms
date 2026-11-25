@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 type ModuleId = "documents" | "reviews" | "administration" | "records" | "personnel" | "training" | "quality" | "laboratory" | "reporting";
 type ModuleSection = { id: string; label: string; description: string; content: ReactNode };
@@ -17,6 +17,13 @@ function FocusedModuleContent({ module }: { module: ModuleDefinition }) {
 export function QmsModuleShell({ modules }: { modules: ModuleDefinition[] }) {
   const visibleModules = useMemo(() => modules.filter((module) => module.id !== "reviews" && (module.content || module.sections?.some((section) => section.content))), [modules]);
   const [activeModule, setActiveModule] = useState<ModuleId>(visibleModules[0]?.id ?? "documents");
+  useEffect(() => {
+    const openDocuments = () => {
+      if (visibleModules.some(module => module.id === "documents")) setActiveModule("documents");
+    };
+    window.addEventListener("trace-qms:open-documents", openDocuments);
+    return () => window.removeEventListener("trace-qms:open-documents", openDocuments);
+  }, [visibleModules]);
   const active = visibleModules.find((module) => module.id === activeModule) ?? visibleModules[0];
   if (!active) return null;
   return <section className="qms-module-shell" aria-labelledby="qms-module-shell-heading"><div className="qms-module-shell-header"><div><h2 id="qms-module-shell-heading">Operational workspaces</h2></div><a href={`/help?context=${encodeURIComponent(active.id)}`} aria-label={`Open Help Center for ${active.label}`}>Help Center</a></div><nav className="qms-module-nav" aria-label="QMS modules">{visibleModules.map((module) => <button type="button" key={module.id} className={active.id === module.id ? "active" : ""} aria-current={active.id === module.id ? "page" : undefined} onClick={() => setActiveModule(module.id)}><strong>{module.label}</strong><span>{module.description}</span></button>)}</nav><FocusedModuleContent key={active.id} module={active} /></section>;
