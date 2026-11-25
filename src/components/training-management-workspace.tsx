@@ -58,6 +58,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [completions, setCompletions] = useState<Completion[]>([]);
   const [assessmentResults, setAssessmentResults] = useState<AssessmentResult[]>([]);
+  const [overviewStatus, setOverviewStatus] = useState<"loading" | "ready" | "error">("loading");
   const [assessmentReportStatus, setAssessmentReportStatus] = useState<"loading" | "ready" | "error">("loading");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -101,6 +102,8 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [previewAssignmentId, setPreviewAssignmentId] = useState("");
 
   async function load() {
+    setOverviewStatus("loading");
+    try {
     const [employeeResponse, courseResponse, assignmentResponse, completionResponse] = await Promise.all([
       fetch("/api/personnel", { credentials: "same-origin", cache: "no-store" }),
       fetch("/api/training/courses", { credentials: "same-origin", cache: "no-store" }),
@@ -108,6 +111,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
       fetch("/api/training/completions", { credentials: "same-origin", cache: "no-store" }),
     ]);
     if ((!employeeResponse.ok && employeeResponse.status !== 403) || !courseResponse.ok || !assignmentResponse.ok || !completionResponse.ok) {
+      setOverviewStatus("error");
       setNotice("Training data could not be refreshed. Reload before making governed changes.");
       return;
     }
@@ -118,6 +122,8 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     setCourses(courseBody.data ?? []);
     setAssignments(assignmentBody.data ?? []);
     setCompletions(completionBody.data ?? []);
+    setOverviewStatus("ready");
+    } catch { setOverviewStatus("error"); setNotice("Training data could not be refreshed."); }
   }
 
   useEffect(() => {
@@ -130,7 +136,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     ]).then(async ([employeeResponse, courseResponse, assignmentResponse, completionResponse]) => {
       if (cancelled) return;
       if ((!employeeResponse.ok && employeeResponse.status !== 403) || !courseResponse.ok || !assignmentResponse.ok || !completionResponse.ok) {
-        if (!cancelled) setNotice("Training data could not be refreshed. Reload before making governed changes.");
+        if (!cancelled) { setOverviewStatus("error"); setNotice("Training data could not be refreshed. Reload before making governed changes."); }
         return;
       }
       const [employeeBody, courseBody, assignmentBody, completionBody] = await Promise.all([
@@ -141,13 +147,15 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
         setCourses(courseBody.data ?? []);
         setAssignments(assignmentBody.data ?? []);
         setCompletions(completionBody.data ?? []);
+        setOverviewStatus("ready");
       }
-    });
+    }).catch(() => { if (!cancelled) setOverviewStatus("error"); });
     return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    if (!canManage || section !== "complete") return;
+    if (!canManage || (section !== "complete" && section !== "assignments")) return;
+    setAssessmentReportStatus("loading");
     const controller = new AbortController();
     void fetch("/api/training/assessment-report?limit=200", { credentials: "same-origin", cache: "no-store", signal: controller.signal })
       .then(async (response) => {
@@ -199,6 +207,10 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const courseById = useMemo(() => new Map(courses.map((course) => [course.id, course])), [courses]);
   const todayStart = useMemo(() => dateOnlyTime(today) ?? 0, [today]);
   const activeAssignments = assignments.filter((assignment) => assignment.status === "ASSIGNED");
+  const completedCount = assignments.filter(assignment => assignment.status === "COMPLETED").length;
+  const countedAssignments = activeAssignments.length + completedCount;
+  const passingIds = new Set(assessmentResults.filter(attempt => attempt.passed).map(attempt => attempt.assignmentId));
+  const awaitingVerification = activeAssignments.filter(assignment => passingIds.has(assignment.id));
   const activeCourses = courses.filter((course) => course.active);
   const visibleCourses = courses.filter((course) => {
     if (courseCategoryFilter !== "All categories" && courseCategory(course) !== courseCategoryFilter) return false;
@@ -508,6 +520,17 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     {notice && <p role="status">{notice}</p>}
 
     {section === "assignments" && <div className="module-section-stack">
+      <section aria-label="Training assignment overview">
+        <h3>Training assignment overview</h3>
+        <button type="button" disabled={overviewStatus === "loading" || busy} onClick={() => void load()}>Refresh assignment counts</button>
+        {overviewStatus !== "ready" ? <p role="status">{overviewStatus === "loading" ? "Loading assignment counts…" : "Assignment counts unavailable. Refresh to retry."}</p> : <>
+          <div className="stat-grid">{[["Non-cancelled assignments", countedAssignments], ["Completed", completedCount], ["Outstanding", activeAssignments.length], ["Overdue", overdueCount], ["Due within 30 days", dueSoonCount]].map(([label, value]) => <article key={label}><strong>{value}</strong><span>{label}</span></article>)}</div>
+          <p><strong>Assignment completion:</strong> {countedAssignments ? Math.round(completedCount / countedAssignments * 1000) / 10 + "%" : "Not applicable"} (excludes cancelled assignments; not a current competency measure).</p>
+          {canManage && <p>{assessmentReportStatus === "ready" ? awaitingVerification.length + " open assignments with a passing attempt among the latest 200 assessment results. Verify evidence and publication before recording completion." : "Passing assessment summary unavailable or loading."}</p>}
+          {canManage && assessmentReportStatus === "ready" && awaitingVerification.length > 0 && <ul>{awaitingVerification.map(assignment => <li key={assignment.id}>{employeeById.get(assignment.employeeId)?.employeeNumber ?? assignment.employeeId} · {courseById.get(assignment.courseId)?.title ?? assignment.courseId} <button type="button" disabled={busy} onClick={() => startCompletion(assignment)}>Review completion</button></li>)}</ul>}
+          <div className="table-wrap"><table><thead><tr><th>Course</th><th>Completed</th><th>Outstanding</th><th>Completion</th></tr></thead><tbody>{courses.map(course => { const rows = assignments.filter(assignment => assignment.courseId === course.id && assignment.status !== "CANCELLED"); const done = rows.filter(assignment => assignment.status === "COMPLETED").length; return <tr key={course.id}><td>{course.title}</td><td>{done}</td><td>{rows.length - done}</td><td>{rows.length ? Math.round(done / rows.length * 1000) / 10 + "%" : "Not applicable"}</td></tr>; })}</tbody></table></div>
+        </>}
+      </section>
       <TrainingRenewalForecast />
       <div className="section-heading"><div><h3>Training assignments</h3><p>Browse governed training assignments and their current lifecycle state.</p></div></div>
       <p role="status"><strong>{overdueCount} overdue</strong> · <strong>{dueSoonCount} due within 30 days</strong> · {unscheduledCount} assigned without a due date. Counts include only open assignments.</p>
