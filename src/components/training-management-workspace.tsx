@@ -155,7 +155,6 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
 
   useEffect(() => {
     if (!canManage || (section !== "complete" && section !== "assignments")) return;
-    setAssessmentReportStatus("loading");
     const controller = new AbortController();
     void fetch("/api/training/assessment-report?limit=200", { credentials: "same-origin", cache: "no-store", signal: controller.signal })
       .then(async (response) => {
@@ -455,6 +454,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     setCompletionAssignmentId(assignment.id);
     setCompletionEvidenceFileId("");
     setNotice("");
+    setAssessmentReportStatus("loading");
     setSection("complete");
   }
 
@@ -516,7 +516,7 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
 
   return <section className="workspace-section" aria-labelledby="training-heading">
     <div className="section-heading"><div><p className="eyebrow">Training & competency</p><h2 id="training-heading">Training management</h2><p>Open one governed training function at a time while preserving assignment, completion, and lifecycle history.</p></div></div>
-    <nav className="module-subnav" aria-label="Training management sections">{sections.map((item) => <button key={item.id} type="button" className={section === item.id ? "active" : ""} aria-current={section === item.id ? "page" : undefined} onClick={() => { setPreselectedCourseId(""); setPreselectedAssignmentId(""); setSection(item.id); setNotice(""); void load(); }}><strong>{item.label}</strong><span>{item.description}</span></button>)}</nav>
+    <nav className="module-subnav" aria-label="Training management sections">{sections.map((item) => <button key={item.id} type="button" className={section === item.id ? "active" : ""} aria-current={section === item.id ? "page" : undefined} onClick={() => { setPreselectedCourseId(""); setPreselectedAssignmentId(""); setAssessmentReportStatus("loading"); setSection(item.id); setNotice(""); void load(); }}><strong>{item.label}</strong><span>{item.description}</span></button>)}</nav>
     {notice && <p role="status">{notice}</p>}
 
     {section === "assignments" && <div className="module-section-stack">
