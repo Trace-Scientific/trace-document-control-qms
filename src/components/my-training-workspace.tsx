@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DemoTrainingLesson } from "./demo-training-lesson";
 import { AssignedTrainingAssessment } from "./assigned-training-assessment";
 
@@ -14,6 +14,8 @@ export function MyTrainingWorkspace() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [published, setPublished] = useState<PublishedLessons | null>(null);
+  const lessonRequest = useRef<AbortController | null>(null);
+  const [lessonLoading, setLessonLoading] = useState(false);
   const [lessonError, setLessonError] = useState("");
   const [completions, setCompletions] = useState<Completion[]>([]);
   const [attempts, setAttempts] = useState<AssessmentAttempt[]>([]);
@@ -51,17 +53,31 @@ export function MyTrainingWorkspace() {
       .finally(() => { if (!controller.signal.aborted) setCompletionLoading(false); });
     return () => controller.abort();
   }, []);
+  useEffect(() => () => lessonRequest.current?.abort(), []);
+  function selectPractice(id: string) {
+    lessonRequest.current?.abort();
+    setPublished(null);
+    setLessonError("");
+    setLessonLoading(false);
+    setSelectedId(id);
+  }
   async function viewApprovedLessons(id: string) {
+    lessonRequest.current?.abort();
+    const controller = new AbortController();
+    lessonRequest.current = controller;
+    setLessonLoading(true);
     setSelectedId(id);
     setPublished(null);
     setLessonError("");
     try {
-      const response = await fetch(`/api/training/my-assignment-content?assignmentId=${encodeURIComponent(id)}`, { credentials: "same-origin", cache: "no-store" });
+      const response = await fetch(`/api/training/my-assignment-content?assignmentId=${encodeURIComponent(id)}`, { credentials: "same-origin", cache: "no-store", signal: controller.signal });
       if (!response.ok) throw new Error("Approved lessons are unavailable for this assignment.");
       const body: { data: PublishedLessons } = await response.json();
-      setPublished(body.data);
+      if (!controller.signal.aborted) setPublished(body.data);
     } catch (reason) {
-      setLessonError(reason instanceof Error ? reason.message : "Unable to load lessons.");
+      if (!controller.signal.aborted) setLessonError(reason instanceof Error ? reason.message : "Unable to load lessons.");
+    } finally {
+      if (!controller.signal.aborted) setLessonLoading(false);
     }
   }
   const selected = assignments.find((assignment) => assignment.id === selectedId);
@@ -74,13 +90,13 @@ export function MyTrainingWorkspace() {
     if (leftPending !== rightPending) return leftPending - rightPending;
     return (left.dueAt?.slice(0, 10) || "9999-12-31").localeCompare(right.dueAt?.slice(0, 10) || "9999-12-31");
   });
-  const nextPractice = orderedAssignments.find((assignment) => assignment.status === "ASSIGNED" && ["DEMO-HIPAA", "DEMO-BBP"].includes(assignment.courseCode));
+  const nextPractice = orderedAssignments.find((assignment) => assignment.status === "ASSIGNED" && !assignment.publishedVersion && ["DEMO-HIPAA", "DEMO-BBP"].includes(assignment.courseCode));
   const formatDate = (value: string | null) => value ? value.slice(0, 10) : "Not set";
   return <section className="module-section-stack" aria-labelledby="my-training-heading">
     <div className="section-heading"><div><h2 id="my-training-heading">My Training</h2><p>Your assigned training, based on your signed-in employee account.</p></div></div>
     <p>Demonstration lessons and quizzes are for practice only. They do not create completion records or training credentials.</p>
     {!loading && !error && assignments.length > 0 && <p role="status">{pendingCount} assigned course{pendingCount === 1 ? "" : "s"} remaining; {overdueCount} overdue. Active assignments appear first, with the earliest due dates at the top.</p>}
-    {!loading && !error && nextPractice && <div className="module-action-row"><button type="button" aria-expanded={selectedId === nextPractice.id} onClick={() => setSelectedId(selectedId === nextPractice.id ? "" : nextPractice.id)}>{selectedId === nextPractice.id ? "Close next practice" : `Start next practice: ${nextPractice.courseTitle}`}</button></div>}
+    {!loading && !error && nextPractice && <div className="module-action-row"><button type="button" aria-expanded={selectedId === nextPractice.id} onClick={() => selectPractice(selectedId === nextPractice.id ? "" : nextPractice.id)}>{selectedId === nextPractice.id ? "Close next practice" : `Start next practice: ${nextPractice.courseTitle}`}</button></div>}
     {loading && <p role="status">Loading your assignments…</p>}
     {error && <p role="alert">{error}</p>}
     {!loading && !error && !assignments.length && <p>No training assignments are linked to your employee account.</p>}
@@ -88,9 +104,10 @@ export function MyTrainingWorkspace() {
       <thead><tr><th>Course</th><th>Assigned</th><th>Due</th><th>Status</th><th>Learning</th></tr></thead>
       <tbody>{orderedAssignments.map((assignment) => <tr key={assignment.id}>
         <td>{assignment.courseTitle} ({assignment.courseCode})</td><td>{formatDate(assignment.assignedAt)}</td><td>{formatDate(assignment.dueAt)}{assignment.status === "ASSIGNED" && assignment.dueAt && assignment.dueAt.slice(0, 10) < today ? " (Overdue)" : ""}</td><td>{assignment.status}</td>
-        <td>{assignment.status === "ASSIGNED" && ["DEMO-HIPAA", "DEMO-BBP"].includes(assignment.courseCode) ? <button type="button" aria-expanded={selectedId === assignment.id} onClick={() => setSelectedId(selectedId === assignment.id ? "" : assignment.id)}>{selectedId === assignment.id ? "Close practice" : "Open practice lessons"}</button> : assignment.status === "ASSIGNED" && assignment.publishedVersion ? <button type="button" onClick={() => void viewApprovedLessons(assignment.id)}>View approved lessons</button> : "Not available"}</td>
+        <td>{assignment.status === "ASSIGNED" && !assignment.publishedVersion && ["DEMO-HIPAA", "DEMO-BBP"].includes(assignment.courseCode) ? <button type="button" aria-expanded={selectedId === assignment.id} onClick={() => selectPractice(selectedId === assignment.id ? "" : assignment.id)}>{selectedId === assignment.id ? "Close practice" : "Open practice lessons"}</button> : assignment.status === "ASSIGNED" && assignment.publishedVersion ? <button type="button" onClick={() => void viewApprovedLessons(assignment.id)}>View approved lessons</button> : "Not available"}</td>
       </tr>)}</tbody>
     </table></div>}
+    {lessonLoading && <p role="status">Loading approved course lessons…</p>}
     {lessonError && <p role="alert">{lessonError}</p>}
     {selected && published && <section aria-label="Approved assigned lessons"><h3>Approved course version {published.version}</h3>
       {published.lessons.map((lesson, index) => <article key={index}><h4>{lesson.heading}</h4><p style={{ whiteSpace: "pre-wrap" }}>{lesson.content}</p></article>)}
@@ -98,7 +115,7 @@ export function MyTrainingWorkspace() {
       <AssignedTrainingAssessment key={selected.id} assignmentId={selected.id} assessment={published.assessment} />
       <p>Viewing lessons does not mark training complete.</p>
     </section>}
-    {selected && selected.status === "ASSIGNED" && ["DEMO-HIPAA", "DEMO-BBP"].includes(selected.courseCode) && <DemoTrainingLesson key={selected.id} courseCode={selected.courseCode} assignmentId={selected.id} employeePractice />}
+    {selected && selected.status === "ASSIGNED" && !selected.publishedVersion && ["DEMO-HIPAA", "DEMO-BBP"].includes(selected.courseCode) && <DemoTrainingLesson key={selected.id} courseCode={selected.courseCode} assignmentId={selected.id} employeePractice />}
     <section aria-labelledby="assessment-history-heading">
       <h3 id="assessment-history-heading">Assessment attempt history</h3>
       <p>Scores and passing results are separate from official training completions.</p>
