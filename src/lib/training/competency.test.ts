@@ -108,3 +108,14 @@ describe("CLIA competency template service", () => {
     expect(backing.createCliaTemplate).not.toHaveBeenCalled();
   });
 });
+
+
+it("requires equipment read access before linking a registered instrument", () => {
+  const backing = store();
+  const service = new CompetencyService(backing);
+  expect(() => service.createProgram(context(["training.manage"]), {
+    organizationId: "00000000-0000-0000-0000-000000000001", code: "PCR", title: "PCR competency",
+    equipmentId: "00000000-0000-0000-0000-000000000002",
+  })).toThrow("Access denied");
+  expect(backing.createProgram).not.toHaveBeenCalled();
+});

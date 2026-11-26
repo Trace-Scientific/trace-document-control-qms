@@ -125,4 +125,46 @@ describe.skipIf(!enabled)("Competency requirements in migrated PostgreSQL", () =
     })).rejects.toThrow();
     expect((await listCompetencyRequirements(context.organizationId, true)).requirements).toContainEqual(requirement);
   });
+  it("links instrument and reusable test system scope while preserving tenant boundaries", async () => {
+    const store = new PrismaCompetencyStore();
+    const [instrument] = await db.$queryRaw<{ id: string }[]>`
+      INSERT INTO "Equipment" ("organizationId", "equipmentNumber", "name", "status", "createdByUserId")
+      VALUES (${context.organizationId}::uuid, 'MATRIX-EQ', 'Synthetic instrument', 'ACTIVE', ${context.actorUserId}::uuid)
+      RETURNING "id"
+    `;
+    const scopedInput = {
+      ...context, code: "SCOPED", title: "Scoped program", description: null, validityDays: null,
+      equipmentId: instrument.id, newTestSystem: { code: "MATRIX-TS", name: "Synthetic test system" },
+    };
+    const program = await store.createProgram(scopedInput);
+    await createCompetencyRequirement({ ...context, programId: program.id, scope: "EMPLOYEE", targetId: employeeId });
+    const visible = await listCompetencyRequirements(context.organizationId, true, true);
+    expect(visible.rows.find((row) => row.programId === program.id)?.programLabel).toContain(
+      "Test system: MATRIX-TS · Synthetic test system / Instrument: MATRIX-EQ · Synthetic instrument",
+    );
+    const hidden = await listCompetencyRequirements(context.organizationId, true);
+    expect(hidden.rows.find((row) => row.programId === program.id)?.programLabel).toBe(
+      "SCOPED · Scoped program · Test system: MATRIX-TS · Synthetic test system",
+    );
+    const [link] = await db.$queryRaw<{ testSystemId: string }[]>`
+      SELECT "testSystemId" FROM "CompetencyProgram" WHERE "id" = ${program.id}::uuid
+    `;
+    await expect(store.createProgram({
+      ...scopedInput, code: "REUSE", newTestSystem: null, testSystemId: link.testSystemId,
+    })).resolves.toMatchObject({ code: "REUSE" });
+    await expect(store.createProgram({ ...scopedInput, organizationId: otherOrganizationId })).rejects.toThrow("Access denied");
+    await expect(store.createProgram({
+      ...scopedInput, organizationId: otherOrganizationId, equipmentId: null, newTestSystem: null, testSystemId: link.testSystemId,
+    })).rejects.toThrow("Access denied");
+    await expect(store.createProgram({
+      ...scopedInput, newTestSystem: { code: "ROLLBACK-TS", name: "Rollback test system" },
+    })).rejects.toThrow("This competency program code already exists.");
+    const systems = await db.$queryRaw<{ code: string }[]>`
+      SELECT "code" FROM "CompetencyTestSystem" WHERE "organizationId" = ${context.organizationId}::uuid
+    `;
+    expect(systems).toEqual([{ code: "MATRIX-TS" }]);
+    expect(await db.auditEvent.findFirst({
+      where: { organizationId: context.organizationId, entityId: program.id, action: "COMPETENCY_PROGRAM_CREATED" },
+    })).toMatchObject({ metadata: { equipmentId: instrument.id, testSystemId: link.testSystemId } });
+  });
 });

@@ -68,9 +68,23 @@ Creation and retirement each commit with their audit event. Tenant-scoped foreig
 keys protect the target and program relationships, and a partial unique index
 allows one active rule per program and target.
 
-Instrument- and test-system-specific programs can be configured by program
-name. This slice has no direct instrument or test-system relationship and adds
-no recurrence schedules or reminders. The matrix shows configured obligations
+The matrix shows configured obligations
 and recorded decisions. A current result with no expiration still has no
 scheduled renewal, and a requirement created after a historical assessment
 does not restart the assessment cycle.
+
+### Instrument and test-system scope
+
+When creating a competency program, a manager can link an active equipment
+record and select or create a tenant-specific test system. Both fields are
+optional. A linked program can be required for an employee, department, or job
+role through the existing matrix. Its scope appears in program selectors and
+matrix rows. Instrument selection and labels require organization-wide
+equipment read permission.
+
+The links are set at creation. Create a new scoped program for changed
+requirements so the earlier program and assessment history keep their original
+scope. Existing programs remain usable with empty links. Equipment retirement
+leaves historical program links intact. This slice records scope and retains
+explicit personnel requirements, with no automatic requirements derived from
+equipment state or assignment.

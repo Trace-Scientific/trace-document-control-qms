@@ -4,11 +4,12 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { competencyDashboard, competencyRollups, type CompetencyAssessmentSummary } from "@/lib/training/competency-rollup";
 import { cliaCompetencyMethods } from "@/lib/training/clia-competency-methods";
 import { CliaCompetencyProgramBuilder } from "./clia-competency-program-builder";
+import { CompetencyProgramScopeFields } from "./competency-program-scope-fields";
 import { CompetencyRequirementsMatrix } from "./competency-requirements-matrix";
 import { GovernedEvidenceFilePicker } from "./governed-evidence-file-picker";
 
 type Employee = { id: string; employeeNumber: string; firstName: string; lastName: string; status: "ACTIVE" | "INACTIVE" | "TERMINATED" };
-type Program = { id: string; code: string; title: string; active: boolean; validityDays: number | null };
+type Program = { id: string; code: string; title: string; active: boolean; validityDays: number | null; scopeLabel?: string | null };
 type Element = { id: string; programId: string; code: string; title: string; required: boolean; sortOrder: number };
 type Assessment = CompetencyAssessmentSummary & { fileId: string | null; notes: string | null; assessorUserId: string };
 type EvidenceFileSummary = { id: string; originalName: string; status: string };
@@ -37,6 +38,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [programFormVersion, setProgramFormVersion] = useState(0);
   const [section, setSection] = useState<Section>("status");
   const [workspaceStatus, setWorkspaceStatus] = useState<"loading" | "ready" | "error">("loading");
   const [statusQuery, setStatusQuery] = useState("");
@@ -165,6 +167,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
         return;
       }
       form.reset();
+      if (path === "/api/training/competency/programs") setProgramFormVersion((version) => version + 1);
       if (path === "/api/training/competency/elements") { setElementCode(""); setElementTitle(""); setElementMethod(""); setElementOrder(0); setElementRequired(true); }
       setSelectedProgramId("");
       setSelectedEmployeeId("");
@@ -183,10 +186,17 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
   }
 
   async function createProgram(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); const form = new FormData(event.currentTarget);
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const testSystemSelection = form.get("testSystemSelection");
     await submit("/api/training/competency/programs", {
       code: String(form.get("code")), title: String(form.get("title")), description: String(form.get("description")) || null,
       validityDays: form.get("validityDays") ? Number(form.get("validityDays")) : null,
+      equipmentId: form.get("equipmentId") || null,
+      testSystemId: testSystemSelection === "new" ? null : testSystemSelection || null,
+      newTestSystem: testSystemSelection === "new" ? {
+        code: String(form.get("testSystemCode")), name: String(form.get("testSystemName")),
+      } : null,
     }, event.currentTarget);
   }
 
@@ -318,14 +328,27 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
 
     {section === "assessment" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record competency assessment</h3><p>Record an append-only assessment decision and supporting evidence. Training completion alone does not establish competency: assess each program element and select the qualification outcome based on observed evidence.</p></div></div><form onSubmit={createAssessment} className="admin-form">
       <label>Employee<select name="employeeId" value={selectedEmployeeId} onChange={(event) => setSelectedEmployeeId(event.target.value)} required><option value="" disabled>Select employee</option>{employees.filter((employee) => employee.status === "ACTIVE").map((employee) => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.lastName}, {employee.firstName}</option>)}</select></label>
-      <label>Program<select name="programId" value={selectedProgramId} onChange={(event) => { setElements([]); setSelectedProgramId(event.target.value); }} required><option value="" disabled>Select program</option>{programs.filter((program) => program.active).map((program) => <option key={program.id} value={program.id}>{program.code} · {program.title}</option>)}</select></label>
+      <label>Program<select name="programId" value={selectedProgramId} onChange={(event) => { setElements([]); setSelectedProgramId(event.target.value); }} required><option value="" disabled>Select program</option>{programs.filter((program) => program.active).map((program) => <option key={program.id} value={program.id}>{[program.code, program.title, program.scopeLabel].filter(Boolean).join(" · ")}</option>)}</select></label>
       <label>Assessed at<input name="assessedAt" type="datetime-local" defaultValue={localDateTimeInputValue(new Date())} required /></label><label>Overall outcome<select name="outcome" defaultValue="" required><option value="" disabled>Select overall decision</option><option value="QUALIFIED">Qualified</option><option value="CONDITIONAL">Conditional</option><option value="NOT_QUALIFIED">Not qualified</option></select></label><label>Explicit expiration<input name="expiresAt" type="date" /></label><label>Notes<textarea name="notes" maxLength={2000} /></label>
       {elements.map((element) => <label key={element.id}>{element.code} · {element.title}{element.required ? " *" : ""}<select name={`outcome:${element.id}`} defaultValue="" required><option value="" disabled>Select assessment result</option><option value="PASS">Pass</option><option value="FAIL">Fail</option>{!element.required && <option value="NOT_APPLICABLE">Not applicable</option>}</select></label>)}
       <GovernedEvidenceFilePicker domain="training" disabled={busy} />
       <button type="submit" disabled={busy || !selectedProgramId || elements.length === 0}>Record competency assessment</button>
     </form></div>}
 
-    {section === "programs" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Competency programs</h3><p>Create governed programs and optional validity periods.</p></div></div><form onSubmit={createProgram} className="admin-form"><label>Program code<input name="code" maxLength={80} required /></label><label>Program title<input name="title" maxLength={240} required /></label><label>Validity days<input name="validityDays" type="number" min={1} max={3650} /></label><label>Description<textarea name="description" maxLength={2000} /></label><button type="submit" disabled={busy}>Create competency program</button></form></div>}
+    {section === "programs" && canManage && <div className="module-section-stack">
+      <div className="section-heading"><div>
+        <h3>Competency programs</h3>
+        <p>Choose an instrument or test system when the program applies to specific laboratory work.</p>
+      </div></div>
+      <form onSubmit={createProgram} className="admin-form">
+        <label>Program code<input name="code" maxLength={80} required /></label>
+        <label>Program title<input name="title" maxLength={240} required /></label>
+        <label>Validity days<input name="validityDays" type="number" min={1} max={3650} /></label>
+        <label>Description<textarea name="description" maxLength={2000} /></label>
+        <CompetencyProgramScopeFields key={programFormVersion} />
+        <button type="submit" disabled={busy}>Create competency program</button>
+      </form>
+    </div>}
 
     {section === "elements" && canManage && <CliaCompetencyProgramBuilder
       programs={programs.filter((program) => program.active)}
@@ -337,6 +360,6 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
       }}
     />}
 
-    {section === "elements" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Program elements</h3><p>Configure the elements and methods required for competency assessment.</p></div></div><form onSubmit={createElement} className="admin-form"><label>Program<select name="programId" defaultValue="" required><option value="" disabled>Select program</option>{programs.filter((program) => program.active).map((program) => <option key={program.id} value={program.id}>{program.code} · {program.title}</option>)}</select></label><label>CLIA assessment method preset<select value="" disabled={busy} onChange={event => { const preset = cliaCompetencyMethods.find(item => item.code === event.target.value); if (preset) { setElementCode(preset.code); setElementTitle(preset.title); setElementMethod(preset.method); setElementOrder(Number(preset.code.slice(-2))); setElementRequired(true); } }}><option value="">Choose a method to prefill</option>{cliaCompetencyMethods.map(item => <option key={item.code} value={item.code}>{item.title}</option>)}</select></label><p>Adapt each preset to the selected test system and laboratory procedure before saving. Add each applicable method separately. Presets do not certify compliance or create assessment results.</p><label>Element code<input name="code" maxLength={80} value={elementCode} onChange={event => setElementCode(event.target.value)} required /></label><label>Element title<input name="title" maxLength={240} value={elementTitle} onChange={event => setElementTitle(event.target.value)} required /></label><label>Method<input name="method" maxLength={500} value={elementMethod} onChange={event => setElementMethod(event.target.value)} /></label><label>Sort order<input name="sortOrder" type="number" min={0} value={elementOrder} onChange={event => setElementOrder(Number(event.target.value))} /></label><label><input name="required" type="checkbox" checked={elementRequired} onChange={event => setElementRequired(event.target.checked)} /> Required element</label><button type="submit" disabled={busy}>Add competency element</button></form></div>}
+    {section === "elements" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Program elements</h3><p>Configure the elements and methods required for competency assessment.</p></div></div><form onSubmit={createElement} className="admin-form"><label>Program<select name="programId" defaultValue="" required><option value="" disabled>Select program</option>{programs.filter((program) => program.active).map((program) => <option key={program.id} value={program.id}>{[program.code, program.title, program.scopeLabel].filter(Boolean).join(" · ")}</option>)}</select></label><label>CLIA assessment method preset<select value="" disabled={busy} onChange={event => { const preset = cliaCompetencyMethods.find(item => item.code === event.target.value); if (preset) { setElementCode(preset.code); setElementTitle(preset.title); setElementMethod(preset.method); setElementOrder(Number(preset.code.slice(-2))); setElementRequired(true); } }}><option value="">Choose a method to prefill</option>{cliaCompetencyMethods.map(item => <option key={item.code} value={item.code}>{item.title}</option>)}</select></label><p>Adapt each preset to the selected test system and laboratory procedure before saving. Add each applicable method separately. Presets do not certify compliance or create assessment results.</p><label>Element code<input name="code" maxLength={80} value={elementCode} onChange={event => setElementCode(event.target.value)} required /></label><label>Element title<input name="title" maxLength={240} value={elementTitle} onChange={event => setElementTitle(event.target.value)} required /></label><label>Method<input name="method" maxLength={500} value={elementMethod} onChange={event => setElementMethod(event.target.value)} /></label><label>Sort order<input name="sortOrder" type="number" min={0} value={elementOrder} onChange={event => setElementOrder(Number(event.target.value))} /></label><label><input name="required" type="checkbox" checked={elementRequired} onChange={event => setElementRequired(event.target.checked)} /> Required element</label><button type="submit" disabled={busy}>Add competency element</button></form></div>}
   </section>;
 }

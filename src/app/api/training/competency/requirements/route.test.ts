@@ -48,7 +48,7 @@ beforeEach(() => {
 it("limits read-only users to a tenant-scoped matrix without rule target choices or writes", async () => {
   authenticate.mockResolvedValue({ ...manager, grants: manager.grants.filter((grant) => grant.permission !== "training.manage") });
   expect((await GET(new NextRequest(requestUrl))).status).toBe(200);
-  expect(list).toHaveBeenCalledWith(manager.organizationId, false);
+  expect(list).toHaveBeenCalledWith(manager.organizationId, false, false);
   expect((await POST(request(input))).status).toBe(403);
   expect((await POST(request({ operation: "RETIRE", requirementId: input.targetId, reason: "test" }))).status).toBe(403);
   expect(create).not.toHaveBeenCalled();

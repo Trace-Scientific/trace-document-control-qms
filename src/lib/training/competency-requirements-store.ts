@@ -1,3 +1,4 @@
+import { competencyScopeJoins, competencyScopeLabel } from "./competency-program-scope";
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
 import { CompetencyEligibilityError, CompetencyValidationError } from "./competency";
@@ -34,10 +35,11 @@ const targets = {
 export async function listCompetencyRequirements(
   organizationId: string,
   includeTargets: boolean,
+  includeEquipment = false,
 ): Promise<CompetencyRequirementsView> {
   return db.$transaction(async (tx) => {
     const requirements = await tx.$queryRaw<CompetencyRequirement[]>`
-      SELECT r."id", r."programId", p."code" || ' · ' || p."title" AS "programLabel",
+      SELECT r."id", r."programId", concat_ws(' · ', p."code", p."title", ${competencyScopeLabel}) AS "programLabel",
         CASE WHEN r."employeeId" IS NOT NULL THEN 'EMPLOYEE'
           WHEN r."departmentId" IS NOT NULL THEN 'DEPARTMENT' ELSE 'JOB' END AS "scope",
         COALESCE(r."employeeId", r."departmentId", r."jobDescriptionId") AS "targetId",
@@ -45,6 +47,7 @@ export async function listCompetencyRequirements(
           d."name" || COALESCE(' · ' || s."name", ''), j."code" || ' · ' || j."title") AS "targetLabel"
       FROM "CompetencyRequirement" r
       JOIN "CompetencyProgram" p ON (p."organizationId", p."id") = (r."organizationId", r."programId")
+      ${competencyScopeJoins(includeEquipment)}
       LEFT JOIN "Employee" e ON (e."organizationId", e."id") = (r."organizationId", r."employeeId")
       LEFT JOIN "Department" d ON (d."organizationId", d."id") = (r."organizationId", r."departmentId")
       LEFT JOIN "Site" s ON (s."organizationId", s."id") = (d."organizationId", d."siteId")
@@ -75,10 +78,11 @@ export async function listCompetencyRequirements(
         FROM matches GROUP BY "programId", "employeeId"
       )
       SELECT pair.*, e."employeeNumber" || ' · ' || e."lastName" || ', ' || e."firstName" AS "employeeLabel",
-        p."code" || ' · ' || p."title" AS "programLabel", to_jsonb(a) AS "assessment"
+        concat_ws(' · ', p."code", p."title", ${competencyScopeLabel}) AS "programLabel", to_jsonb(a) AS "assessment"
       FROM required_pairs pair
       JOIN "Employee" e ON e."organizationId" = ${organizationId}::uuid AND e."id" = pair."employeeId" AND e."status" = 'ACTIVE'
       JOIN "CompetencyProgram" p ON p."organizationId" = ${organizationId}::uuid AND p."id" = pair."programId" AND p."active"
+      ${competencyScopeJoins(includeEquipment)}
       LEFT JOIN LATERAL (
         SELECT "id", "employeeId", "programId", "assessedAt", "outcome", "expiresAt"
         FROM "CompetencyAssessment"

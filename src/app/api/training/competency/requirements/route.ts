@@ -31,7 +31,8 @@ export async function GET(request: NextRequest) {
     requireAuthorization(context, { organizationId, permission: "training.read" });
     requireAuthorization(context, { organizationId, permission: "personnel.read" });
     const canManage = evaluateAuthorization(context, { organizationId, permission: "training.manage" }).allowed;
-    return NextResponse.json({ data: await listCompetencyRequirements(organizationId, canManage) });
+    const canReadEquipment = evaluateAuthorization(context, { organizationId, permission: "equipment.read" }).allowed;
+    return NextResponse.json({ data: await listCompetencyRequirements(organizationId, canManage, canReadEquipment) });
   } catch (error) {
     return respond(error);
   }
