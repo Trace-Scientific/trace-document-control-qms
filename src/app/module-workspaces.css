@@ -479,3 +479,35 @@
     max-width: none;
   }
 }
+
+.admin-form.clia-template-form {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  align-items: start;
+}
+
+.clia-template-form > :is(label, h4, ol, button) {
+  grid-column: 1 / -1;
+}
+
+.clia-template-form fieldset {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  border: 1px solid #e1e6ee;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.clia-template-form fieldset > label {
+  display: grid;
+  gap: 4px;
+}
+
+.clia-template-form fieldset > label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+}
+
+.clia-template-form textarea {
+  min-height: 6em;
+}

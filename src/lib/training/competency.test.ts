@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AuthorizationContext } from "../security/authorization";
+import { cliaCompetencyMethods } from "./clia-competency-methods";
 import { CompetencyService, CompetencyValidationError, type CompetencyStore } from "./competency";
 
 const context = (permissions: string[]): AuthorizationContext => ({
@@ -11,6 +12,7 @@ const context = (permissions: string[]): AuthorizationContext => ({
 const store=():CompetencyStore=>({
   listPrograms:vi.fn(async()=>[]), createProgram:vi.fn(async i=>({id:"p",...i,active:true,createdAt:new Date(),updatedAt:new Date()})),
   listElements:vi.fn(async()=>[]), createElement:vi.fn(async i=>({id:"e",...i,createdAt:new Date()})),
+  createCliaTemplate: vi.fn(async () => []),
   listAssessments:vi.fn(async()=>[]), createAssessment:vi.fn(async i=>({id:"a",organizationId:i.organizationId,employeeId:i.employeeId,programId:i.programId,assessedAt:i.assessedAt,outcome:i.outcome,expiresAt:i.expiresAt,assessorUserId:i.actorUserId,fileId:i.fileId,notes:i.notes,createdAt:new Date()})),
 });
 
@@ -61,4 +63,48 @@ describe("CompetencyService",()=>{
     expect(backing.createAssessment).not.toHaveBeenCalled();
   });
 
+});
+
+describe("CLIA competency template service", () => {
+  const manager = context(["training.manage"]);
+  const input = { organizationId: manager.organizationId, programId: "program", elements: [...cliaCompetencyMethods] };
+
+  it("normalizes customized values and applies canonical ordering and required defaults", async () => {
+    const backing = store();
+    const elements = [...input.elements].reverse().map((element) =>
+      element.code === "CLIA-02" ? { ...element, title: " Custom title ", method: " Custom steps ", required: false } : element);
+    await new CompetencyService(backing).createCliaTemplate(manager, { ...input, elements });
+    expect(backing.createCliaTemplate).toHaveBeenCalledWith({
+      organizationId: manager.organizationId,
+      programId: input.programId,
+      actorUserId: manager.userId,
+      elements: cliaCompetencyMethods.map((preset, index) => ({
+        ...preset,
+        sortOrder: index + 1,
+        required: true,
+        ...(preset.code === "CLIA-02" ? { title: "Custom title", method: "Custom steps", required: false } : {}),
+      })),
+    });
+  });
+
+  it.each([
+    ["missing method", input.elements.slice(1)],
+    ["duplicate code", [...input.elements.slice(1), input.elements[1]]],
+    ["unrecognized code", [{ ...input.elements[0], code: "OTHER" }, ...input.elements.slice(1)]],
+    ["blank assessment instructions", [{ ...input.elements[0], method: "  " }, ...input.elements.slice(1)]],
+    ["blank title", [{ ...input.elements[0], title: "  " }, ...input.elements.slice(1)]],
+    ["overlong assessment instructions", [{ ...input.elements[0], method: "x".repeat(501) }, ...input.elements.slice(1)]],
+  ])("rejects a template with %s before writing", (_label, elements) => {
+    const backing = store();
+    expect(() => new CompetencyService(backing).createCliaTemplate(manager, { ...input, elements })).toThrow(CompetencyValidationError);
+    expect(backing.createCliaTemplate).not.toHaveBeenCalled();
+  });
+
+  it("requires training.manage and the authenticated organization", () => {
+    const backing = store();
+    const service = new CompetencyService(backing);
+    expect(() => service.createCliaTemplate(context(["training.read"]), input)).toThrow("Access denied");
+    expect(() => service.createCliaTemplate(manager, { ...input, organizationId: "another-organization" })).toThrow("Access denied");
+    expect(backing.createCliaTemplate).not.toHaveBeenCalled();
+  });
 });

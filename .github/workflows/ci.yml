@@ -34,6 +34,8 @@ jobs:
       - run: npx prisma migrate deploy
       - name: Run guarded demo fixture integration tests
         run: npx vitest run src/lib/documents/demo-fixture-postgres.integration.test.ts
+      - name: Verify CLIA competency template transactions
+        run: npx vitest run src/lib/training/competency-postgres.integration.test.ts
 
   verify:
     runs-on: ubuntu-latest
