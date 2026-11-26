@@ -167,3 +167,15 @@ payload hash binds the assessor, employee, program, outcome, dates, notes,
 method results, and attached evidence identity. Assessment history shows the
 signature meaning, signer account, time, and status. Unsigned assessments
 remain visible as unsigned, including assessments created before this feature.
+
+### Remediation and reassessment
+
+Under Assessment history, a training manager can open one remediation plan
+from a failed or conditional assessment and record the corrective actions and
+an optional follow-up date. Open plans display past-due status when the due
+date passes. Managers record follow-up through the usual assessment workflow.
+Closing a plan requires a resolution note and the latest subsequent assessment
+for the same employee and program to have a qualified outcome. The original
+assessment and its signature, when present, remain in history. Opening and
+closing write separate audit events. The plan due date is tracked in this
+view, with no automatic training assignment or reminder delivery.
