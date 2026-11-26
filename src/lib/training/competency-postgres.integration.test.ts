@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "../db";
+import { hashPassword } from "../security/crypto";
+import { hashCompetencySignature, reauthenticateCompetencySigner } from "./competency-assessment-signature";
 import type { AuthorizationContext } from "../security/authorization";
 import { cliaCompetencyMethods } from "./clia-competency-methods";
 import { PrismaCompetencyStore } from "./competency-store";
@@ -305,5 +307,41 @@ describe.skipIf(!enabled)("CLIA template writes in migrated PostgreSQL", () => {
       { elementId: second.id, code: "A-SECOND", title: "Second method", outcome: "FAIL", notes: "Repeat observation needed." },
     ]);
     expect(await store.readAssessmentObservations(otherManager.organizationId, assessment.id)).toBeNull();
+  });
+  it("binds an electronic signature to the saved assessment and rolls back an invalid proof", async () => {
+    const program = await createProgram();
+    const element = await createElement(program.id);
+    const password = "synthetic-competency-signing-password";
+    const credential = await db.credential.create({ data: {
+      organizationId: manager.organizationId, userId: manager.userId, passwordHash: hashPassword(password),
+    } });
+    const assessmentInput = {
+      organizationId: manager.organizationId, employeeId, programId: program.id, assessedAt: new Date(),
+      outcome: "QUALIFIED" as const, notes: " Synthetic overall note ",
+      elementResults: [{ elementId: element.id, outcome: "PASS" as const, notes: " Synthetic observation " }],
+    };
+    await expect(reauthenticateCompetencySigner(manager.organizationId, manager.userId, "incorrect password"))
+      .rejects.toThrow("Reauthentication failed");
+    const proof = await reauthenticateCompetencySigner(manager.organizationId, manager.userId, password);
+    const record = await service.createAssessment(manager, { ...assessmentInput, signatureProof: proof });
+    const signature = await db.electronicSignature.findFirstOrThrow({
+      where: { organizationId: manager.organizationId, entityType: "CompetencyAssessment", entityId: record.id },
+      include: { authenticationEvent: true },
+    });
+    expect(signature).toMatchObject({
+      signerUserId: manager.userId, meaning: "VERIFIED", status: "VALID",
+      authenticationEvent: { userId: manager.userId, eventType: "REAUTHENTICATION", outcome: "SUCCESS", method: "PASSWORD" },
+    });
+    expect(signature.payloadHash).toBe(hashCompetencySignature(record,
+      [{ ...assessmentInput.elementResults[0], notes: "Synthetic observation" }], null, null, signature.signedAt));
+    expect(signature.payloadHash).not.toBe(hashCompetencySignature(record,
+      [{ ...assessmentInput.elementResults[0], notes: "Changed observation" }], null, null, signature.signedAt));
+    expect(await store.readAssessmentSignature(otherManager.organizationId, record.id)).toBeNull();
+
+    const unsigned = await service.createAssessment(manager, assessmentInput);
+    expect(await store.readAssessmentSignature(manager.organizationId, unsigned.id)).toBeNull();
+    await db.credential.update({ where: { id: credential.id }, data: { version: { increment: 1 } } });
+    await expect(service.createAssessment(manager, { ...assessmentInput, signatureProof: proof })).rejects.toThrow("Reauthentication failed");
+    expect((await store.listAssessments(manager.organizationId, employeeId)).filter((row) => row.programId === program.id)).toHaveLength(2);
   });
 });

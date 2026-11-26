@@ -3,6 +3,14 @@
 import { useEffect, useState } from "react";
 import type { CompetencyObservation } from "@/lib/training/competency";
 
+type RecordedSignature = {
+  signerUserId: string;
+  meaningText: string;
+  signedAt: string;
+  status: "VALID" | "INVALIDATED";
+};
+type AssessmentDetails = { data: CompetencyObservation[]; signature: RecordedSignature | null };
+
 const outcomeLabels: Record<CompetencyObservation["outcome"], string> = {
   PASS: "Pass",
   FAIL: "Fail",
@@ -10,7 +18,7 @@ const outcomeLabels: Record<CompetencyObservation["outcome"], string> = {
 };
 
 export function CompetencyAssessmentObservations({ assessmentId }: { assessmentId: string }) {
-  const [observations, setObservations] = useState<CompetencyObservation[]>();
+  const [details, setDetails] = useState<AssessmentDetails>();
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
@@ -20,8 +28,8 @@ export function CompetencyAssessmentObservations({ assessmentId }: { assessmentI
       signal: controller.signal, cache: "no-store",
     }).then(async (response) => {
       if (!response.ok) throw new Error("Observations unavailable.");
-      const body = await response.json() as { data: CompetencyObservation[] };
-      if (!controller.signal.aborted) setObservations(body.data);
+      const body = await response.json() as AssessmentDetails;
+      if (!controller.signal.aborted) setDetails(body);
     }).catch(() => {
       if (!controller.signal.aborted) setFailed(true);
     });
@@ -35,16 +43,21 @@ export function CompetencyAssessmentObservations({ assessmentId }: { assessmentI
       setAttempt((previous) => previous + 1);
     }}>Retry</button>
   </div>;
-  if (!observations) return <p role="status">Loading recorded observations…</p>;
-  if (!observations.length) return <p>No method results were recorded for this assessment.</p>;
+  if (!details) return <p role="status">Loading assessment details…</p>;
 
   return <div className="module-section-stack">
+    <h4>Electronic sign-off</h4>
+    {details.signature ? <div>
+      <p>{details.signature.status === "VALID" ? "Signed" : "Signature invalidated"} · {new Date(details.signature.signedAt).toLocaleString()}</p>
+      <p>Signer account <code>{details.signature.signerUserId}</code></p>
+      <p>{details.signature.meaningText}</p>
+    </div> : <p>No electronic signature recorded.</p>}
     <h4>Recorded method results</h4>
-    <dl>
-      {observations.map((observation) => <div key={observation.elementId}>
+    {details.data.length ? <dl>
+      {details.data.map((observation) => <div key={observation.elementId}>
         <dt>{observation.code} · {observation.title}</dt>
         <dd><strong>{outcomeLabels[observation.outcome]}</strong>{observation.notes && <p>{observation.notes}</p>}</dd>
       </div>)}
-    </dl>
+    </dl> : <p>No method results were recorded for this assessment.</p>}
   </div>;
 }

@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState, type FormEvent } from "react";
 import { competencyDashboard, competencyRollups, type CompetencyAssessmentSummary } from "@/lib/training/competency-rollup";
+import { COMPETENCY_SIGNATURE_MEANING } from "@/lib/training/competency";
 import { competencyScheduleMaxDays } from "@/lib/training/competency-schedule";
 import { cliaCompetencyMethods } from "@/lib/training/clia-competency-methods";
 import { CliaCompetencyProgramBuilder } from "./clia-competency-program-builder";
@@ -38,6 +39,7 @@ export function CompetencyManagementWorkspace({ canManage, canManageEvaluators, 
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [evidenceFiles, setEvidenceFiles] = useState<EvidenceFileSummary[]>([]);
   const [selectedProgramId, setSelectedProgramId] = useState("");
+  const [signAssessment, setSignAssessment] = useState(false);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -171,6 +173,7 @@ export function CompetencyManagementWorkspace({ canManage, canManageEvaluators, 
         return;
       }
       form.reset();
+      if (path === "/api/training/competency/assessments") setSignAssessment(false);
       if (path === "/api/training/competency/programs") setProgramFormVersion((version) => version + 1);
       if (path === "/api/training/competency/elements") { setElementCode(""); setElementTitle(""); setElementMethod(""); setElementOrder(0); setElementRequired(true); }
       setSelectedProgramId("");
@@ -264,14 +267,20 @@ export function CompetencyManagementWorkspace({ canManage, canManageEvaluators, 
       setNotice("Competency expiration cannot precede the assessment date.");
       return;
     }
+    const signature = form.get("signatureConfirmed") === "on"
+      ? { confirmed: true, password: String(form.get("signaturePassword") ?? "") }
+      : undefined;
+    const passwordInput = event.currentTarget.elements.namedItem("signaturePassword");
+    if (passwordInput instanceof HTMLInputElement) passwordInput.value = "";
     await submit("/api/training/competency/assessments", {
       employeeId: String(form.get("employeeId")), programId, assessedAt: assessedAt.toISOString(),
       outcome: String(form.get("outcome")), expiresAt: String(form.get("expiresAt")) || null,
-      fileId: String(form.get("fileId")) || null, notes: String(form.get("notes")) || null, elementResults,
+      fileId: String(form.get("fileId")) || null, notes: String(form.get("notes")) || null, elementResults, signature,
     }, event.currentTarget);
   }
 
   function startReassessment(employeeId: string, programId: string) {
+    setSignAssessment(false);
     setSelectedEmployeeId(employeeId);
     if (selectedProgramId !== programId) setElements([]);
     setSelectedProgramId(programId);
@@ -369,8 +378,8 @@ export function CompetencyManagementWorkspace({ canManage, canManageEvaluators, 
     </div>}
 
     {section === "assessment" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record competency assessment</h3><p>Record an append-only assessment decision and supporting evidence. Training completion alone does not establish competency: assess each program element and select the qualification outcome based on observed evidence.</p></div></div><form onSubmit={createAssessment} className="admin-form">
-      <label>Employee<select name="employeeId" value={selectedEmployeeId} onChange={(event) => setSelectedEmployeeId(event.target.value)} required><option value="" disabled>Select employee</option>{employees.filter((employee) => employee.status === "ACTIVE").map((employee) => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.lastName}, {employee.firstName}</option>)}</select></label>
-      <label>Program<select name="programId" value={selectedProgramId} onChange={(event) => { setElements([]); setSelectedProgramId(event.target.value); }} required><option value="" disabled>Select program</option>{programs.filter((program) => program.active).map((program) => <option key={program.id} value={program.id}>{[program.code, program.title, program.scopeLabel].filter(Boolean).join(" · ")}</option>)}</select></label>
+      <label>Employee<select name="employeeId" value={selectedEmployeeId} onChange={(event) => { setSignAssessment(false); setSelectedEmployeeId(event.target.value); }} required><option value="" disabled>Select employee</option>{employees.filter((employee) => employee.status === "ACTIVE").map((employee) => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.lastName}, {employee.firstName}</option>)}</select></label>
+      <label>Program<select name="programId" value={selectedProgramId} onChange={(event) => { setSignAssessment(false); setElements([]); setSelectedProgramId(event.target.value); }} required><option value="" disabled>Select program</option>{programs.filter((program) => program.active).map((program) => <option key={program.id} value={program.id}>{[program.code, program.title, program.scopeLabel].filter(Boolean).join(" · ")}</option>)}</select></label>
       <label>Assessed at<input name="assessedAt" type="datetime-local" defaultValue={localDateTimeInputValue(new Date())} required /></label><label>Overall outcome<select name="outcome" defaultValue="" required><option value="" disabled>Select overall decision</option><option value="QUALIFIED">Qualified</option><option value="CONDITIONAL">Conditional</option><option value="NOT_QUALIFIED">Not qualified</option></select></label><label>Explicit expiration<input name="expiresAt" type="date" /></label><label>Notes<textarea name="notes" maxLength={2000} /></label>
       {elements.map((element) => <fieldset key={element.id}>
         <legend>{element.code} · {element.title}{element.required ? " (required)" : ""}</legend>
@@ -383,7 +392,17 @@ export function CompetencyManagementWorkspace({ canManage, canManageEvaluators, 
         <label>Observation notes<textarea name={`observation:${element.id}`} maxLength={1000} /></label>
       </fieldset>)}
       <GovernedEvidenceFilePicker domain="training" disabled={busy} />
-      <button type="submit" disabled={busy || !selectedProgramId || elements.length === 0}>Record competency assessment</button>
+      <fieldset>
+        <legend>Electronic sign-off</legend>
+        <label><input type="checkbox" name="signatureConfirmed" checked={signAssessment}
+          onChange={(event) => setSignAssessment(event.target.checked)} /> {COMPETENCY_SIGNATURE_MEANING}</label>
+        {signAssessment && <label>Signing password
+          <input type="password" name="signaturePassword" autoComplete="current-password" maxLength={1024} required />
+        </label>}
+      </fieldset>
+      <button type="submit" disabled={busy || !selectedProgramId || elements.length === 0}>
+        {signAssessment ? "Sign and record competency assessment" : "Record competency assessment"}
+      </button>
     </form></div>}
 
     {section === "programs" && canManage && <div className="module-section-stack">
