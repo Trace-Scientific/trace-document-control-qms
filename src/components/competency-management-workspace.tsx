@@ -5,6 +5,7 @@ import { competencyDashboard, competencyRollups, type CompetencyAssessmentSummar
 import { competencyScheduleMaxDays } from "@/lib/training/competency-schedule";
 import { cliaCompetencyMethods } from "@/lib/training/clia-competency-methods";
 import { CliaCompetencyProgramBuilder } from "./clia-competency-program-builder";
+import { CompetencyEvaluatorWorkspace } from "./competency-evaluator-workspace";
 import { CompetencyProgramScopeFields } from "./competency-program-scope-fields";
 import { CompetencyRequirementsMatrix } from "./competency-requirements-matrix";
 import { GovernedEvidenceFilePicker } from "./governed-evidence-file-picker";
@@ -14,7 +15,7 @@ type Program = { id: string; code: string; title: string; active: boolean; valid
 type Element = { id: string; programId: string; code: string; title: string; required: boolean; sortOrder: number };
 type Assessment = CompetencyAssessmentSummary & { fileId: string | null; notes: string | null; assessorUserId: string };
 type EvidenceFileSummary = { id: string; originalName: string; status: string };
-type Section = "status" | "requirements" | "history" | "assessment" | "programs" | "elements";
+type Section = "status" | "evaluators" | "requirements" | "history" | "assessment" | "programs" | "elements";
 
 function formatDateOnly(value: string | null) {
   if (!value) return "—";
@@ -29,7 +30,7 @@ function localDateTimeInputValue(date: Date) {
   return local.toISOString().slice(0, 16);
 }
 
-export function CompetencyManagementWorkspace({ canManage, today }: { canManage: boolean; today: string }) {
+export function CompetencyManagementWorkspace({ canManage, canManageEvaluators, today }: { canManage: boolean; canManageEvaluators: boolean; today: string }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [elements, setElements] = useState<Element[]>([]);
@@ -278,6 +279,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     { id: "history" as const, label: "Assessment history", description: "Search previous competency decisions without changing records.", visible: true },
     { id: "assessment" as const, label: "Record assessment", description: "Record an append-only competency assessment with governed supporting evidence.", visible: canManage },
     { id: "programs" as const, label: "Programs", description: "Create governed competency programs and validity periods.", visible: canManage },
+    { id: "evaluators" as const, label: "Evaluators", description: "Manage documented evaluator designations by program.", visible: canManageEvaluators },
     { id: "elements" as const, label: "Program elements", description: "Configure required assessment elements and methods for each program.", visible: canManage },
   ].filter((item) => item.visible);
 
@@ -365,6 +367,9 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
         <button type="submit" disabled={busy}>Create competency program</button>
       </form>
     </div>}
+
+    {section === "evaluators" && canManageEvaluators &&
+      <CompetencyEvaluatorWorkspace programs={programs.filter((program) => program.active)} />}
 
     {section === "elements" && canManage && <CliaCompetencyProgramBuilder
       programs={programs.filter((program) => program.active)}

@@ -231,4 +231,55 @@ describe.skipIf(!enabled)("CLIA template writes in migrated PostgreSQL", () => {
     expect(await listElements(program.id)).toHaveLength(6);
     expect(await elementAudits(program.id)).toHaveLength(6);
   });
+  it("enforces documented program evaluator authorization at assessment save", async () => {
+    const program = await createProgram();
+    const element = await createElement(program.id);
+    const assessmentInput = {
+      organizationId: manager.organizationId, programId: program.id, employeeId, assessedAt: new Date(),
+      outcome: "QUALIFIED" as const, elementResults: [{ elementId: element.id, outcome: "PASS" as const }],
+    };
+    const [evaluator] = await db.$queryRaw<{ id: string }[]>`
+      INSERT INTO "Employee" ("organizationId", "userId", "employeeNumber", "firstName", "lastName")
+      VALUES (${manager.organizationId}::uuid, ${manager.userId}::uuid, 'EVAL-001', 'Synthetic', 'Evaluator')
+      RETURNING "id"
+    `;
+    const file = await db.fileObject.create({ data: {
+      organizationId: manager.organizationId, originalName: "synthetic-evaluator-authorization.pdf",
+      mimeType: "application/pdf", sizeBytes: 10, sha256: "1".repeat(64),
+      status: "AVAILABLE", storageKey: `${manager.organizationId}/${randomUUID()}/synthetic.pdf`,
+      uploadedByUserId: manager.userId,
+    } });
+    const input = {
+      organizationId: manager.organizationId, actorUserId: manager.userId, programId: program.id,
+      employeeId: evaluator.id, fileId: file.id, basis: "Synthetic written delegation",
+    };
+    const [ineligible] = await db.$queryRaw<{ id: string }[]>`
+      INSERT INTO "Employee" ("organizationId", "employeeNumber", "firstName", "lastName")
+      VALUES (${manager.organizationId}::uuid, 'EVAL-002', 'Unlinked', 'Evaluator') RETURNING "id"
+    `;
+    await expect(store.authorizeEvaluator({ ...input, employeeId: ineligible.id })).rejects.toThrow("active linked account");
+    expect(await store.listEvaluatorAuthorizations(manager.organizationId, program.id)).toMatchObject({
+      requiresAuthorizedEvaluator: false, authorizations: [],
+    });
+    await expect(store.listEvaluatorAuthorizations(otherManager.organizationId, program.id)).rejects.toThrow("Access denied");
+    const grant = await store.authorizeEvaluator(input);
+    expect(await store.listEvaluatorAuthorizations(manager.organizationId, program.id)).toMatchObject({
+      requiresAuthorizedEvaluator: true, authorizations: [expect.objectContaining({ id: grant.id, eligible: true })],
+    });
+    await expect(store.authorizeEvaluator(input)).rejects.toThrow("already authorized");
+    const other = await db.user.create({ data: {
+      organizationId: manager.organizationId, email: "unlisted@example.invalid", firstName: "Unlisted", lastName: "Evaluator",
+    } });
+    await expect(service.createAssessment({ ...manager, userId: other.id }, assessmentInput)).rejects.toThrow("requires an authorized evaluator");
+    const recorded = await service.createAssessment(manager, assessmentInput);
+    expect(await db.auditEvent.findFirst({
+      where: { organizationId: manager.organizationId, entityId: recorded.id, action: "COMPETENCY_ASSESSED" },
+    })).toMatchObject({ metadata: { evaluatorAuthorizationId: grant.id } });
+    await store.revokeEvaluator({ ...input, authorizationId: grant.id, reason: "Synthetic revocation" });
+    expect(await store.listEvaluatorAuthorizations(manager.organizationId, program.id)).toMatchObject({
+      requiresAuthorizedEvaluator: true, authorizations: [],
+    });
+    await expect(service.createAssessment(manager, assessmentInput)).rejects.toThrow("requires an authorized evaluator");
+    expect((await store.listAssessments(manager.organizationId, employeeId)).map((row) => row.id)).toContain(recorded.id);
+  });
 });

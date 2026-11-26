@@ -209,7 +209,7 @@ export default async function HomePage() {
               id: "competency",
               label: "Competency",
               description: "Programs, assessments, qualification status, and reassessment tracking.",
-              content: visibility.trainingManagement ? <CompetencyManagementWorkspace canManage={visibility.trainingManage} today={today} /> : null,
+              content: visibility.trainingManagement ? <CompetencyManagementWorkspace canManage={visibility.trainingManage} canManageEvaluators={visibility.trainingManage && visibility.personnelManage} today={today} /> : null,
             },
           ],
         },
