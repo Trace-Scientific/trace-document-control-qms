@@ -20,6 +20,11 @@ export type CompetencyRequirementRow = {
   programLabel: string;
   requirementIds: string[];
   assessment: CompetencyAssessmentSummary | null;
+  requirementEffectiveOn: string;
+  initialDueDays: number | null;
+  reassessmentIntervalDays: number | null;
+  lastQualifiedAt: string | null;
+  lastQualifiedExpiresAt: string | null;
 };
 
 export type CompetencyRequirementsView = {

@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authenticateRequest, AuthenticationRequiredError } from "@/lib/security/authenticated-request";
+import { competencyScheduleMaxDays } from "@/lib/training/competency-schedule";
 import { PrismaCompetencyStore } from "@/lib/training/competency-store";
 import { CompetencyEligibilityError, CompetencyService, CompetencyValidationError } from "@/lib/training/competency";
 
 const service=new CompetencyService(new PrismaCompetencyStore());
 const createSchema=z.object({code:z.string().max(80),title:z.string().max(240),description:z.string().max(2000).nullish(),validityDays:z.number().int().positive().max(3650).nullish(),
+  initialDueDays: z.number().int().min(0).max(competencyScheduleMaxDays).nullish(),
+  reassessmentIntervalDays: z.number().int().min(1).max(competencyScheduleMaxDays).nullish(),
   equipmentId: z.string().uuid().nullish(),
   testSystemId: z.string().uuid().nullish(),
   newTestSystem: z.object({ code: z.string().trim().min(1).max(80), name: z.string().trim().min(1).max(240) }).nullish()});

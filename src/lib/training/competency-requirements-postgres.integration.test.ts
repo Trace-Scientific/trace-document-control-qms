@@ -167,4 +167,33 @@ describe.skipIf(!enabled)("Competency requirements in migrated PostgreSQL", () =
       where: { organizationId: context.organizationId, entityId: program.id, action: "COMPETENCY_PROGRAM_CREATED" },
     })).toMatchObject({ metadata: { equipmentId: instrument.id, testSystemId: link.testSystemId } });
   });
+  it("projects the requirement start and earlier qualified assessment for a scheduled program", async () => {
+    const program = await new PrismaCompetencyStore().createProgram({
+      ...context, code: "SCHEDULED", title: "Scheduled program", description: null, validityDays: null,
+      initialDueDays: 0, reassessmentIntervalDays: 365,
+    });
+    const rule = await createCompetencyRequirement({ ...context, programId: program.id, scope: "EMPLOYEE", targetId: employeeId });
+    const [expected] = await db.$queryRaw<{ startDate: string }[]>`
+      SELECT ("createdAt" AT TIME ZONE 'UTC')::date::text AS "startDate"
+      FROM "CompetencyRequirement" WHERE "id" = ${rule.id}::uuid
+    `;
+    const getRow = async () => (await listCompetencyRequirements(context.organizationId, false))
+      .rows.find((row) => row.programId === program.id);
+    expect(await getRow()).toMatchObject({
+      requirementEffectiveOn: expected.startDate, initialDueDays: 0, reassessmentIntervalDays: 365,
+      assessment: null, lastQualifiedAt: null, lastQualifiedExpiresAt: null,
+    });
+    await db.$executeRaw`
+      INSERT INTO "CompetencyAssessment" ("organizationId", "employeeId", "programId", "assessedAt", "outcome", "expiresAt", "assessorUserId")
+      VALUES
+        (${context.organizationId}::uuid, ${employeeId}::uuid, ${program.id}::uuid, '2000-01-04T00:00:00Z', 'QUALIFIED', '2000-10-04', ${context.actorUserId}::uuid),
+        (${context.organizationId}::uuid, ${employeeId}::uuid, ${program.id}::uuid, '2000-02-01T00:00:00Z', 'CONDITIONAL', NULL, ${context.actorUserId}::uuid)
+    `;
+    expect(await getRow()).toMatchObject({
+      assessment: { outcome: "CONDITIONAL" }, lastQualifiedAt: "2000-01-04", lastQualifiedExpiresAt: "2000-10-04",
+    });
+    expect(await db.auditEvent.findFirst({
+      where: { organizationId: context.organizationId, entityId: program.id, action: "COMPETENCY_PROGRAM_CREATED" },
+    })).toMatchObject({ metadata: { initialDueDays: 0, reassessmentIntervalDays: 365 } });
+  });
 });

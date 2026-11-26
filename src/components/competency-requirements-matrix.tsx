@@ -6,6 +6,7 @@ import {
   type CompetencyRequirementScope,
   type CompetencyRequirementsView,
 } from "@/lib/training/competency-requirements";
+import { competencySchedule } from "@/lib/training/competency-schedule";
 import { competencyRollups } from "@/lib/training/competency-rollup";
 
 const scopeLabels: Record<CompetencyRequirementScope, string> = {
@@ -45,6 +46,7 @@ export function CompetencyRequirementsMatrix({ canManage, programs, today, onAss
   const [scope, setScope] = useState<CompetencyRequirementScope>("EMPLOYEE");
   const [retiringId, setRetiringId] = useState("");
   const [query, setQuery] = useState("");
+  const [overdueOnly, setOverdueOnly] = useState(false);
   const [filter, setFilter] = useState("ALL");
 
   useEffect(() => {
@@ -112,13 +114,14 @@ export function CompetencyRequirementsMatrix({ canManage, programs, today, onAss
   const rollups = new Map(competencyRollups(assessments, today).map((row) => [row.id, row]));
   const rows = view?.rows.map((row) => ({
     ...row,
+    schedule: competencySchedule({ ...row, today, latestAssessment: row.assessment }),
     status: (row.assessment && rollups.get(row.assessment.id)?.status) || "MISSING_INITIAL",
   } as const)) ?? [];
   const searchWords = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const visibleRows = rows.filter((row) => {
     const matchesStatus = filter === "ALL" || row.status === filter;
     const text = `${row.employeeLabel} ${row.programLabel}`.toLowerCase();
-    return matchesStatus && searchWords.every((word) => text.includes(word));
+    return matchesStatus && (!overdueOnly || row.schedule?.overdue) && searchWords.every((word) => text.includes(word));
   });
   const requirementsById = new Map(view?.requirements.map((requirement) => [requirement.id, requirement]) ?? []);
 
@@ -130,7 +133,7 @@ export function CompetencyRequirementsMatrix({ canManage, programs, today, onAss
     {loading && <p role="status">Loading competency requirements…</p>}
     {notice && <p role="status">{notice}</p>}
     {view && <>
-      <p>{rows.length} required employee–program pairs · {rows.filter((row) => row.status === "MISSING_INITIAL").length} missing initial assessment</p>
+      <p>{rows.length} required employee–program pairs · {rows.filter((row) => row.status === "MISSING_INITIAL").length} missing initial assessment · {rows.filter((row) => row.schedule?.overdue).length} past due</p>
       <label>Search requirements
         <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Employee or program" />
       </label>
@@ -140,9 +143,10 @@ export function CompetencyRequirementsMatrix({ canManage, programs, today, onAss
           {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       </label>
+      <label><input type="checkbox" checked={overdueOnly} onChange={(event) => setOverdueOnly(event.target.checked)} /> Past-due assessments only</label>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Employee</th><th>Program</th><th>Required by</th><th>Status</th><th>Expires</th>{canManage && <th>Action</th>}</tr></thead>
+          <thead><tr><th>Employee</th><th>Program</th><th>Required by</th><th>Status</th><th>Assessment due</th><th>Qualification expires</th>{canManage && <th>Action</th>}</tr></thead>
           <tbody>
             {visibleRows.map((row) => <tr key={`${row.employeeId}:${row.programId}`}>
               <td>{row.employeeLabel}</td><td>{row.programLabel}</td>
@@ -150,12 +154,14 @@ export function CompetencyRequirementsMatrix({ canManage, programs, today, onAss
                 const requirement = requirementsById.get(id);
                 return requirement ? <div key={id}>{scopeLabels[requirement.scope]} · {requirement.targetLabel}</div> : null;
               })}</td>
-              <td>{statusLabels[row.status]}</td><td>{row.assessment?.expiresAt ?? "—"}</td>
+              <td>{statusLabels[row.status]}</td>
+              <td>{row.schedule ? <><time dateTime={row.schedule.dueOn}>{row.schedule.dueOn}</time>{row.schedule.overdue && <div>Past due</div>}</> : "—"}</td>
+              <td>{row.assessment?.expiresAt ?? "—"}</td>
               {canManage && <td><button type="button" onClick={() => onAssess(row.employeeId, row.programId)}>
                 {row.assessment ? "Reassess" : "Record initial assessment"}
               </button></td>}
             </tr>)}
-            {!visibleRows.length && <tr><td colSpan={canManage ? 6 : 5}>
+            {!visibleRows.length && <tr><td colSpan={canManage ? 7 : 6}>
               {rows.length ? "No requirements match the selected filters." : "No active employees currently match a competency requirement."}
             </td></tr>}
           </tbody>

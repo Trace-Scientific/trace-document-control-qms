@@ -1,3 +1,4 @@
+import { competencyScheduleMaxDays, type CompetencyScheduleSettings } from "./competency-schedule";
 import type { CompetencyProgramScopeInput } from "./competency-program-scope";
 import { cliaCompetencyMethods } from "./clia-competency-methods";
 import type { AuthorizationContext } from "../security/authorization";
@@ -6,7 +7,7 @@ import { evaluateAuthorization, requireAuthorization } from "../security/authori
 export class CompetencyValidationError extends Error {}
 export class CompetencyEligibilityError extends Error {}
 
-export type CompetencyProgramRecord = { id:string; organizationId:string; code:string; title:string; description:string|null; active:boolean; validityDays:number|null; scopeLabel?:string|null; createdAt:Date; updatedAt:Date };
+export type CompetencyProgramRecord = { id:string; organizationId:string; code:string; title:string; description:string|null; active:boolean; validityDays:number|null; scopeLabel?:string|null; initialDueDays?:number|null; reassessmentIntervalDays?:number|null; createdAt:Date; updatedAt:Date };
 export type CompetencyElementRecord = { id:string; organizationId:string; programId:string; code:string; title:string; method:string|null; required:boolean; sortOrder:number; createdAt:Date };
 export type CompetencyAssessmentRecord = { id:string; organizationId:string; employeeId:string; programId:string; assessedAt:Date; outcome:"QUALIFIED"|"NOT_QUALIFIED"|"CONDITIONAL"; expiresAt:Date|null; assessorUserId:string; fileId:string|null; notes:string|null; createdAt:Date };
 export type CompetencyElementResultInput = { elementId:string; outcome:"PASS"|"FAIL"|"NOT_APPLICABLE"; notes?:string|null };
@@ -17,7 +18,7 @@ export type CompetencyProgramWrite = { organizationId: string; programId: string
 
 export interface CompetencyStore {
   listPrograms(organizationId:string, includeEquipment?: boolean):Promise<CompetencyProgramRecord[]>;
-  createProgram(input:{organizationId:string;code:string;title:string;description:string|null;validityDays:number|null;actorUserId:string} & CompetencyProgramScopeInput):Promise<CompetencyProgramRecord>;
+  createProgram(input:{organizationId:string;code:string;title:string;description:string|null;validityDays:number|null;actorUserId:string} & CompetencyProgramScopeInput & CompetencyScheduleSettings):Promise<CompetencyProgramRecord>;
   listElements(organizationId:string, programId:string):Promise<CompetencyElementRecord[]>;
   createElement(input: CompetencyProgramWrite & CompetencyElementInput): Promise<CompetencyElementRecord>;
   createCliaTemplate(input: CompetencyProgramWrite & { elements: CompetencyElementInput[] }): Promise<CompetencyElementRecord[]>;
@@ -28,13 +29,21 @@ export interface CompetencyStore {
 export class CompetencyService {
   constructor(private readonly store:CompetencyStore) {}
   listPrograms(context:AuthorizationContext, organizationId:string){ requireAuthorization(context,{organizationId,permission:"training.read"}); return this.store.listPrograms(organizationId, evaluateAuthorization(context, { organizationId, permission: "equipment.read" }).allowed); }
-  createProgram(context:AuthorizationContext,input:{organizationId:string;code:string;title:string;description?:string|null;validityDays?:number|null} & CompetencyProgramScopeInput){
+  createProgram(context:AuthorizationContext,input:{organizationId:string;code:string;title:string;description?:string|null;validityDays?:number|null} & CompetencyProgramScopeInput & CompetencyScheduleSettings){
     requireAuthorization(context,{organizationId:input.organizationId,permission:"training.manage"});
     const code=input.code.trim(), title=input.title.trim(), description=input.description?.trim()||null, validityDays=input.validityDays??null;
     if(!code||code.length>80) throw new CompetencyValidationError("Competency program code is required");
     if(!title||title.length>240) throw new CompetencyValidationError("Competency program title is required");
     if((description?.length??0)>2000) throw new CompetencyValidationError("Competency program description is too long");
     if(validityDays!==null&&(!Number.isInteger(validityDays)||validityDays<1||validityDays>3650)) throw new CompetencyValidationError("Competency validity days are invalid");
+    const initialDueDays = input.initialDueDays ?? null;
+    const reassessmentIntervalDays = input.reassessmentIntervalDays ?? null;
+    if (initialDueDays !== null && (!Number.isInteger(initialDueDays) || initialDueDays < 0 || initialDueDays > competencyScheduleMaxDays)) {
+      throw new CompetencyValidationError("Enter a supported number of days for the initial assessment.");
+    }
+    if (reassessmentIntervalDays !== null && (!Number.isInteger(reassessmentIntervalDays) || reassessmentIntervalDays < 1 || reassessmentIntervalDays > competencyScheduleMaxDays)) {
+      throw new CompetencyValidationError("Enter a supported number of days between reassessments.");
+    }
     if (input.equipmentId) requireAuthorization(context, { organizationId: input.organizationId, permission: "equipment.read" });
     if (input.testSystemId && input.newTestSystem) {
       throw new CompetencyValidationError("Choose an existing test system or enter a new one.");
@@ -49,6 +58,7 @@ export class CompetencyService {
     return this.store.createProgram({
       organizationId: input.organizationId, code, title, description, validityDays, actorUserId: context.userId,
       equipmentId: input.equipmentId ?? null, testSystemId: input.testSystemId ?? null, newTestSystem,
+      initialDueDays, reassessmentIntervalDays,
     });
   }
   listElements(context:AuthorizationContext,organizationId:string,programId:string){ requireAuthorization(context,{organizationId,permission:"training.read"}); return this.store.listElements(organizationId,programId); }
