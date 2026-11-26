@@ -9,6 +9,7 @@ import { CliaCompetencyProgramBuilder } from "./clia-competency-program-builder"
 import { CompetencyAssessmentObservations } from "./competency-assessment-observations";
 import { CompetencyEvaluatorWorkspace } from "./competency-evaluator-workspace";
 import { CompetencyProgramScopeFields } from "./competency-program-scope-fields";
+import { CompetencyRemediationPanel } from "./competency-remediation-panel";
 import { CompetencyRequirementsMatrix } from "./competency-requirements-matrix";
 import { GovernedEvidenceFilePicker } from "./governed-evidence-file-picker";
 
@@ -363,13 +364,16 @@ export function CompetencyManagementWorkspace({ canManage, canManageEvaluators, 
                 <td>{assessment.notes || "—"}</td>
                 <td>
                   <button type="button" aria-expanded={expanded} onClick={() => setExpandedAssessmentId(expanded ? "" : assessment.id)}>
-                    {expanded ? "Hide method results" : "View method results"}
+                    {expanded ? "Hide assessment details" : "View assessment details"}
                   </button>
                   {canManage && <button type="button" disabled={busy || employee?.status !== "ACTIVE" || !program?.active}
                     onClick={() => startReassessmentFromHistory(assessment)}>Reassess</button>}
                 </td>
               </tr>
-              {expanded && <tr><td colSpan={9}><CompetencyAssessmentObservations assessmentId={assessment.id} /></td></tr>}
+              {expanded && <tr><td colSpan={9}>
+                <CompetencyAssessmentObservations assessmentId={assessment.id} />
+                {assessment.outcome !== "QUALIFIED" && <CompetencyRemediationPanel assessmentId={assessment.id} canManage={canManage} today={today} />}
+              </td></tr>}
             </Fragment>;
           })}
           {!visibleHistory.length && <tr><td colSpan={9}>{assessments.length ? "No assessments match this search." : "No competency assessments have been recorded."}</td></tr>}

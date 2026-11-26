@@ -8,6 +8,7 @@ import type { AuthorizationContext } from "../security/authorization";
 import { cliaCompetencyMethods } from "./clia-competency-methods";
 import { PrismaCompetencyStore } from "./competency-store";
 import { CompetencyService } from "./competency";
+import { closeCompetencyRemediation, openCompetencyRemediation, readCompetencyRemediation } from "./competency-remediation";
 
 const enabled = process.env.RUN_DEMO_FIXTURE_INTEGRATION === "1";
 const disposableUrl = "postgresql://trace_qms_test:local_integration_test_only@127.0.0.1:5433/trace_qms_integration_test?schema=public";
@@ -343,5 +344,47 @@ describe.skipIf(!enabled)("CLIA template writes in migrated PostgreSQL", () => {
     await db.credential.update({ where: { id: credential.id }, data: { version: { increment: 1 } } });
     await expect(service.createAssessment(manager, { ...assessmentInput, signatureProof: proof })).rejects.toThrow("Reauthentication failed");
     expect((await store.listAssessments(manager.organizationId, employeeId)).filter((row) => row.programId === program.id)).toHaveLength(2);
+  });
+  it("tracks corrective actions and closes only against the latest qualifying reassessment", async () => {
+    const program = await createProgram();
+    const element = await createElement(program.id);
+    const assess = (date: string, outcome: "QUALIFIED" | "CONDITIONAL" | "NOT_QUALIFIED") =>
+      service.createAssessment(manager, {
+        organizationId: manager.organizationId, employeeId, programId: program.id, assessedAt: new Date(date),
+        outcome, elementResults: [{ elementId: element.id, outcome: outcome === "QUALIFIED" ? "PASS" : "FAIL" }],
+      });
+
+    const original = await assess("2025-01-01T12:00:00Z", "NOT_QUALIFIED");
+    const scope = { organizationId: manager.organizationId, assessmentId: original.id, actorUserId: manager.userId };
+    const planInput = { ...scope, plan: "Review the procedure and repeat direct observation.", dueOn: "2025-01-15" };
+    const plan = await openCompetencyRemediation(planInput);
+    await expect(openCompetencyRemediation(planInput)).rejects.toThrow("already exists");
+    expect(await readCompetencyRemediation({ ...scope, organizationId: otherManager.organizationId }, true)).toBeNull();
+    expect(await readCompetencyRemediation(scope, true)).toMatchObject({
+      remediation: { id: plan.id, plan: planInput.plan, dueOn: "2025-01-15", closedAt: null },
+      eligibleFollowUp: null,
+    });
+
+    const superseded = await assess("2025-01-05T12:00:00Z", "QUALIFIED");
+    await assess("2025-01-06T12:00:00Z", "CONDITIONAL");
+    const closure = { ...scope, resolution: "Observed the required method again and confirmed competency." };
+    await expect(closeCompetencyRemediation({ ...closure, followUpAssessmentId: superseded.id })).rejects.toThrow("latest follow-up assessment");
+    const current = await assess("2025-01-07T12:00:00Z", "QUALIFIED");
+    expect(await readCompetencyRemediation(scope, true)).toMatchObject({ eligibleFollowUp: { id: current.id } });
+    const closed = await closeCompetencyRemediation({ ...closure, followUpAssessmentId: current.id });
+    expect(closed.id).toBe(plan.id);
+    await expect(closeCompetencyRemediation({ ...closure, followUpAssessmentId: current.id })).rejects.toThrow("No open remediation plan");
+    expect(await readCompetencyRemediation(scope, true)).toMatchObject({
+      remediation: { followUpAssessmentId: current.id, resolution: closure.resolution, closedAt: expect.any(Date) },
+      eligibleFollowUp: null,
+    });
+    expect((await store.listAssessments(manager.organizationId, employeeId)).find((record) => record.id === original.id)?.outcome)
+      .toBe("NOT_QUALIFIED");
+    expect(await db.auditEvent.findMany({
+      where: { organizationId: manager.organizationId, entityType: "CompetencyRemediation", entityId: plan.id },
+    })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: "COMPETENCY_REMEDIATION_OPENED", actorUserId: manager.userId }),
+      expect.objectContaining({ action: "COMPETENCY_REMEDIATION_CLOSED", actorUserId: manager.userId }),
+    ]));
   });
 });
