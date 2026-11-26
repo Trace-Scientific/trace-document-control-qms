@@ -115,3 +115,26 @@ export async function closeCompetencyRemediation(input: WriteScope & { followUpA
     return remediation;
   });
 }
+
+export type RemediationCoverage = {
+  employeeId: string;
+  open: number;
+  pastDue: number;
+  closed: number;
+};
+
+export function listRemediationCoverage(organizationId: string, asOf: string) {
+  return db.$queryRaw<RemediationCoverage[]>`
+    SELECT a."employeeId",
+      COUNT(*) FILTER (WHERE r."closedAt" IS NULL)::int AS "open",
+      COUNT(*) FILTER (WHERE r."closedAt" IS NULL AND r."dueOn" < ${asOf}::date)::int AS "pastDue",
+      COUNT(*) FILTER (WHERE r."closedAt" IS NOT NULL)::int AS "closed"
+    FROM "CompetencyRemediation" r
+    JOIN "CompetencyAssessment" a
+      ON (a."organizationId", a."id") = (r."organizationId", r."assessmentId")
+    JOIN "Employee" e
+      ON (e."organizationId", e."id") = (a."organizationId", a."employeeId") AND e."status" = 'ACTIVE'
+    WHERE r."organizationId" = ${organizationId}::uuid
+    GROUP BY a."employeeId"
+  `;
+}
