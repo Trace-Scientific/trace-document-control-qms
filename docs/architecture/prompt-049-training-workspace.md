@@ -109,3 +109,21 @@ the interval or advance the qualification count.
 The deadline becomes overdue the day after it is due. Existing programs carry
 no new intervals and retain any recorded expiration. These settings do not
 create assessment records, send reminders, or change qualification decisions.
+
+### Program evaluator designations
+
+Training managers with personnel management permission can record an evaluator
+designation for an active program. The administrator supplies a documented basis
+and available written evidence and selects an active employee with an active
+linked user. The first designation enables the restriction. A restricted program
+requires both the existing training management permission and a current
+designation for the recording account. It stays restricted after the last
+designation is revoked. Revocations retain history and require a reason.
+
+Designation, revocation, and assessment creation serialize on the same program
+row. Assessment audit events retain the applicable designation ID. Current
+employee eligibility and the linked account are checked at recording time.
+Personnel qualification review and applicable delegation decisions belong to the
+laboratory. A designation records the laboratory's decision and is not proof
+of CLIA qualification. Existing programs use their existing authorization
+workflow until a manager records the first designation.
