@@ -128,6 +128,16 @@ laboratory. A designation records the laboratory's decision and is not proof
 of CLIA qualification. Existing programs use their existing authorization
 workflow until a manager records the first designation.
 
+### Employee training and competency coverage
+
+The Training assignments view displays separate employee-level counts for
+training assignments and active competency requirements. Competency counts use
+the same outcome and deadline rules as the requirements matrix. A qualified
+record approaching expiration counts as qualified until expiration. A
+past-due deadline may overlap any qualification status. The tenant-scoped
+coverage route requires training and personnel read permission. Remediation
+plans are tracked separately.
+
 ### Printable assessment record
 
 Training readers with personnel read permission can open a printable record
