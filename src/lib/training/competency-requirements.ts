@@ -22,6 +22,8 @@ export type CompetencyRequirementRow = {
   assessment: CompetencyAssessmentSummary | null;
   requirementEffectiveOn: string;
   initialDueDays: number | null;
+  firstReassessmentDays: number | null;
+  hasMultipleQualifications: boolean;
   reassessmentIntervalDays: number | null;
   lastQualifiedAt: string | null;
   lastQualifiedExpiresAt: string | null;

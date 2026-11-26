@@ -7,7 +7,7 @@ import { evaluateAuthorization, requireAuthorization } from "../security/authori
 export class CompetencyValidationError extends Error {}
 export class CompetencyEligibilityError extends Error {}
 
-export type CompetencyProgramRecord = { id:string; organizationId:string; code:string; title:string; description:string|null; active:boolean; validityDays:number|null; scopeLabel?:string|null; initialDueDays?:number|null; reassessmentIntervalDays?:number|null; createdAt:Date; updatedAt:Date };
+export type CompetencyProgramRecord = { id:string; organizationId:string; code:string; title:string; description:string|null; active:boolean; validityDays:number|null; scopeLabel?:string|null; initialDueDays?:number|null; firstReassessmentDays?:number|null; reassessmentIntervalDays?:number|null; createdAt:Date; updatedAt:Date };
 export type CompetencyElementRecord = { id:string; organizationId:string; programId:string; code:string; title:string; method:string|null; required:boolean; sortOrder:number; createdAt:Date };
 export type CompetencyAssessmentRecord = { id:string; organizationId:string; employeeId:string; programId:string; assessedAt:Date; outcome:"QUALIFIED"|"NOT_QUALIFIED"|"CONDITIONAL"; expiresAt:Date|null; assessorUserId:string; fileId:string|null; notes:string|null; createdAt:Date };
 export type CompetencyElementResultInput = { elementId:string; outcome:"PASS"|"FAIL"|"NOT_APPLICABLE"; notes?:string|null };
@@ -37,9 +37,13 @@ export class CompetencyService {
     if((description?.length??0)>2000) throw new CompetencyValidationError("Competency program description is too long");
     if(validityDays!==null&&(!Number.isInteger(validityDays)||validityDays<1||validityDays>3650)) throw new CompetencyValidationError("Competency validity days are invalid");
     const initialDueDays = input.initialDueDays ?? null;
+    const firstReassessmentDays = input.firstReassessmentDays ?? null;
     const reassessmentIntervalDays = input.reassessmentIntervalDays ?? null;
     if (initialDueDays !== null && (!Number.isInteger(initialDueDays) || initialDueDays < 0 || initialDueDays > competencyScheduleMaxDays)) {
       throw new CompetencyValidationError("Enter a supported number of days for the initial assessment.");
+    }
+    if (firstReassessmentDays !== null && (!Number.isInteger(firstReassessmentDays) || firstReassessmentDays < 1 || firstReassessmentDays > competencyScheduleMaxDays)) {
+      throw new CompetencyValidationError("Enter a supported number of days before the first reassessment.");
     }
     if (reassessmentIntervalDays !== null && (!Number.isInteger(reassessmentIntervalDays) || reassessmentIntervalDays < 1 || reassessmentIntervalDays > competencyScheduleMaxDays)) {
       throw new CompetencyValidationError("Enter a supported number of days between reassessments.");
@@ -58,7 +62,7 @@ export class CompetencyService {
     return this.store.createProgram({
       organizationId: input.organizationId, code, title, description, validityDays, actorUserId: context.userId,
       equipmentId: input.equipmentId ?? null, testSystemId: input.testSystemId ?? null, newTestSystem,
-      initialDueDays, reassessmentIntervalDays,
+      initialDueDays, firstReassessmentDays, reassessmentIntervalDays,
     });
   }
   listElements(context:AuthorizationContext,organizationId:string,programId:string){ requireAuthorization(context,{organizationId,permission:"training.read"}); return this.store.listElements(organizationId,programId); }

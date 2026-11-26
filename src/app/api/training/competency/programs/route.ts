@@ -8,6 +8,7 @@ import { CompetencyEligibilityError, CompetencyService, CompetencyValidationErro
 const service=new CompetencyService(new PrismaCompetencyStore());
 const createSchema=z.object({code:z.string().max(80),title:z.string().max(240),description:z.string().max(2000).nullish(),validityDays:z.number().int().positive().max(3650).nullish(),
   initialDueDays: z.number().int().min(0).max(competencyScheduleMaxDays).nullish(),
+  firstReassessmentDays: z.number().int().min(1).max(competencyScheduleMaxDays).nullish(),
   reassessmentIntervalDays: z.number().int().min(1).max(competencyScheduleMaxDays).nullish(),
   equipmentId: z.string().uuid().nullish(),
   testSystemId: z.string().uuid().nullish(),
