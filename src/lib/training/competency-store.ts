@@ -1,7 +1,42 @@
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import type { CompetencyAssessmentRecord, CompetencyElementRecord, CompetencyProgramRecord, CompetencyStore } from "./competency";
+import type { CompetencyAssessmentRecord, CompetencyElementInput, CompetencyElementRecord, CompetencyProgramRecord, CompetencyProgramWrite, CompetencyStore } from "./competency";
 import { CompetencyEligibilityError, CompetencyValidationError } from "./competency";
+
+// A fresh statement snapshot after the lock sees the previous writer's committed rows.
+const programWriteTransaction = { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted };
+
+async function lockProgram(tx: Prisma.TransactionClient, input: CompetencyProgramWrite) {
+  const [program] = await tx.$queryRaw<Pick<CompetencyProgramRecord, "active" | "validityDays">[]>`
+    SELECT "active", "validityDays" FROM "CompetencyProgram"
+    WHERE "organizationId" = ${input.organizationId}::uuid AND "id" = ${input.programId}::uuid
+    FOR UPDATE
+  `;
+  if (!program) throw new Error("Access denied");
+  return program;
+}
+
+async function insertElement(tx: Prisma.TransactionClient, scope: CompetencyProgramWrite, input: CompetencyElementInput) {
+  const [element] = await tx.$queryRaw<CompetencyElementRecord[]>`
+    INSERT INTO "CompetencyElement" ("organizationId", "programId", "code", "title", "method", "required", "sortOrder")
+    VALUES (${scope.organizationId}::uuid, ${scope.programId}::uuid, ${input.code}, ${input.title},
+      ${input.method}, ${input.required}, ${input.sortOrder})
+    ON CONFLICT ("organizationId", "programId", "code") DO NOTHING
+    RETURNING *
+  `;
+  if (!element) throw new CompetencyValidationError(`Element code ${input.code} already exists in this program.`);
+  await tx.auditEvent.create({
+    data: {
+      organizationId: scope.organizationId,
+      actorUserId: scope.actorUserId,
+      action: "COMPETENCY_ELEMENT_CREATED",
+      entityType: "CompetencyElement",
+      entityId: element.id,
+      metadata: { programId: element.programId, code: element.code },
+    },
+  });
+  return element;
+}
 
 export class PrismaCompetencyStore implements CompetencyStore {
   listPrograms(organizationId:string){ return db.$queryRaw<CompetencyProgramRecord[]>(Prisma.sql`SELECT * FROM "CompetencyProgram" WHERE "organizationId"=${organizationId}::uuid ORDER BY "code"`); }
@@ -9,14 +44,42 @@ export class PrismaCompetencyStore implements CompetencyStore {
     return db.$transaction(async tx=>{ const rows=await tx.$queryRaw<CompetencyProgramRecord[]>(Prisma.sql`INSERT INTO "CompetencyProgram" ("organizationId","code","title","description","validityDays") VALUES (${input.organizationId}::uuid,${input.code},${input.title},${input.description},${input.validityDays}) RETURNING *`); const program=rows[0]; if(!program) throw new CompetencyValidationError("Competency program could not be created"); await tx.auditEvent.create({data:{organizationId:input.organizationId,actorUserId:input.actorUserId,action:"COMPETENCY_PROGRAM_CREATED",entityType:"CompetencyProgram",entityId:program.id,metadata:{code:program.code,title:program.title}}}); return program; });
   }
   listElements(organizationId:string,programId:string){ return db.$queryRaw<CompetencyElementRecord[]>(Prisma.sql`SELECT * FROM "CompetencyElement" WHERE "organizationId"=${organizationId}::uuid AND "programId"=${programId}::uuid ORDER BY "sortOrder","code"`); }
-  async createElement(input:{organizationId:string;programId:string;code:string;title:string;method:string|null;required:boolean;sortOrder:number;actorUserId:string}){
-    return db.$transaction(async tx=>{ const programs=await tx.$queryRaw<Array<{active:boolean}>>(Prisma.sql`SELECT "active" FROM "CompetencyProgram" WHERE "organizationId"=${input.organizationId}::uuid AND "id"=${input.programId}::uuid`); if(!programs[0]) throw new Error("Access denied"); if(!programs[0].active) throw new CompetencyEligibilityError("Inactive competency program cannot be changed"); const rows=await tx.$queryRaw<CompetencyElementRecord[]>(Prisma.sql`INSERT INTO "CompetencyElement" ("organizationId","programId","code","title","method","required","sortOrder") VALUES (${input.organizationId}::uuid,${input.programId}::uuid,${input.code},${input.title},${input.method},${input.required},${input.sortOrder}) RETURNING *`); const element=rows[0]; if(!element) throw new CompetencyValidationError("Competency element could not be created"); await tx.auditEvent.create({data:{organizationId:input.organizationId,actorUserId:input.actorUserId,action:"COMPETENCY_ELEMENT_CREATED",entityType:"CompetencyElement",entityId:element.id,metadata:{programId:element.programId,code:element.code}}}); return element; });
+  async createElement(input: CompetencyProgramWrite & CompetencyElementInput) {
+    return db.$transaction(async (tx) => {
+      const program = await lockProgram(tx, input);
+      if (!program.active) throw new CompetencyEligibilityError("Inactive competency program cannot be changed");
+      return insertElement(tx, input, input);
+    }, programWriteTransaction);
   }
+
+  async createCliaTemplate(input: CompetencyProgramWrite & { elements: CompetencyElementInput[] }) {
+    return db.$transaction(async (tx) => {
+      const program = await lockProgram(tx, input);
+      if (!program.active) throw new CompetencyEligibilityError("Inactive competency program cannot be changed");
+
+      const [assessment] = await tx.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "CompetencyAssessment"
+        WHERE "organizationId" = ${input.organizationId}::uuid AND "programId" = ${input.programId}::uuid
+        LIMIT 1
+      `;
+      if (assessment) {
+        throw new CompetencyEligibilityError("This program already has assessments. Select a program without assessments.");
+      }
+
+      const created: CompetencyElementRecord[] = [];
+      for (const element of input.elements) {
+        created.push(await insertElement(tx, input, element));
+      }
+      return created;
+    }, programWriteTransaction);
+  }
+
   listAssessments(organizationId:string,employeeId?:string){ return db.$queryRaw<CompetencyAssessmentRecord[]>(employeeId?Prisma.sql`SELECT * FROM "CompetencyAssessment" WHERE "organizationId"=${organizationId}::uuid AND "employeeId"=${employeeId}::uuid ORDER BY "assessedAt" DESC`:Prisma.sql`SELECT * FROM "CompetencyAssessment" WHERE "organizationId"=${organizationId}::uuid ORDER BY "assessedAt" DESC`); }
   async createAssessment(input:{organizationId:string;employeeId:string;programId:string;assessedAt:Date;outcome:CompetencyAssessmentRecord["outcome"];expiresAt:Date|null;fileId:string|null;notes:string|null;elementResults:Array<{elementId:string;outcome:"PASS"|"FAIL"|"NOT_APPLICABLE";notes?:string|null}>;actorUserId:string}){
     return db.$transaction(async tx=>{
       const employees=await tx.$queryRaw<Array<{status:string}>>(Prisma.sql`SELECT "status"::text AS "status" FROM "Employee" WHERE "organizationId"=${input.organizationId}::uuid AND "id"=${input.employeeId}::uuid`); if(!employees[0]) throw new Error("Access denied"); if(employees[0].status==="TERMINATED") throw new CompetencyEligibilityError("Competency cannot be assessed for a terminated employee");
-      const programs=await tx.$queryRaw<Array<{active:boolean;validityDays:number|null}>>(Prisma.sql`SELECT "active","validityDays" FROM "CompetencyProgram" WHERE "organizationId"=${input.organizationId}::uuid AND "id"=${input.programId}::uuid`); const program=programs[0]; if(!program) throw new Error("Access denied"); if(!program.active) throw new CompetencyEligibilityError("Inactive competency program cannot be assessed");
+      const program = await lockProgram(tx, input);
+      if (!program.active) throw new CompetencyEligibilityError("Inactive competency program cannot be assessed");
       if(input.fileId){ const file=await tx.fileObject.findFirst({where:{organizationId:input.organizationId,id:input.fileId},select:{status:true}}); if(!file) throw new Error("Access denied"); if(file.status!=="AVAILABLE") throw new CompetencyEligibilityError("Competency evidence file must be AVAILABLE"); }
       const elements=await tx.$queryRaw<Array<{id:string;required:boolean}>>(Prisma.sql`SELECT "id","required" FROM "CompetencyElement" WHERE "organizationId"=${input.organizationId}::uuid AND "programId"=${input.programId}::uuid`); const byId=new Map(elements.map(e=>[e.id,e])); for(const result of input.elementResults){ if(!byId.has(result.elementId)) throw new Error("Access denied"); }
       for(const element of elements.filter(e=>e.required)){ const result=input.elementResults.find(r=>r.elementId===element.id); if(!result) throw new CompetencyValidationError("All required competency elements must be assessed"); if(result.outcome==="NOT_APPLICABLE") throw new CompetencyValidationError("Required competency elements cannot be not applicable"); }
@@ -26,6 +89,6 @@ export class PrismaCompetencyStore implements CompetencyStore {
       const rows=await tx.$queryRaw<CompetencyAssessmentRecord[]>(Prisma.sql`INSERT INTO "CompetencyAssessment" ("organizationId","employeeId","programId","assessedAt","outcome","expiresAt","assessorUserId","fileId","notes") VALUES (${input.organizationId}::uuid,${input.employeeId}::uuid,${input.programId}::uuid,${input.assessedAt},${input.outcome}::"CompetencyAssessmentOutcome",${expiresAt},${input.actorUserId}::uuid,${input.fileId}::uuid,${input.notes}) RETURNING *`); const assessment=rows[0]; if(!assessment) throw new CompetencyValidationError("Competency assessment could not be recorded");
       for(const result of input.elementResults){ await tx.$executeRaw(Prisma.sql`INSERT INTO "CompetencyAssessmentElement" ("organizationId","assessmentId","elementId","outcome","notes") VALUES (${input.organizationId}::uuid,${assessment.id}::uuid,${result.elementId}::uuid,${result.outcome}::"CompetencyElementOutcome",${result.notes??null})`); }
       await tx.auditEvent.create({data:{organizationId:input.organizationId,actorUserId:input.actorUserId,action:"COMPETENCY_ASSESSED",entityType:"CompetencyAssessment",entityId:assessment.id,metadata:{employeeId:assessment.employeeId,programId:assessment.programId,outcome:assessment.outcome,assessedAt:assessment.assessedAt.toISOString(),expiresAt:assessment.expiresAt?.toISOString()??null,fileId:assessment.fileId,elementCount:input.elementResults.length}}}); return assessment;
-    });
+    }, programWriteTransaction);
   }
 }

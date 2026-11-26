@@ -106,3 +106,25 @@ For this synthetic-only demo database, recommend 30 days of retained daily backu
 
 - The demo worker is configured for `0 9 * * *` (09:00 UTC). Railway lists a [09:04 UTC execution](https://railway.com/project/e6cc5f1e-3064-46d3-90bf-c763334f01a8/service/7c6f0d34-f772-4979-bc54-1da47b409bd6?environmentId=3bb1cae4-454f-4f6c-b2cb-fb38c8eb58a4&id=9b30046e-1073-485d-98a7-51524a0d4c5b&start=2026-11-24T09%3A04%3A46.964Z&end=2026-11-24T09%3A04%3A53.190Z&returnTo=cron-schedule) whose logs show publication of `trace-qms-demo-20261124T090447Z.backup` and its checksum. The execution history does not identify the trigger for this entry, and its logs contain no paired private-file publication result.
 - The operator's 19:20 UTC manual run published the archive and checksum plus the manifest for four private files. Unattended paired publication remains open. Verify the next scheduler-triggered execution without using **Run now**, and retain the execution time, deployment ID, archive name, checksum upload evidence and paired manifest publication result.
+
+### November 25 paired backup publication
+
+Railway Cron Runs lists an execution from **1:03:27 to 1:03:41 a.m. Pacific**
+(09:03:27–09:03:41 UTC) under the demo backup service configured for 09:00 UTC
+daily. The execution details identify the GitHub source deployment without a
+field distinguishing a scheduled execution from an operator-triggered one.
+[Railway execution logs](https://railway.com/project/e6cc5f1e-3064-46d3-90bf-c763334f01a8/service/7c6f0d34-f772-4979-bc54-1da47b409bd6?environmentId=3bb1cae4-454f-4f6c-b2cb-fb38c8eb58a4&id=2f633325-c09c-4786-a5e4-7e102123cece&start=2026-11-25T09%3A03%3A27.372Z&end=2026-11-25T09%3A03%3A41.031Z&returnTo=cron-schedule#deploy)
+
+- At 1:03:32 a.m. Pacific the worker reported publication of
+  `demo/postgres/trace-qms-demo-20261125T090328Z.backup` and logged the
+  object's size (1,047,976 bytes) and AES256 encryption. The worker emits this
+  success message after both the archive and its matching `.backup.sha256`
+  upload commands succeed.
+- At 1:03:39 a.m. Pacific the worker reported successful paired private-file
+  publication for four files. The publication code writes
+  `demo/private-files/trace-qms-demo-20261125T090328Z.backup/manifest.json`
+  after all file uploads succeed.
+- Publication evidence comes from worker logs and script ordering. The S3
+  checksum and manifest were not independently read back for this review.
+  The prior four-file restore drill used a different archive. Independent
+  reviewer sign-off remains pending.

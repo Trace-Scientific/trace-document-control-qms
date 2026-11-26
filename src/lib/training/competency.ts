@@ -1,3 +1,4 @@
+import { cliaCompetencyMethods } from "./clia-competency-methods";
 import type { AuthorizationContext } from "../security/authorization";
 import { requireAuthorization } from "../security/authorization";
 
@@ -9,11 +10,16 @@ export type CompetencyElementRecord = { id:string; organizationId:string; progra
 export type CompetencyAssessmentRecord = { id:string; organizationId:string; employeeId:string; programId:string; assessedAt:Date; outcome:"QUALIFIED"|"NOT_QUALIFIED"|"CONDITIONAL"; expiresAt:Date|null; assessorUserId:string; fileId:string|null; notes:string|null; createdAt:Date };
 export type CompetencyElementResultInput = { elementId:string; outcome:"PASS"|"FAIL"|"NOT_APPLICABLE"; notes?:string|null };
 
+export type CompetencyElementInput = Pick<CompetencyElementRecord, "code" | "title" | "method" | "required" | "sortOrder">;
+type CliaTemplateElementInput = { code: string; title: string; method: string; required?: boolean };
+export type CompetencyProgramWrite = { organizationId: string; programId: string; actorUserId: string };
+
 export interface CompetencyStore {
   listPrograms(organizationId:string):Promise<CompetencyProgramRecord[]>;
   createProgram(input:{organizationId:string;code:string;title:string;description:string|null;validityDays:number|null;actorUserId:string}):Promise<CompetencyProgramRecord>;
   listElements(organizationId:string, programId:string):Promise<CompetencyElementRecord[]>;
-  createElement(input:{organizationId:string;programId:string;code:string;title:string;method:string|null;required:boolean;sortOrder:number;actorUserId:string}):Promise<CompetencyElementRecord>;
+  createElement(input: CompetencyProgramWrite & CompetencyElementInput): Promise<CompetencyElementRecord>;
+  createCliaTemplate(input: CompetencyProgramWrite & { elements: CompetencyElementInput[] }): Promise<CompetencyElementRecord[]>;
   listAssessments(organizationId:string, employeeId?:string):Promise<CompetencyAssessmentRecord[]>;
   createAssessment(input:{organizationId:string;employeeId:string;programId:string;assessedAt:Date;outcome:CompetencyAssessmentRecord["outcome"];expiresAt:Date|null;fileId:string|null;notes:string|null;elementResults:CompetencyElementResultInput[];actorUserId:string}):Promise<CompetencyAssessmentRecord>;
 }
@@ -39,6 +45,32 @@ export class CompetencyService {
     if((method?.length??0)>500) throw new CompetencyValidationError("Competency element method is too long");
     if(!Number.isInteger(sortOrder)||sortOrder<0) throw new CompetencyValidationError("Competency element sort order is invalid");
     return this.store.createElement({organizationId:input.organizationId,programId:input.programId,code,title,method,required:input.required??true,sortOrder,actorUserId:context.userId});
+  }
+  createCliaTemplate(context: AuthorizationContext, input: {
+    organizationId: string;
+    programId: string;
+    elements: CliaTemplateElementInput[];
+  }) {
+    const { organizationId, programId } = input;
+    requireAuthorization(context, { organizationId, permission: "training.manage" });
+
+    const byCode = new Map(input.elements.map((element) => [element.code, element]));
+    if (input.elements.length !== cliaCompetencyMethods.length || byCode.size !== input.elements.length) {
+      throw new CompetencyValidationError("Supply all six distinct CLIA assessment methods.");
+    }
+
+    const elements = cliaCompetencyMethods.map(({ code }, index) => {
+      const element = byCode.get(code);
+      if (!element) throw new CompetencyValidationError("Supply all six distinct CLIA assessment methods.");
+      const title = element.title.trim();
+      const method = element.method.trim();
+      if (!title || title.length > 240 || !method || method.length > 500) {
+        throw new CompetencyValidationError(`Enter a title and assessment instructions for ${code}.`);
+      }
+      return { code, title, method, required: element.required ?? true, sortOrder: index + 1 };
+    });
+
+    return this.store.createCliaTemplate({ organizationId, programId, actorUserId: context.userId, elements });
   }
   listAssessments(context:AuthorizationContext,organizationId:string,employeeId?:string){ requireAuthorization(context,{organizationId,permission:"training.read"}); return this.store.listAssessments(organizationId,employeeId); }
   createAssessment(context:AuthorizationContext,input:{organizationId:string;employeeId:string;programId:string;assessedAt:Date;outcome:CompetencyAssessmentRecord["outcome"];expiresAt?:Date|null;fileId?:string|null;notes?:string|null;elementResults:CompetencyElementResultInput[]}){

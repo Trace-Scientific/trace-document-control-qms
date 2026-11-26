@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { competencyDashboard, competencyRollups, type CompetencyAssessmentSummary } from "@/lib/training/competency-rollup";
+import { cliaCompetencyMethods } from "@/lib/training/clia-competency-methods";
+import { CliaCompetencyProgramBuilder } from "./clia-competency-program-builder";
 import { GovernedEvidenceFilePicker } from "./governed-evidence-file-picker";
 
 type Employee = { id: string; employeeNumber: string; firstName: string; lastName: string; status: "ACTIVE" | "INACTIVE" | "TERMINATED" };
@@ -10,15 +12,6 @@ type Element = { id: string; programId: string; code: string; title: string; req
 type Assessment = CompetencyAssessmentSummary & { fileId: string | null; notes: string | null; assessorUserId: string };
 type EvidenceFileSummary = { id: string; originalName: string; status: string };
 type Section = "status" | "history" | "assessment" | "programs" | "elements";
-
-const cliaMethods = [
-  { code: "CLIA-01", title: "Direct observation of routine patient testing", method: "Observe routine patient testing, including patient preparation, specimen handling, processing and testing as applicable." },
-  { code: "CLIA-02", title: "Recording and reporting test results", method: "Monitor recording and reporting of test results." },
-  { code: "CLIA-03", title: "Review of testing and quality records", method: "Review intermediate test results or worksheets, quality control, proficiency testing and preventive maintenance records." },
-  { code: "CLIA-04", title: "Instrument maintenance and function checks", method: "Directly observe performance of instrument maintenance and function checks." },
-  { code: "CLIA-05", title: "Assessment of test performance", method: "Assess performance using previously analyzed specimens, internal blind testing samples or external proficiency testing samples." },
-  { code: "CLIA-06", title: "Problem-solving skills", method: "Assess problem-solving skills using relevant testing scenarios." },
-];
 
 function formatDateOnly(value: string | null) {
   if (!value) return "—";
@@ -325,6 +318,16 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
 
     {section === "programs" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Competency programs</h3><p>Create governed programs and optional validity periods.</p></div></div><form onSubmit={createProgram} className="admin-form"><label>Program code<input name="code" maxLength={80} required /></label><label>Program title<input name="title" maxLength={240} required /></label><label>Validity days<input name="validityDays" type="number" min={1} max={3650} /></label><label>Description<textarea name="description" maxLength={2000} /></label><button type="submit" disabled={busy}>Create competency program</button></form></div>}
 
-    {section === "elements" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Program elements</h3><p>Configure the elements and methods required for competency assessment.</p></div></div><form onSubmit={createElement} className="admin-form"><label>Program<select name="programId" defaultValue="" required><option value="" disabled>Select program</option>{programs.filter((program) => program.active).map((program) => <option key={program.id} value={program.id}>{program.code} · {program.title}</option>)}</select></label><label>CLIA assessment method preset<select value="" disabled={busy} onChange={event => { const preset = cliaMethods.find(item => item.code === event.target.value); if (preset) { setElementCode(preset.code); setElementTitle(preset.title); setElementMethod(preset.method); setElementOrder(Number(preset.code.slice(-2))); setElementRequired(true); } }}><option value="">Choose a method to prefill</option>{cliaMethods.map(item => <option key={item.code} value={item.code}>{item.title}</option>)}</select></label><p>Adapt each preset to the selected test system and laboratory procedure before saving. Add each applicable method separately. Presets do not certify compliance or create assessment results.</p><label>Element code<input name="code" maxLength={80} value={elementCode} onChange={event => setElementCode(event.target.value)} required /></label><label>Element title<input name="title" maxLength={240} value={elementTitle} onChange={event => setElementTitle(event.target.value)} required /></label><label>Method<input name="method" maxLength={500} value={elementMethod} onChange={event => setElementMethod(event.target.value)} /></label><label>Sort order<input name="sortOrder" type="number" min={0} value={elementOrder} onChange={event => setElementOrder(Number(event.target.value))} /></label><label><input name="required" type="checkbox" checked={elementRequired} onChange={event => setElementRequired(event.target.checked)} /> Required element</label><button type="submit" disabled={busy}>Add competency element</button></form></div>}
+    {section === "elements" && canManage && <CliaCompetencyProgramBuilder
+      programs={programs.filter((program) => program.active)}
+      onSaved={(programId) => {
+        if (selectedProgramId === programId) {
+          setSelectedProgramId("");
+          setElements([]);
+        }
+      }}
+    />}
+
+    {section === "elements" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Program elements</h3><p>Configure the elements and methods required for competency assessment.</p></div></div><form onSubmit={createElement} className="admin-form"><label>Program<select name="programId" defaultValue="" required><option value="" disabled>Select program</option>{programs.filter((program) => program.active).map((program) => <option key={program.id} value={program.id}>{program.code} · {program.title}</option>)}</select></label><label>CLIA assessment method preset<select value="" disabled={busy} onChange={event => { const preset = cliaCompetencyMethods.find(item => item.code === event.target.value); if (preset) { setElementCode(preset.code); setElementTitle(preset.title); setElementMethod(preset.method); setElementOrder(Number(preset.code.slice(-2))); setElementRequired(true); } }}><option value="">Choose a method to prefill</option>{cliaCompetencyMethods.map(item => <option key={item.code} value={item.code}>{item.title}</option>)}</select></label><p>Adapt each preset to the selected test system and laboratory procedure before saving. Add each applicable method separately. Presets do not certify compliance or create assessment results.</p><label>Element code<input name="code" maxLength={80} value={elementCode} onChange={event => setElementCode(event.target.value)} required /></label><label>Element title<input name="title" maxLength={240} value={elementTitle} onChange={event => setElementTitle(event.target.value)} required /></label><label>Method<input name="method" maxLength={500} value={elementMethod} onChange={event => setElementMethod(event.target.value)} /></label><label>Sort order<input name="sortOrder" type="number" min={0} value={elementOrder} onChange={event => setElementOrder(Number(event.target.value))} /></label><label><input name="required" type="checkbox" checked={elementRequired} onChange={event => setElementRequired(event.target.checked)} /> Required element</label><button type="submit" disabled={busy}>Add competency element</button></form></div>}
   </section>;
 }
