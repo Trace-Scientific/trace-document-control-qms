@@ -282,4 +282,28 @@ describe.skipIf(!enabled)("CLIA template writes in migrated PostgreSQL", () => {
     await expect(service.createAssessment(manager, assessmentInput)).rejects.toThrow("requires an authorized evaluator");
     expect((await store.listAssessments(manager.organizationId, employeeId)).map((row) => row.id)).toContain(recorded.id);
   });
+  it("returns the recorded method observations in order for the originating tenant", async () => {
+    const program = await createProgram();
+    const first = await service.createElement(manager, {
+      organizationId: manager.organizationId, programId: program.id, code: "Z-FIRST",
+      title: "First method", sortOrder: 1,
+    });
+    const second = await service.createElement(manager, {
+      organizationId: manager.organizationId, programId: program.id, code: "A-SECOND",
+      title: "Second method", sortOrder: 2,
+    });
+    const assessment = await service.createAssessment(manager, {
+      organizationId: manager.organizationId, programId: program.id, employeeId,
+      assessedAt: new Date(), outcome: "NOT_QUALIFIED", elementResults: [
+        { elementId: second.id, outcome: "FAIL", notes: "  Repeat observation needed.  " },
+        { elementId: first.id, outcome: "PASS" },
+      ],
+    });
+    await createElement(program.id, "ADDED-LATER");
+    expect(await store.readAssessmentObservations(manager.organizationId, assessment.id)).toEqual([
+      { elementId: first.id, code: "Z-FIRST", title: "First method", outcome: "PASS", notes: null },
+      { elementId: second.id, code: "A-SECOND", title: "Second method", outcome: "FAIL", notes: "Repeat observation needed." },
+    ]);
+    expect(await store.readAssessmentObservations(otherManager.organizationId, assessment.id)).toBeNull();
+  });
 });
