@@ -34,7 +34,7 @@ async function fetchRequirements(signal?: AbortSignal): Promise<CompetencyRequir
 
 export function CompetencyRequirementsMatrix({ canManage, programs, today, onAssess }: {
   canManage: boolean;
-  programs: { id: string; code: string; title: string }[];
+  programs: { id: string; code: string; title: string; scopeLabel?: string | null }[];
   today: string;
   onAssess: (employeeId: string, programId: string) => void;
 }) {
@@ -166,7 +166,7 @@ export function CompetencyRequirementsMatrix({ canManage, programs, today, onAss
         <form className="admin-form" onSubmit={(event) => void save(event, "CREATE")}>
           <label>Program<select name="programId" defaultValue="" required>
             <option value="">Select an active program</option>
-            {programs.map((program) => <option key={program.id} value={program.id}>{program.code} · {program.title}</option>)}
+            {programs.map((program) => <option key={program.id} value={program.id}>{[program.code, program.title, program.scopeLabel].filter(Boolean).join(" · ")}</option>)}
           </select></label>
           <label>Applies to<select value={scope} onChange={(event) => setScope(event.target.value as CompetencyRequirementScope)}>
             {competencyRequirementScopes.map((value) => <option key={value} value={value}>{scopeLabels[value]}</option>)}

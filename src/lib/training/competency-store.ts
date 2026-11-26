@@ -1,3 +1,4 @@
+import { competencyScopeJoins, competencyScopeLabel, type CompetencyProgramScopeInput } from "./competency-program-scope";
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
 import type { CompetencyAssessmentRecord, CompetencyElementInput, CompetencyElementRecord, CompetencyProgramRecord, CompetencyProgramWrite, CompetencyStore } from "./competency";
@@ -39,9 +40,67 @@ async function insertElement(tx: Prisma.TransactionClient, scope: CompetencyProg
 }
 
 export class PrismaCompetencyStore implements CompetencyStore {
-  listPrograms(organizationId:string){ return db.$queryRaw<CompetencyProgramRecord[]>(Prisma.sql`SELECT * FROM "CompetencyProgram" WHERE "organizationId"=${organizationId}::uuid ORDER BY "code"`); }
-  async createProgram(input:{organizationId:string;code:string;title:string;description:string|null;validityDays:number|null;actorUserId:string}){
-    return db.$transaction(async tx=>{ const rows=await tx.$queryRaw<CompetencyProgramRecord[]>(Prisma.sql`INSERT INTO "CompetencyProgram" ("organizationId","code","title","description","validityDays") VALUES (${input.organizationId}::uuid,${input.code},${input.title},${input.description},${input.validityDays}) RETURNING *`); const program=rows[0]; if(!program) throw new CompetencyValidationError("Competency program could not be created"); await tx.auditEvent.create({data:{organizationId:input.organizationId,actorUserId:input.actorUserId,action:"COMPETENCY_PROGRAM_CREATED",entityType:"CompetencyProgram",entityId:program.id,metadata:{code:program.code,title:program.title}}}); return program; });
+  listPrograms(organizationId: string, includeEquipment = false) {
+    return db.$queryRaw<CompetencyProgramRecord[]>`
+      SELECT p."id", p."organizationId", p."code", p."title", p."description",
+        p."active", p."validityDays", p."createdAt", p."updatedAt", ${competencyScopeLabel} AS "scopeLabel"
+      FROM "CompetencyProgram" p ${competencyScopeJoins(includeEquipment)}
+      WHERE p."organizationId" = ${organizationId}::uuid ORDER BY p."code"
+    `;
+  }
+
+  async createProgram(input: {
+    organizationId: string; code: string; title: string; description: string | null;
+    validityDays: number | null; actorUserId: string;
+  } & CompetencyProgramScopeInput) {
+    const { organizationId, actorUserId, code, title, description, validityDays, equipmentId = null } = input;
+    return db.$transaction(async (tx) => {
+      if (equipmentId) {
+        const [equipment] = await tx.$queryRaw<{ status: string }[]>`
+          SELECT "status"::text AS "status" FROM "Equipment"
+          WHERE "organizationId" = ${organizationId}::uuid AND "id" = ${equipmentId}::uuid FOR SHARE
+        `;
+        if (!equipment) throw new Error("Access denied");
+        if (equipment.status !== "ACTIVE") throw new CompetencyEligibilityError("Select an active instrument.");
+      }
+
+      let testSystemId = input.testSystemId ?? null;
+      if (testSystemId) {
+        const [system] = await tx.$queryRaw<{ id: string }[]>`
+          SELECT "id" FROM "CompetencyTestSystem"
+          WHERE "organizationId" = ${organizationId}::uuid AND "id" = ${testSystemId}::uuid
+        `;
+        if (!system) throw new Error("Access denied");
+      }
+      if (input.newTestSystem) {
+        const { code: systemCode, name } = input.newTestSystem;
+        const [system] = await tx.$queryRaw<{ id: string }[]>`
+          INSERT INTO "CompetencyTestSystem" ("organizationId", "code", "name")
+          VALUES (${organizationId}::uuid, ${systemCode}, ${name})
+          ON CONFLICT ("organizationId", "code") DO NOTHING RETURNING "id"
+        `;
+        if (!system) throw new CompetencyValidationError("This test system code already exists. Select the existing test system.");
+        testSystemId = system.id;
+        await tx.auditEvent.create({ data: {
+          organizationId, actorUserId, action: "COMPETENCY_TEST_SYSTEM_CREATED",
+          entityType: "CompetencyTestSystem", entityId: system.id, metadata: { code: systemCode, name },
+        } });
+      }
+
+      const [program] = await tx.$queryRaw<CompetencyProgramRecord[]>`
+        INSERT INTO "CompetencyProgram"
+          ("organizationId", "code", "title", "description", "validityDays", "equipmentId", "testSystemId")
+        VALUES (${organizationId}::uuid, ${code}, ${title}, ${description}, ${validityDays}, ${equipmentId}::uuid, ${testSystemId}::uuid)
+        ON CONFLICT ("organizationId", "code") DO NOTHING
+        RETURNING "id", "organizationId", "code", "title", "description", "active", "validityDays", "createdAt", "updatedAt"
+      `;
+      if (!program) throw new CompetencyValidationError("This competency program code already exists.");
+      await tx.auditEvent.create({ data: {
+        organizationId, actorUserId, action: "COMPETENCY_PROGRAM_CREATED", entityType: "CompetencyProgram",
+        entityId: program.id, metadata: { code, title, equipmentId, testSystemId },
+      } });
+      return program;
+    });
   }
   listElements(organizationId:string,programId:string){ return db.$queryRaw<CompetencyElementRecord[]>(Prisma.sql`SELECT * FROM "CompetencyElement" WHERE "organizationId"=${organizationId}::uuid AND "programId"=${programId}::uuid ORDER BY "sortOrder","code"`); }
   async createElement(input: CompetencyProgramWrite & CompetencyElementInput) {
