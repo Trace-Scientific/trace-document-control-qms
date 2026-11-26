@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authenticateRequest, AuthenticationRequiredError } from "@/lib/security/authenticated-request";
-import { requireAuthorization } from "@/lib/security/authorization";
+import { evaluateAuthorization, requireAuthorization } from "@/lib/security/authorization";
 import { PrismaCompetencyStore } from "@/lib/training/competency-store";
 
 const store = new PrismaCompetencyStore();
@@ -15,7 +15,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const observations = await store.readAssessmentObservations(organizationId, assessmentId);
     if (!observations) return NextResponse.json({ error: "Assessment not found." }, { status: 404 });
     const signature = await store.readAssessmentSignature(organizationId, assessmentId);
-    return NextResponse.json({ data: observations, signature });
+    const canPrint = evaluateAuthorization(context, { organizationId, permission: "personnel.read" }).allowed;
+    return NextResponse.json({ data: observations, signature, canPrint });
   } catch (error) {
     if (error instanceof AuthenticationRequiredError) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     if (error instanceof z.ZodError) return NextResponse.json({ error: "Invalid assessment ID." }, { status: 422 });

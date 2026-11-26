@@ -128,6 +128,15 @@ laboratory. A designation records the laboratory's decision and is not proof
 of CLIA qualification. Existing programs use their existing authorization
 workflow until a manager records the first designation.
 
+### Printable assessment record
+
+Training readers with personnel read permission can open a printable record
+from Assessment history. The record includes the employee, evaluator, program,
+prior assessment date if available, method results, observations, evidence
+reference, and displayed signature status. Equipment labels remain governed
+by equipment read permission. Opening the print view writes an attributed
+audit event. Use the browser's Print command to print or save a PDF copy.
+
 ### Assessment observations
 
 The assessment form shows each configured method and accepts optional
