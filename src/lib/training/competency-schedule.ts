@@ -1,5 +1,6 @@
 export type CompetencyScheduleSettings = {
   initialDueDays?: number | null;
+  firstReassessmentDays?: number | null;
   reassessmentIntervalDays?: number | null;
 };
 
@@ -9,6 +10,8 @@ type CompetencyScheduleInput = {
   today: string;
   requirementEffectiveOn: string;
   initialDueDays: number | null;
+  firstReassessmentDays: number | null;
+  hasMultipleQualifications: boolean;
   reassessmentIntervalDays: number | null;
   latestAssessment: { assessedAt: string; expiresAt: string | null } | null;
   lastQualifiedAt: string | null;
@@ -36,8 +39,11 @@ export function competencySchedule(input: CompetencyScheduleInput): CompetencySc
 
   const expiration = input.latestAssessment.expiresAt?.slice(0, 10);
   const qualifiedExpiration = input.lastQualifiedExpiresAt?.slice(0, 10);
-  const recurringDueOn = input.lastQualifiedAt && input.reassessmentIntervalDays !== null
-    ? addCalendarDays(input.lastQualifiedAt, input.reassessmentIntervalDays)
+  const intervalDays = input.hasMultipleQualifications
+    ? input.reassessmentIntervalDays
+    : input.firstReassessmentDays ?? input.reassessmentIntervalDays;
+  const recurringDueOn = input.lastQualifiedAt && intervalDays !== null
+    ? addCalendarDays(input.lastQualifiedAt, intervalDays)
     : null;
   const [dueOn] = [expiration, qualifiedExpiration, recurringDueOn]
     .filter((date): date is string => Boolean(date))

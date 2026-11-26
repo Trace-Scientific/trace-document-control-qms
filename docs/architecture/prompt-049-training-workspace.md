@@ -91,8 +91,8 @@ equipment state or assignment.
 
 ### Initial and recurring assessment deadlines
 
-A manager can set an optional initial deadline and recurring interval when
-creating a program. The intervals are calendar days, measured in UTC. A direct
+A manager can set optional initial, first-reassessment, and recurring
+intervals when creating a program. The intervals are calendar days, measured in UTC. A direct
 requirement starts on its creation date. A department or job requirement starts
 on the later of its creation date and the effective job assignment. When
 multiple active rules cover a pair, the earliest applicable start drives the
@@ -101,7 +101,11 @@ initial deadline.
 The matrix shows past-due work separately from recorded qualification. After
 an assessment is recorded, the next deadline is the earliest applicable
 recorded expiration or the last qualification date plus the configured
-interval. An unsuccessful reassessment does not restart the interval.
+interval. A configured first-reassessment interval applies while exactly one
+qualification is on record. A second qualification starts the recurring
+interval. With no first-reassessment interval, the recurring interval applies
+from the first qualification. An unsuccessful reassessment does not restart
+the interval or advance the qualification count.
 The deadline becomes overdue the day after it is due. Existing programs carry
 no new intervals and retain any recorded expiration. These settings do not
 create assessment records, send reminders, or change qualification decisions.

@@ -86,7 +86,8 @@ export async function listCompetencyRequirements(
       )
       SELECT pair.*, e."employeeNumber" || ' · ' || e."lastName" || ', ' || e."firstName" AS "employeeLabel",
         concat_ws(' · ', p."code", p."title", ${competencyScopeLabel}) AS "programLabel", to_jsonb(a) AS "assessment",
-        p."initialDueDays", p."reassessmentIntervalDays",
+        p."initialDueDays", p."firstReassessmentDays", p."reassessmentIntervalDays",
+        COALESCE(q."hasMultipleQualifications", false) AS "hasMultipleQualifications",
         (q."assessedAt" AT TIME ZONE 'UTC')::date::text AS "lastQualifiedAt",
         q."expiresAt"::text AS "lastQualifiedExpiresAt"
       FROM required_pairs pair
@@ -101,10 +102,14 @@ export async function listCompetencyRequirements(
         ORDER BY "assessedAt" DESC, "createdAt" DESC, "id" DESC LIMIT 1
       ) a ON true
       LEFT JOIN LATERAL (
-        SELECT "assessedAt", "expiresAt" FROM "CompetencyAssessment"
-        WHERE "organizationId" = ${organizationId}::uuid
-          AND "employeeId" = pair."employeeId" AND "programId" = pair."programId"
-          AND "outcome" = 'QUALIFIED'
+        SELECT "assessedAt", "expiresAt", count(*) OVER () > 1 AS "hasMultipleQualifications"
+        FROM (
+          SELECT "assessedAt", "expiresAt", "createdAt", "id" FROM "CompetencyAssessment"
+          WHERE "organizationId" = ${organizationId}::uuid
+            AND "employeeId" = pair."employeeId" AND "programId" = pair."programId"
+            AND "outcome" = 'QUALIFIED'
+          ORDER BY "assessedAt" DESC, "createdAt" DESC, "id" DESC LIMIT 2
+        ) qualifications
         ORDER BY "assessedAt" DESC, "createdAt" DESC, "id" DESC LIMIT 1
       ) q ON true
       ORDER BY e."employeeNumber", p."code"

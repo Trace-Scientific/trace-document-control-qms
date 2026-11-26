@@ -5,6 +5,8 @@ const requirement = {
   today: "2028-03-01",
   requirementEffectiveOn: "2028-02-28",
   initialDueDays: 1,
+  firstReassessmentDays: null,
+  hasMultipleQualifications: false,
   reassessmentIntervalDays: 365,
   latestAssessment: null,
   lastQualifiedAt: null,
@@ -59,5 +61,19 @@ describe("competency assessment scheduling", () => {
       lastQualifiedAt: "2027-10-01",
       lastQualifiedExpiresAt: "2028-01-15",
     })).toEqual({ kind: "REASSESSMENT", dueOn: "2028-01-15", overdue: true });
+  });
+  it("uses the configured first interval through unsuccessful reassessments", () => {
+    expect(competencySchedule({
+      ...requirement, firstReassessmentDays: 180,
+      latestAssessment: { assessedAt: "2028-02-20", expiresAt: null }, lastQualifiedAt: "2027-02-01",
+    })).toEqual({ kind: "REASSESSMENT", dueOn: "2027-07-31", overdue: true });
+  });
+
+  it("switches to the recurring interval after the second qualification", () => {
+    const qualifiedAt = "2028-02-01";
+    expect(competencySchedule({
+      ...requirement, firstReassessmentDays: 180, hasMultipleQualifications: true,
+      latestAssessment: { assessedAt: qualifiedAt, expiresAt: null }, lastQualifiedAt: qualifiedAt,
+    })).toEqual({ kind: "REASSESSMENT", dueOn: "2029-01-31", overdue: false });
   });
 });

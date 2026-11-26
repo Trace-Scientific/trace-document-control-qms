@@ -170,7 +170,7 @@ describe.skipIf(!enabled)("Competency requirements in migrated PostgreSQL", () =
   it("projects the requirement start and earlier qualified assessment for a scheduled program", async () => {
     const program = await new PrismaCompetencyStore().createProgram({
       ...context, code: "SCHEDULED", title: "Scheduled program", description: null, validityDays: null,
-      initialDueDays: 0, reassessmentIntervalDays: 365,
+      initialDueDays: 0, firstReassessmentDays: 180, reassessmentIntervalDays: 365,
     });
     const rule = await createCompetencyRequirement({ ...context, programId: program.id, scope: "EMPLOYEE", targetId: employeeId });
     const [expected] = await db.$queryRaw<{ startDate: string }[]>`
@@ -181,7 +181,7 @@ describe.skipIf(!enabled)("Competency requirements in migrated PostgreSQL", () =
       .rows.find((row) => row.programId === program.id);
     expect(await getRow()).toMatchObject({
       requirementEffectiveOn: expected.startDate, initialDueDays: 0, reassessmentIntervalDays: 365,
-      assessment: null, lastQualifiedAt: null, lastQualifiedExpiresAt: null,
+      assessment: null, lastQualifiedAt: null, lastQualifiedExpiresAt: null, hasMultipleQualifications: false,
     });
     await db.$executeRaw`
       INSERT INTO "CompetencyAssessment" ("organizationId", "employeeId", "programId", "assessedAt", "outcome", "expiresAt", "assessorUserId")
@@ -190,10 +190,18 @@ describe.skipIf(!enabled)("Competency requirements in migrated PostgreSQL", () =
         (${context.organizationId}::uuid, ${employeeId}::uuid, ${program.id}::uuid, '2000-02-01T00:00:00Z', 'CONDITIONAL', NULL, ${context.actorUserId}::uuid)
     `;
     expect(await getRow()).toMatchObject({
-      assessment: { outcome: "CONDITIONAL" }, lastQualifiedAt: "2000-01-04", lastQualifiedExpiresAt: "2000-10-04",
+      assessment: { outcome: "CONDITIONAL" }, firstReassessmentDays: 180,
+      lastQualifiedAt: "2000-01-04", lastQualifiedExpiresAt: "2000-10-04", hasMultipleQualifications: false,
+    });
+    await db.$executeRaw`
+      INSERT INTO "CompetencyAssessment" ("organizationId", "employeeId", "programId", "assessedAt", "outcome", "assessorUserId")
+      VALUES (${context.organizationId}::uuid, ${employeeId}::uuid, ${program.id}::uuid, '2000-02-02T00:00:00Z', 'QUALIFIED', ${context.actorUserId}::uuid)
+    `;
+    expect(await getRow()).toMatchObject({
+      assessment: { outcome: "QUALIFIED" }, lastQualifiedAt: "2000-02-02", hasMultipleQualifications: true,
     });
     expect(await db.auditEvent.findFirst({
       where: { organizationId: context.organizationId, entityId: program.id, action: "COMPETENCY_PROGRAM_CREATED" },
-    })).toMatchObject({ metadata: { initialDueDays: 0, reassessmentIntervalDays: 365 } });
+    })).toMatchObject({ metadata: { initialDueDays: 0, firstReassessmentDays: 180, reassessmentIntervalDays: 365 } });
   });
 });

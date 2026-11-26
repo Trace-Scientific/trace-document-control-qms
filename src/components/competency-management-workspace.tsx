@@ -191,11 +191,13 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     const form = new FormData(event.currentTarget);
     const testSystemSelection = form.get("testSystemSelection");
     const initialDueDays = form.get("initialDueDays");
+    const firstReassessmentDays = form.get("firstReassessmentDays");
     const reassessmentIntervalDays = form.get("reassessmentIntervalDays");
     await submit("/api/training/competency/programs", {
       code: String(form.get("code")), title: String(form.get("title")), description: String(form.get("description")) || null,
       validityDays: form.get("validityDays") ? Number(form.get("validityDays")) : null,
       initialDueDays: initialDueDays ? Number(initialDueDays) : null,
+      firstReassessmentDays: firstReassessmentDays ? Number(firstReassessmentDays) : null,
       reassessmentIntervalDays: reassessmentIntervalDays ? Number(reassessmentIntervalDays) : null,
       equipmentId: form.get("equipmentId") || null,
       testSystemId: testSystemSelection === "new" ? null : testSystemSelection || null,
@@ -351,6 +353,9 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
         <label>Validity days<input name="validityDays" type="number" min={1} max={3650} /></label>
         <label>Initial assessment due (days after requirement starts)
           <input name="initialDueDays" type="number" min={0} max={competencyScheduleMaxDays} />
+        </label>
+        <label>First reassessment (days after first qualification)
+          <input name="firstReassessmentDays" type="number" min={1} max={competencyScheduleMaxDays} />
         </label>
         <label>Recurring assessment (days after qualification)
           <input name="reassessmentIntervalDays" type="number" min={1} max={competencyScheduleMaxDays} />
