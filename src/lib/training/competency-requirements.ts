@@ -1,0 +1,29 @@
+import type { CompetencyAssessmentSummary } from "./competency-rollup";
+
+export const competencyRequirementScopes = ["EMPLOYEE", "DEPARTMENT", "JOB"] as const;
+export type CompetencyRequirementScope = (typeof competencyRequirementScopes)[number];
+
+export type CompetencyRequirementTarget = { id: string; label: string };
+export type CompetencyRequirement = {
+  id: string;
+  programId: string;
+  programLabel: string;
+  scope: CompetencyRequirementScope;
+  targetId: string;
+  targetLabel: string;
+};
+
+export type CompetencyRequirementRow = {
+  employeeId: string;
+  employeeLabel: string;
+  programId: string;
+  programLabel: string;
+  requirementIds: string[];
+  assessment: CompetencyAssessmentSummary | null;
+};
+
+export type CompetencyRequirementsView = {
+  requirements: CompetencyRequirement[];
+  rows: CompetencyRequirementRow[];
+  targets: Record<CompetencyRequirementScope, CompetencyRequirementTarget[]>;
+};
