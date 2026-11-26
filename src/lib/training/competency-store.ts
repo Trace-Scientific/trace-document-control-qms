@@ -2,7 +2,7 @@ import type { CompetencyScheduleSettings } from "./competency-schedule";
 import { competencyScopeJoins, competencyScopeLabel, type CompetencyProgramScopeInput } from "./competency-program-scope";
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import type { CompetencyAssessmentRecord, CompetencyElementInput, CompetencyElementRecord, CompetencyProgramRecord, CompetencyProgramWrite, CompetencyStore } from "./competency";
+import type { CompetencyAssessmentRecord, CompetencyElementInput, CompetencyElementRecord, CompetencyObservation, CompetencyProgramRecord, CompetencyProgramWrite, CompetencyStore } from "./competency";
 import { CompetencyEligibilityError, CompetencyValidationError } from "./competency";
 
 // A fresh statement snapshot after the lock sees the previous writer's committed rows.
@@ -222,6 +222,24 @@ export class PrismaCompetencyStore implements CompetencyStore {
   }
 
   listAssessments(organizationId:string,employeeId?:string){ return db.$queryRaw<CompetencyAssessmentRecord[]>(employeeId?Prisma.sql`SELECT * FROM "CompetencyAssessment" WHERE "organizationId"=${organizationId}::uuid AND "employeeId"=${employeeId}::uuid ORDER BY "assessedAt" DESC`:Prisma.sql`SELECT * FROM "CompetencyAssessment" WHERE "organizationId"=${organizationId}::uuid ORDER BY "assessedAt" DESC`); }
+  async readAssessmentObservations(organizationId: string, assessmentId: string) {
+    const [assessment] = await db.$queryRaw<{ observations: CompetencyObservation[] }[]>`
+      SELECT COALESCE(jsonb_agg(
+        jsonb_build_object('elementId', e."id", 'code', e."code", 'title', e."title",
+          'outcome', result."outcome", 'notes', result."notes")
+        ORDER BY e."sortOrder", e."code"
+      ) FILTER (WHERE e."id" IS NOT NULL), '[]'::jsonb) AS "observations"
+      FROM "CompetencyAssessment" a
+      LEFT JOIN "CompetencyAssessmentElement" result
+        ON (result."organizationId", result."assessmentId") = (a."organizationId", a."id")
+      LEFT JOIN "CompetencyElement" e
+        ON (e."organizationId", e."id", e."programId") = (result."organizationId", result."elementId", a."programId")
+      WHERE a."organizationId" = ${organizationId}::uuid AND a."id" = ${assessmentId}::uuid
+      GROUP BY a."id"
+    `;
+    return assessment?.observations ?? null;
+  }
+
   async createAssessment(input:{organizationId:string;employeeId:string;programId:string;assessedAt:Date;outcome:CompetencyAssessmentRecord["outcome"];expiresAt:Date|null;fileId:string|null;notes:string|null;elementResults:Array<{elementId:string;outcome:"PASS"|"FAIL"|"NOT_APPLICABLE";notes?:string|null}>;actorUserId:string}){
     return db.$transaction(async tx=>{
       const employees=await tx.$queryRaw<Array<{status:string}>>(Prisma.sql`SELECT "status"::text AS "status" FROM "Employee" WHERE "organizationId"=${input.organizationId}::uuid AND "id"=${input.employeeId}::uuid`); if(!employees[0]) throw new Error("Access denied"); if(employees[0].status==="TERMINATED") throw new CompetencyEligibilityError("Competency cannot be assessed for a terminated employee");

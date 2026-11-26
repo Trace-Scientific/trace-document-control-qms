@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useMemo, useState, type FormEvent } from "react";
 import { competencyDashboard, competencyRollups, type CompetencyAssessmentSummary } from "@/lib/training/competency-rollup";
 import { competencyScheduleMaxDays } from "@/lib/training/competency-schedule";
 import { cliaCompetencyMethods } from "@/lib/training/clia-competency-methods";
 import { CliaCompetencyProgramBuilder } from "./clia-competency-program-builder";
+import { CompetencyAssessmentObservations } from "./competency-assessment-observations";
 import { CompetencyEvaluatorWorkspace } from "./competency-evaluator-workspace";
 import { CompetencyProgramScopeFields } from "./competency-program-scope-fields";
 import { CompetencyRequirementsMatrix } from "./competency-requirements-matrix";
@@ -12,7 +13,7 @@ import { GovernedEvidenceFilePicker } from "./governed-evidence-file-picker";
 
 type Employee = { id: string; employeeNumber: string; firstName: string; lastName: string; status: "ACTIVE" | "INACTIVE" | "TERMINATED" };
 type Program = { id: string; code: string; title: string; active: boolean; validityDays: number | null; scopeLabel?: string | null };
-type Element = { id: string; programId: string; code: string; title: string; required: boolean; sortOrder: number };
+type Element = { id: string; programId: string; code: string; title: string; method: string | null; required: boolean; sortOrder: number };
 type Assessment = CompetencyAssessmentSummary & { fileId: string | null; notes: string | null; assessorUserId: string };
 type EvidenceFileSummary = { id: string; originalName: string; status: string };
 type Section = "status" | "evaluators" | "requirements" | "history" | "assessment" | "programs" | "elements";
@@ -51,6 +52,7 @@ export function CompetencyManagementWorkspace({ canManage, canManageEvaluators, 
   const [elementMethod, setElementMethod] = useState("");
   const [elementOrder, setElementOrder] = useState(0);
   const [elementRequired, setElementRequired] = useState(true);
+  const [expandedAssessmentId, setExpandedAssessmentId] = useState("");
   const [historyQuery, setHistoryQuery] = useState("");
   const [historyEmployeeId, setHistoryEmployeeId] = useState("");
   const [historyFromDate, setHistoryFromDate] = useState("");
@@ -234,7 +236,11 @@ export function CompetencyManagementWorkspace({ canManage, canManageEvaluators, 
     event.preventDefault(); const form = new FormData(event.currentTarget);
     const programId = String(form.get("programId"));
     const programElements = elements.filter((element) => element.programId === programId);
-    const elementResults = programElements.map((element) => ({ elementId: element.id, outcome: String(form.get(`outcome:${element.id}`)) as "PASS" | "FAIL" | "NOT_APPLICABLE", notes: null }));
+    const elementResults = programElements.map((element) => ({
+      elementId: element.id,
+      outcome: String(form.get(`outcome:${element.id}`)) as "PASS" | "FAIL" | "NOT_APPLICABLE",
+      notes: String(form.get(`observation:${element.id}`) ?? "").trim() || null,
+    }));
     if (!programElements.length || !form.get("outcome") || elementResults.some((result) => !["PASS", "FAIL", "NOT_APPLICABLE"].includes(result.outcome))) {
       setNotice("Select an overall decision and explicitly assess every program element before recording.");
       return;
@@ -329,17 +335,53 @@ export function CompetencyManagementWorkspace({ canManage, canManageEvaluators, 
       <label>Assessment decision<select value={historyOutcomeFilter} onChange={(event) => setHistoryOutcomeFilter(event.target.value as "ALL" | "QUALIFIED" | "CONDITIONAL" | "NOT_QUALIFIED")}><option value="ALL">All decisions</option><option value="QUALIFIED">Qualified</option><option value="CONDITIONAL">Conditional</option><option value="NOT_QUALIFIED">Not qualified</option></select></label>
       <p>Showing {visibleHistory.length} of {assessments.length} assessments. Missing an attachment does not by itself determine competency status.</p>
       {(historyQuery || historyEmployeeId || historyFromDate || historyToDate || historyEvidenceFilter !== "ALL" || historyOutcomeFilter !== "ALL") && <button type="button" onClick={() => { setHistoryQuery(""); setHistoryEmployeeId(""); setHistoryFromDate(""); setHistoryToDate(""); setHistoryEvidenceFilter("ALL"); setHistoryOutcomeFilter("ALL"); }}>Clear history filters</button>}
-      <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Assessed at</th><th>Assessor account</th><th>Outcome</th><th>Expires</th><th>Evidence file</th><th>Assessment notes</th>{canManage && <th>Next action</th>}</tr></thead><tbody>
-        {visibleHistory.map((assessment) => { const employee = employeeById.get(assessment.employeeId); const program = programById.get(assessment.programId); return <tr key={assessment.id}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assessment.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : assessment.programId}</td><td>{new Date(assessment.assessedAt).toLocaleString()}</td><td><code>{assessment.assessorUserId}</code></td><td>{assessment.outcome}</td><td>{formatDateOnly(assessment.expiresAt)}</td><td>{assessment.fileId ? <><span>{evidenceById.get(assessment.fileId)?.originalName || "File reference"}</span> <code>{assessment.fileId}</code></> : "Not attached"}</td><td>{assessment.notes || "—"}</td>{canManage && <td><button type="button" disabled={busy || employee?.status !== "ACTIVE" || !program?.active} onClick={() => startReassessmentFromHistory(assessment)}>Reassess</button></td>}</tr>; })}
-        {!visibleHistory.length && <tr><td colSpan={canManage ? 9 : 8}>{assessments.length ? "No assessments match this search." : "No competency assessments have been recorded."}</td></tr>}
-      </tbody></table></div>
+      <div className="table-wrap"><table>
+        <thead><tr><th>Employee</th><th>Program</th><th>Assessed at</th><th>Assessor account</th><th>Outcome</th><th>Expires</th><th>Evidence file</th><th>Assessment notes</th><th>Actions</th></tr></thead>
+        <tbody>
+          {visibleHistory.map((assessment) => {
+            const employee = employeeById.get(assessment.employeeId);
+            const program = programById.get(assessment.programId);
+            const expanded = expandedAssessmentId === assessment.id;
+            return <Fragment key={assessment.id}>
+              <tr>
+                <td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : assessment.employeeId}</td>
+                <td>{program ? `${program.code} · ${program.title}` : assessment.programId}</td>
+                <td>{new Date(assessment.assessedAt).toLocaleString()}</td>
+                <td><code>{assessment.assessorUserId}</code></td>
+                <td>{assessment.outcome}</td>
+                <td>{formatDateOnly(assessment.expiresAt)}</td>
+                <td>{assessment.fileId ? <><span>{evidenceById.get(assessment.fileId)?.originalName || "File reference"}</span> <code>{assessment.fileId}</code></> : "Not attached"}</td>
+                <td>{assessment.notes || "—"}</td>
+                <td>
+                  <button type="button" aria-expanded={expanded} onClick={() => setExpandedAssessmentId(expanded ? "" : assessment.id)}>
+                    {expanded ? "Hide method results" : "View method results"}
+                  </button>
+                  {canManage && <button type="button" disabled={busy || employee?.status !== "ACTIVE" || !program?.active}
+                    onClick={() => startReassessmentFromHistory(assessment)}>Reassess</button>}
+                </td>
+              </tr>
+              {expanded && <tr><td colSpan={9}><CompetencyAssessmentObservations assessmentId={assessment.id} /></td></tr>}
+            </Fragment>;
+          })}
+          {!visibleHistory.length && <tr><td colSpan={9}>{assessments.length ? "No assessments match this search." : "No competency assessments have been recorded."}</td></tr>}
+        </tbody>
+      </table></div>
     </div>}
 
     {section === "assessment" && canManage && <div className="module-section-stack"><div className="section-heading"><div><h3>Record competency assessment</h3><p>Record an append-only assessment decision and supporting evidence. Training completion alone does not establish competency: assess each program element and select the qualification outcome based on observed evidence.</p></div></div><form onSubmit={createAssessment} className="admin-form">
       <label>Employee<select name="employeeId" value={selectedEmployeeId} onChange={(event) => setSelectedEmployeeId(event.target.value)} required><option value="" disabled>Select employee</option>{employees.filter((employee) => employee.status === "ACTIVE").map((employee) => <option key={employee.id} value={employee.id}>{employee.employeeNumber} · {employee.lastName}, {employee.firstName}</option>)}</select></label>
       <label>Program<select name="programId" value={selectedProgramId} onChange={(event) => { setElements([]); setSelectedProgramId(event.target.value); }} required><option value="" disabled>Select program</option>{programs.filter((program) => program.active).map((program) => <option key={program.id} value={program.id}>{[program.code, program.title, program.scopeLabel].filter(Boolean).join(" · ")}</option>)}</select></label>
       <label>Assessed at<input name="assessedAt" type="datetime-local" defaultValue={localDateTimeInputValue(new Date())} required /></label><label>Overall outcome<select name="outcome" defaultValue="" required><option value="" disabled>Select overall decision</option><option value="QUALIFIED">Qualified</option><option value="CONDITIONAL">Conditional</option><option value="NOT_QUALIFIED">Not qualified</option></select></label><label>Explicit expiration<input name="expiresAt" type="date" /></label><label>Notes<textarea name="notes" maxLength={2000} /></label>
-      {elements.map((element) => <label key={element.id}>{element.code} · {element.title}{element.required ? " *" : ""}<select name={`outcome:${element.id}`} defaultValue="" required><option value="" disabled>Select assessment result</option><option value="PASS">Pass</option><option value="FAIL">Fail</option>{!element.required && <option value="NOT_APPLICABLE">Not applicable</option>}</select></label>)}
+      {elements.map((element) => <fieldset key={element.id}>
+        <legend>{element.code} · {element.title}{element.required ? " (required)" : ""}</legend>
+        {element.method && <p>{element.method}</p>}
+        <label>Result<select name={`outcome:${element.id}`} defaultValue="" required>
+          <option value="" disabled>Select assessment result</option>
+          <option value="PASS">Pass</option><option value="FAIL">Fail</option>
+          {!element.required && <option value="NOT_APPLICABLE">Not applicable</option>}
+        </select></label>
+        <label>Observation notes<textarea name={`observation:${element.id}`} maxLength={1000} /></label>
+      </fieldset>)}
       <GovernedEvidenceFilePicker domain="training" disabled={busy} />
       <button type="submit" disabled={busy || !selectedProgramId || elements.length === 0}>Record competency assessment</button>
     </form></div>}

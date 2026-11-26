@@ -127,3 +127,13 @@ Personnel qualification review and applicable delegation decisions belong to the
 laboratory. A designation records the laboratory's decision and is not proof
 of CLIA qualification. Existing programs use their existing authorization
 workflow until a manager records the first designation.
+
+### Assessment observations
+
+The assessment form shows each configured method and accepts optional
+observation notes alongside its result. Notes are recorded with the corresponding
+method result in the same assessment transaction. Assessment history loads
+recorded results and observations for the selected assessment using the existing
+training read permission. Later additions to the program do not appear in an
+earlier assessment's results. These records use the existing assessment and
+audit events. The observation fields do not add an electronic signature.

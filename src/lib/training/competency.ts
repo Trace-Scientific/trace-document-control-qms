@@ -12,6 +12,14 @@ export type CompetencyElementRecord = { id:string; organizationId:string; progra
 export type CompetencyAssessmentRecord = { id:string; organizationId:string; employeeId:string; programId:string; assessedAt:Date; outcome:"QUALIFIED"|"NOT_QUALIFIED"|"CONDITIONAL"; expiresAt:Date|null; assessorUserId:string; fileId:string|null; notes:string|null; createdAt:Date };
 export type CompetencyElementResultInput = { elementId:string; outcome:"PASS"|"FAIL"|"NOT_APPLICABLE"; notes?:string|null };
 
+export type CompetencyObservation = {
+  elementId: string;
+  code: string;
+  title: string;
+  outcome: CompetencyElementResultInput["outcome"];
+  notes: string | null;
+};
+
 export type CompetencyElementInput = Pick<CompetencyElementRecord, "code" | "title" | "method" | "required" | "sortOrder">;
 type CliaTemplateElementInput = { code: string; title: string; method: string; required?: boolean };
 export type CompetencyProgramWrite = { organizationId: string; programId: string; actorUserId: string };
