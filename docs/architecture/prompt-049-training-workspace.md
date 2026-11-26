@@ -136,7 +136,9 @@ the same outcome and deadline rules as the requirements matrix. A qualified
 record approaching expiration counts as qualified until expiration. A
 past-due deadline may overlap any qualification status. The tenant-scoped
 coverage route requires training and personnel read permission. Remediation
-plans are tracked separately.
+counts cover open, past-due, and closed plans for active employees, including
+plans for programs that are no longer required. Past-due plans remain part
+of the open count. The competency attention filter includes open plans.
 
 ### Printable assessment record
 

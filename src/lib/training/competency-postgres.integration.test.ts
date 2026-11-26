@@ -8,7 +8,7 @@ import type { AuthorizationContext } from "../security/authorization";
 import { cliaCompetencyMethods } from "./clia-competency-methods";
 import { PrismaCompetencyStore } from "./competency-store";
 import { CompetencyService } from "./competency";
-import { closeCompetencyRemediation, openCompetencyRemediation, readCompetencyRemediation } from "./competency-remediation";
+import { closeCompetencyRemediation, listRemediationCoverage, openCompetencyRemediation, readCompetencyRemediation } from "./competency-remediation";
 
 const enabled = process.env.RUN_DEMO_FIXTURE_INTEGRATION === "1";
 const disposableUrl = "postgresql://trace_qms_test:local_integration_test_only@127.0.0.1:5433/trace_qms_integration_test?schema=public";
@@ -358,6 +358,10 @@ describe.skipIf(!enabled)("CLIA template writes in migrated PostgreSQL", () => {
     const scope = { organizationId: manager.organizationId, assessmentId: original.id, actorUserId: manager.userId };
     const planInput = { ...scope, plan: "Review the procedure and repeat direct observation.", dueOn: "2025-01-15" };
     const plan = await openCompetencyRemediation(planInput);
+    const coverage = (asOf: string) => listRemediationCoverage(manager.organizationId, asOf);
+    expect(await coverage("2025-01-15")).toEqual([{ employeeId, open: 1, pastDue: 0, closed: 0 }]);
+    expect(await coverage("2025-01-16")).toEqual([{ employeeId, open: 1, pastDue: 1, closed: 0 }]);
+    expect(await listRemediationCoverage(otherManager.organizationId, "2025-01-16")).toEqual([]);
     await expect(openCompetencyRemediation(planInput)).rejects.toThrow("already exists");
     expect(await readCompetencyRemediation({ ...scope, organizationId: otherManager.organizationId }, true)).toBeNull();
     expect(await readCompetencyRemediation(scope, true)).toMatchObject({
@@ -373,6 +377,7 @@ describe.skipIf(!enabled)("CLIA template writes in migrated PostgreSQL", () => {
     expect(await readCompetencyRemediation(scope, true)).toMatchObject({ eligibleFollowUp: { id: current.id } });
     const closed = await closeCompetencyRemediation({ ...closure, followUpAssessmentId: current.id });
     expect(closed.id).toBe(plan.id);
+    expect(await coverage("2025-01-16")).toEqual([{ employeeId, open: 0, pastDue: 0, closed: 1 }]);
     await expect(closeCompetencyRemediation({ ...closure, followUpAssessmentId: current.id })).rejects.toThrow("No open remediation plan");
     expect(await readCompetencyRemediation(scope, true)).toMatchObject({
       remediation: { followUpAssessmentId: current.id, resolution: closure.resolution, closedAt: expect.any(Date) },

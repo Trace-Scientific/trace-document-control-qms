@@ -3,12 +3,13 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { AuthorizationContext } from "@/lib/security/authorization";
 import { GET } from "./route";
 
-const { authenticate, list } = vi.hoisted(() => ({
-  authenticate: vi.fn<() => Promise<AuthorizationContext>>(), list: vi.fn(),
+const { authenticate, list, listRemediation } = vi.hoisted(() => ({
+  authenticate: vi.fn<() => Promise<AuthorizationContext>>(), list: vi.fn(), listRemediation: vi.fn(),
 }));
 vi.mock("@/lib/security/authenticated-request", () => ({
   authenticateRequest: authenticate, AuthenticationRequiredError: class extends Error {},
 }));
+vi.mock("@/lib/training/competency-remediation", () => ({ listRemediationCoverage: listRemediation }));
 vi.mock("@/lib/training/competency-requirements-store", () => ({ listCompetencyRequirements: list }));
 
 const context: AuthorizationContext = {
@@ -20,18 +21,22 @@ const request = () => new NextRequest("https://qms.example.test/api/training/com
 beforeEach(() => {
   authenticate.mockReset().mockResolvedValue(context);
   list.mockReset().mockResolvedValue({ rows: [] });
+  listRemediation.mockReset().mockResolvedValue([]);
 });
 
 it("requires personnel read and training read access", async () => {
   authenticate.mockResolvedValue({ ...context, grants: context.grants.filter(grant => grant.permission === "training.read") });
   expect((await GET(request())).status).toBe(403);
   expect(list).not.toHaveBeenCalled();
+  expect(listRemediation).not.toHaveBeenCalled();
 });
 
 it("uses the session tenant and returns a dated, noncached report without management targets", async () => {
   const response = await GET(request());
   expect(response.status).toBe(200);
   expect(response.headers.get("cache-control")).toBe("private, no-store");
-  expect(await response.json()).toEqual({ asOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), data: [] });
+  const body = await response.json();
+  expect(body).toEqual({ asOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), data: [], remediation: [] });
+  expect(listRemediation).toHaveBeenCalledWith(context.organizationId, body.asOf);
   expect(list).toHaveBeenCalledWith(context.organizationId, false);
 });
