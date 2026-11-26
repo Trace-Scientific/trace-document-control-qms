@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import { QualityCapaValidationError, type CapaRecord, type EffectivenessCheckRecord, type QualityCapaStore } from "./capa";
+import { QualityCapaValidationError, type CapaRecord, type CapaWorkItem, type EffectivenessCheckRecord, type QualityCapaStore } from "./capa";
 
 const allowedStatuses=new Set(["ACTION_REQUIRED","VERIFICATION"]);
 
@@ -12,6 +12,36 @@ async function requireAvailableEvidenceFile(tx:Prisma.TransactionClient,organiza
 
 export class PrismaQualityCapaStore implements QualityCapaStore{
   list(organizationId:string,eventId:string){return db.$queryRaw<CapaRecord[]>(Prisma.sql`SELECT * FROM "QualityCapaAction" WHERE "organizationId"=${organizationId}::uuid AND "eventId"=${eventId}::uuid ORDER BY "createdAt" ASC`);}
+  listWorklist(organizationId: string) {
+    return db.$queryRaw<CapaWorkItem[]>(Prisma.sql`
+      SELECT a."id", a."eventId", q."eventNumber", q."summary" AS "eventSummary",
+             q."status" AS "eventStatus", a."description", a."ownerUserId",
+             TRIM(CONCAT(u."firstName", ' ', u."lastName")) AS "ownerName",
+             to_char(a."dueAt", 'YYYY-MM-DD') AS "dueAt",
+             to_char(a."completedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS "completedAt",
+             CASE
+               WHEN a."status" = 'OPEN' THEN 'OPEN'
+               WHEN checks."hasFailure" THEN 'FAILED_CHECK'
+               ELSE 'NEEDS_CHECK'
+             END AS "stage"
+      FROM "QualityCapaAction" a
+      JOIN "QualityEvent" q ON q."organizationId" = a."organizationId" AND q."id" = a."eventId"
+      JOIN "User" u ON u."organizationId" = a."organizationId" AND u."id" = a."ownerUserId"
+      LEFT JOIN LATERAL (
+        SELECT bool_or(e."result" = 'PASS') AS "hasPass",
+               bool_or(e."result" = 'FAIL') AS "hasFailure"
+        FROM "QualityEffectivenessCheck" e
+        WHERE e."organizationId" = a."organizationId" AND e."eventId" = a."eventId"
+          AND e."capaActionId" = a."id" AND a."status" = 'COMPLETED'
+      ) checks ON TRUE
+      WHERE a."organizationId" = ${organizationId}::uuid AND q."status" <> 'CLOSED'
+        AND (a."status" = 'OPEN' OR checks."hasPass" IS NOT TRUE)
+      ORDER BY CASE WHEN a."status" = 'OPEN' THEN 0 ELSE 1 END,
+               CASE WHEN a."status" = 'OPEN' THEN a."dueAt" END,
+               a."completedAt", a."id"
+    `);
+  }
+
   async create(input:Parameters<QualityCapaStore["create"]>[0]){
     return db.$transaction(async tx=>{
       const events=await tx.$queryRaw<Array<{status:string}>>(Prisma.sql`SELECT "status"::text AS "status" FROM "QualityEvent" WHERE "organizationId"=${input.organizationId}::uuid AND "id"=${input.eventId}::uuid FOR UPDATE`);

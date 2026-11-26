@@ -1,3 +1,4 @@
+import type { QualityEventStatus } from "./events";
 import type { AuthorizationContext } from "../security/authorization";
 import { requireAuthorization } from "../security/authorization";
 
@@ -8,7 +9,22 @@ export type EffectivenessResult="PASS"|"FAIL";
 export type CapaRecord={id:string;organizationId:string;eventId:string;actionType:CapaActionType;description:string;ownerUserId:string;dueAt:Date;status:CapaActionStatus;completedAt:Date|null;completionEvidence:string|null;completionEvidenceFileId:string|null;createdByUserId:string;createdAt:Date};
 export type EffectivenessCheckRecord={id:string;organizationId:string;eventId:string;capaActionId:string;result:EffectivenessResult;evidence:string;evidenceFileId:string|null;checkedByUserId:string;checkedAt:Date};
 
+export type CapaWorkItem = {
+  id: string;
+  eventId: string;
+  eventNumber: string;
+  eventSummary: string;
+  eventStatus: QualityEventStatus;
+  description: string;
+  ownerUserId: string;
+  ownerName: string;
+  dueAt: string;
+  completedAt: string | null;
+  stage: "OPEN" | "NEEDS_CHECK" | "FAILED_CHECK";
+};
+
 export interface QualityCapaStore{
+  listWorklist(organizationId: string): Promise<CapaWorkItem[]>;
   list(organizationId:string,eventId:string):Promise<CapaRecord[]>;
   create(input:{organizationId:string;eventId:string;actionType:CapaActionType;description:string;ownerUserId:string;dueAt:Date;actorUserId:string}):Promise<CapaRecord>;
   complete(input:{organizationId:string;eventId:string;capaActionId:string;completionEvidence:string;completionEvidenceFileId:string|null;actorUserId:string}):Promise<CapaRecord>;
@@ -17,6 +33,11 @@ export interface QualityCapaStore{
 
 export class QualityCapaService{
   constructor(private readonly store:QualityCapaStore){}
+  listWorklist(context: AuthorizationContext) {
+    requireAuthorization(context, { organizationId: context.organizationId, permission: "quality_event.read" });
+    return this.store.listWorklist(context.organizationId);
+  }
+
   list(context:AuthorizationContext,organizationId:string,eventId:string){requireAuthorization(context,{organizationId,permission:"quality_event.read"});return this.store.list(organizationId,eventId);}
   create(context:AuthorizationContext,input:{organizationId:string;eventId:string;actionType:CapaActionType;description:string;ownerUserId:string;dueAt:Date}){
     requireAuthorization(context,{organizationId:input.organizationId,permission:"quality_event.manage"});

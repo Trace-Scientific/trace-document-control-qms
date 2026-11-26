@@ -36,6 +36,8 @@ jobs:
         run: npx vitest run src/lib/documents/demo-fixture-postgres.integration.test.ts
       - name: Verify competency transactions and requirement coverage
         run: npx vitest run src/lib/training/competency-postgres.integration.test.ts src/lib/training/competency-requirements-postgres.integration.test.ts
+      - name: Verify CAPA worklist and tenant isolation
+        run: npx vitest run src/lib/quality/capa-worklist-postgres.integration.test.ts
 
   verify:
     runs-on: ubuntu-latest
