@@ -66,19 +66,29 @@ export async function listCompetencyRequirements(
           AND j."assignedAt" <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date
           AND (j."endedAt" IS NULL OR j."endedAt" > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date)
       ), matches AS (
-        SELECT r."id", r."programId", r."employeeId" FROM rules r WHERE r."employeeId" IS NOT NULL
+        SELECT r."id", r."programId", r."employeeId",
+          (r."createdAt" AT TIME ZONE 'UTC')::date AS "effectiveOn"
+        FROM rules r WHERE r."employeeId" IS NOT NULL
         UNION ALL
-        SELECT r."id", r."programId", j."employeeId" FROM rules r
+        SELECT r."id", r."programId", j."employeeId",
+          GREATEST((r."createdAt" AT TIME ZONE 'UTC')::date, j."assignedAt")
+        FROM rules r
         JOIN current_jobs j ON j."departmentId" = r."departmentId"
         UNION ALL
-        SELECT r."id", r."programId", j."employeeId" FROM rules r
+        SELECT r."id", r."programId", j."employeeId",
+          GREATEST((r."createdAt" AT TIME ZONE 'UTC')::date, j."assignedAt")
+        FROM rules r
         JOIN current_jobs j ON j."jobDescriptionId" = r."jobDescriptionId"
       ), required_pairs AS (
-        SELECT "programId", "employeeId", array_agg(DISTINCT "id" ORDER BY "id") AS "requirementIds"
+        SELECT "programId", "employeeId", array_agg(DISTINCT "id" ORDER BY "id") AS "requirementIds",
+          MIN("effectiveOn")::text AS "requirementEffectiveOn"
         FROM matches GROUP BY "programId", "employeeId"
       )
       SELECT pair.*, e."employeeNumber" || ' · ' || e."lastName" || ', ' || e."firstName" AS "employeeLabel",
-        concat_ws(' · ', p."code", p."title", ${competencyScopeLabel}) AS "programLabel", to_jsonb(a) AS "assessment"
+        concat_ws(' · ', p."code", p."title", ${competencyScopeLabel}) AS "programLabel", to_jsonb(a) AS "assessment",
+        p."initialDueDays", p."reassessmentIntervalDays",
+        (q."assessedAt" AT TIME ZONE 'UTC')::date::text AS "lastQualifiedAt",
+        q."expiresAt"::text AS "lastQualifiedExpiresAt"
       FROM required_pairs pair
       JOIN "Employee" e ON e."organizationId" = ${organizationId}::uuid AND e."id" = pair."employeeId" AND e."status" = 'ACTIVE'
       JOIN "CompetencyProgram" p ON p."organizationId" = ${organizationId}::uuid AND p."id" = pair."programId" AND p."active"
@@ -90,6 +100,13 @@ export async function listCompetencyRequirements(
           AND "employeeId" = pair."employeeId" AND "programId" = pair."programId"
         ORDER BY "assessedAt" DESC, "createdAt" DESC, "id" DESC LIMIT 1
       ) a ON true
+      LEFT JOIN LATERAL (
+        SELECT "assessedAt", "expiresAt" FROM "CompetencyAssessment"
+        WHERE "organizationId" = ${organizationId}::uuid
+          AND "employeeId" = pair."employeeId" AND "programId" = pair."programId"
+          AND "outcome" = 'QUALIFIED'
+        ORDER BY "assessedAt" DESC, "createdAt" DESC, "id" DESC LIMIT 1
+      ) q ON true
       ORDER BY e."employeeNumber", p."code"
     `;
 

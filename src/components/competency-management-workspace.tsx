@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { competencyDashboard, competencyRollups, type CompetencyAssessmentSummary } from "@/lib/training/competency-rollup";
+import { competencyScheduleMaxDays } from "@/lib/training/competency-schedule";
 import { cliaCompetencyMethods } from "@/lib/training/clia-competency-methods";
 import { CliaCompetencyProgramBuilder } from "./clia-competency-program-builder";
 import { CompetencyProgramScopeFields } from "./competency-program-scope-fields";
@@ -189,9 +190,13 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const testSystemSelection = form.get("testSystemSelection");
+    const initialDueDays = form.get("initialDueDays");
+    const reassessmentIntervalDays = form.get("reassessmentIntervalDays");
     await submit("/api/training/competency/programs", {
       code: String(form.get("code")), title: String(form.get("title")), description: String(form.get("description")) || null,
       validityDays: form.get("validityDays") ? Number(form.get("validityDays")) : null,
+      initialDueDays: initialDueDays ? Number(initialDueDays) : null,
+      reassessmentIntervalDays: reassessmentIntervalDays ? Number(reassessmentIntervalDays) : null,
       equipmentId: form.get("equipmentId") || null,
       testSystemId: testSystemSelection === "new" ? null : testSystemSelection || null,
       newTestSystem: testSystemSelection === "new" ? {
@@ -344,6 +349,12 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
         <label>Program code<input name="code" maxLength={80} required /></label>
         <label>Program title<input name="title" maxLength={240} required /></label>
         <label>Validity days<input name="validityDays" type="number" min={1} max={3650} /></label>
+        <label>Initial assessment due (days after requirement starts)
+          <input name="initialDueDays" type="number" min={0} max={competencyScheduleMaxDays} />
+        </label>
+        <label>Recurring assessment (days after qualification)
+          <input name="reassessmentIntervalDays" type="number" min={1} max={competencyScheduleMaxDays} />
+        </label>
         <label>Description<textarea name="description" maxLength={2000} /></label>
         <CompetencyProgramScopeFields key={programFormVersion} />
         <button type="submit" disabled={busy}>Create competency program</button>

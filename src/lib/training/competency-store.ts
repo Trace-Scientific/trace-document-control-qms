@@ -1,3 +1,4 @@
+import type { CompetencyScheduleSettings } from "./competency-schedule";
 import { competencyScopeJoins, competencyScopeLabel, type CompetencyProgramScopeInput } from "./competency-program-scope";
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
@@ -43,7 +44,7 @@ export class PrismaCompetencyStore implements CompetencyStore {
   listPrograms(organizationId: string, includeEquipment = false) {
     return db.$queryRaw<CompetencyProgramRecord[]>`
       SELECT p."id", p."organizationId", p."code", p."title", p."description",
-        p."active", p."validityDays", p."createdAt", p."updatedAt", ${competencyScopeLabel} AS "scopeLabel"
+        p."active", p."validityDays", p."initialDueDays", p."reassessmentIntervalDays", p."createdAt", p."updatedAt", ${competencyScopeLabel} AS "scopeLabel"
       FROM "CompetencyProgram" p ${competencyScopeJoins(includeEquipment)}
       WHERE p."organizationId" = ${organizationId}::uuid ORDER BY p."code"
     `;
@@ -52,8 +53,9 @@ export class PrismaCompetencyStore implements CompetencyStore {
   async createProgram(input: {
     organizationId: string; code: string; title: string; description: string | null;
     validityDays: number | null; actorUserId: string;
-  } & CompetencyProgramScopeInput) {
+  } & CompetencyProgramScopeInput & CompetencyScheduleSettings) {
     const { organizationId, actorUserId, code, title, description, validityDays, equipmentId = null } = input;
+    const { initialDueDays = null, reassessmentIntervalDays = null } = input;
     return db.$transaction(async (tx) => {
       if (equipmentId) {
         const [equipment] = await tx.$queryRaw<{ status: string }[]>`
@@ -89,15 +91,18 @@ export class PrismaCompetencyStore implements CompetencyStore {
 
       const [program] = await tx.$queryRaw<CompetencyProgramRecord[]>`
         INSERT INTO "CompetencyProgram"
-          ("organizationId", "code", "title", "description", "validityDays", "equipmentId", "testSystemId")
-        VALUES (${organizationId}::uuid, ${code}, ${title}, ${description}, ${validityDays}, ${equipmentId}::uuid, ${testSystemId}::uuid)
+          ("organizationId", "code", "title", "description", "validityDays", "equipmentId", "testSystemId",
+           "initialDueDays", "reassessmentIntervalDays")
+        VALUES (${organizationId}::uuid, ${code}, ${title}, ${description}, ${validityDays}, ${equipmentId}::uuid, ${testSystemId}::uuid,
+          ${initialDueDays}, ${reassessmentIntervalDays})
         ON CONFLICT ("organizationId", "code") DO NOTHING
-        RETURNING "id", "organizationId", "code", "title", "description", "active", "validityDays", "createdAt", "updatedAt"
+        RETURNING "id", "organizationId", "code", "title", "description", "active", "validityDays",
+          "initialDueDays", "reassessmentIntervalDays", "createdAt", "updatedAt"
       `;
       if (!program) throw new CompetencyValidationError("This competency program code already exists.");
       await tx.auditEvent.create({ data: {
         organizationId, actorUserId, action: "COMPETENCY_PROGRAM_CREATED", entityType: "CompetencyProgram",
-        entityId: program.id, metadata: { code, title, equipmentId, testSystemId },
+        entityId: program.id, metadata: { code, title, equipmentId, testSystemId, initialDueDays, reassessmentIntervalDays },
       } });
       return program;
     });

@@ -88,3 +88,20 @@ scope. Existing programs remain usable with empty links. Equipment retirement
 leaves historical program links intact. This slice records scope and retains
 explicit personnel requirements, with no automatic requirements derived from
 equipment state or assignment.
+
+### Initial and recurring assessment deadlines
+
+A manager can set an optional initial deadline and recurring interval when
+creating a program. The intervals are calendar days, measured in UTC. A direct
+requirement starts on its creation date. A department or job requirement starts
+on the later of its creation date and the effective job assignment. When
+multiple active rules cover a pair, the earliest applicable start drives the
+initial deadline.
+
+The matrix shows past-due work separately from recorded qualification. After
+an assessment is recorded, the next deadline is the earliest applicable
+recorded expiration or the last qualification date plus the configured
+interval. An unsuccessful reassessment does not restart the interval.
+The deadline becomes overdue the day after it is due. Existing programs carry
+no new intervals and retain any recorded expiration. These settings do not
+create assessment records, send reminders, or change qualification decisions.
