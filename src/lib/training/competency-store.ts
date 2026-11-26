@@ -1,8 +1,9 @@
+import { recordCompetencySignature } from "./competency-assessment-signature";
 import type { CompetencyScheduleSettings } from "./competency-schedule";
 import { competencyScopeJoins, competencyScopeLabel, type CompetencyProgramScopeInput } from "./competency-program-scope";
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import type { CompetencyAssessmentRecord, CompetencyElementInput, CompetencyElementRecord, CompetencyObservation, CompetencyProgramRecord, CompetencyProgramWrite, CompetencyStore } from "./competency";
+import type { CompetencyAssessmentRecord, CompetencyElementInput, CompetencyElementRecord, CompetencyObservation, CompetencyProgramRecord, CompetencyProgramWrite, CompetencySignatureProof, CompetencyStore } from "./competency";
 import { CompetencyEligibilityError, CompetencyValidationError } from "./competency";
 
 // A fresh statement snapshot after the lock sees the previous writer's committed rows.
@@ -240,7 +241,15 @@ export class PrismaCompetencyStore implements CompetencyStore {
     return assessment?.observations ?? null;
   }
 
-  async createAssessment(input:{organizationId:string;employeeId:string;programId:string;assessedAt:Date;outcome:CompetencyAssessmentRecord["outcome"];expiresAt:Date|null;fileId:string|null;notes:string|null;elementResults:Array<{elementId:string;outcome:"PASS"|"FAIL"|"NOT_APPLICABLE";notes?:string|null}>;actorUserId:string}){
+  readAssessmentSignature(organizationId: string, assessmentId: string) {
+    return db.electronicSignature.findFirst({
+      where: { organizationId, entityType: "CompetencyAssessment", entityId: assessmentId, meaning: "VERIFIED" },
+      orderBy: { signedAt: "desc" },
+      select: { signerUserId: true, meaningText: true, signedAt: true, status: true },
+    });
+  }
+
+  async createAssessment(input:{organizationId:string;employeeId:string;programId:string;assessedAt:Date;outcome:CompetencyAssessmentRecord["outcome"];expiresAt:Date|null;fileId:string|null;notes:string|null;elementResults:Array<{elementId:string;outcome:"PASS"|"FAIL"|"NOT_APPLICABLE";notes?:string|null}>;actorUserId:string;signatureProof?:CompetencySignatureProof}){
     return db.$transaction(async tx=>{
       const employees=await tx.$queryRaw<Array<{status:string}>>(Prisma.sql`SELECT "status"::text AS "status" FROM "Employee" WHERE "organizationId"=${input.organizationId}::uuid AND "id"=${input.employeeId}::uuid`); if(!employees[0]) throw new Error("Access denied"); if(employees[0].status==="TERMINATED") throw new CompetencyEligibilityError("Competency cannot be assessed for a terminated employee");
       const program = await lockProgram(tx, input);
@@ -259,7 +268,16 @@ export class PrismaCompetencyStore implements CompetencyStore {
         evaluatorAuthorizationId = authorization.id;
       }
 
-      if(input.fileId){ const file=await tx.fileObject.findFirst({where:{organizationId:input.organizationId,id:input.fileId},select:{status:true}}); if(!file) throw new Error("Access denied"); if(file.status!=="AVAILABLE") throw new CompetencyEligibilityError("Competency evidence file must be AVAILABLE"); }
+      let fileSha256: string | null = null;
+      if (input.fileId) {
+        const file = await tx.fileObject.findFirst({
+          where: { organizationId: input.organizationId, id: input.fileId },
+          select: { status: true, sha256: true },
+        });
+        if (!file) throw new Error("Access denied");
+        if (file.status !== "AVAILABLE") throw new CompetencyEligibilityError("Competency evidence file must be AVAILABLE");
+        fileSha256 = file.sha256;
+      }
       const elements=await tx.$queryRaw<Array<{id:string;required:boolean}>>(Prisma.sql`SELECT "id","required" FROM "CompetencyElement" WHERE "organizationId"=${input.organizationId}::uuid AND "programId"=${input.programId}::uuid`); const byId=new Map(elements.map(e=>[e.id,e])); for(const result of input.elementResults){ if(!byId.has(result.elementId)) throw new Error("Access denied"); }
       for(const element of elements.filter(e=>e.required)){ const result=input.elementResults.find(r=>r.elementId===element.id); if(!result) throw new CompetencyValidationError("All required competency elements must be assessed"); if(result.outcome==="NOT_APPLICABLE") throw new CompetencyValidationError("Required competency elements cannot be not applicable"); }
       const hasRequiredFailure=input.elementResults.some(r=>byId.get(r.elementId)?.required&&r.outcome==="FAIL"); if(input.outcome==="QUALIFIED"&&hasRequiredFailure) throw new CompetencyValidationError("Qualified outcome cannot include a failed required element");
@@ -267,7 +285,10 @@ export class PrismaCompetencyStore implements CompetencyStore {
       if(expiresAt&&expiresAt.getTime()<input.assessedAt.getTime()) throw new CompetencyValidationError("Competency expiration cannot precede the assessment date");
       const rows=await tx.$queryRaw<CompetencyAssessmentRecord[]>(Prisma.sql`INSERT INTO "CompetencyAssessment" ("organizationId","employeeId","programId","assessedAt","outcome","expiresAt","assessorUserId","fileId","notes") VALUES (${input.organizationId}::uuid,${input.employeeId}::uuid,${input.programId}::uuid,${input.assessedAt},${input.outcome}::"CompetencyAssessmentOutcome",${expiresAt},${input.actorUserId}::uuid,${input.fileId}::uuid,${input.notes}) RETURNING *`); const assessment=rows[0]; if(!assessment) throw new CompetencyValidationError("Competency assessment could not be recorded");
       for(const result of input.elementResults){ await tx.$executeRaw(Prisma.sql`INSERT INTO "CompetencyAssessmentElement" ("organizationId","assessmentId","elementId","outcome","notes") VALUES (${input.organizationId}::uuid,${assessment.id}::uuid,${result.elementId}::uuid,${result.outcome}::"CompetencyElementOutcome",${result.notes??null})`); }
-      await tx.auditEvent.create({data:{organizationId:input.organizationId,actorUserId:input.actorUserId,action:"COMPETENCY_ASSESSED",entityType:"CompetencyAssessment",entityId:assessment.id,metadata:{employeeId:assessment.employeeId,programId:assessment.programId,outcome:assessment.outcome,assessedAt:assessment.assessedAt.toISOString(),expiresAt:assessment.expiresAt?.toISOString()??null,fileId:assessment.fileId,elementCount:input.elementResults.length,evaluatorAuthorizationId}}}); return assessment;
+      const signature = input.signatureProof
+        ? await recordCompetencySignature(tx, assessment, input.elementResults, input.signatureProof, fileSha256, evaluatorAuthorizationId)
+        : null;
+      await tx.auditEvent.create({data:{organizationId:input.organizationId,actorUserId:input.actorUserId,action:"COMPETENCY_ASSESSED",entityType:"CompetencyAssessment",entityId:assessment.id,metadata:{employeeId:assessment.employeeId,programId:assessment.programId,outcome:assessment.outcome,assessedAt:assessment.assessedAt.toISOString(),expiresAt:assessment.expiresAt?.toISOString()??null,fileId:assessment.fileId,elementCount:input.elementResults.length,evaluatorAuthorizationId,...(signature ? { signatureId: signature.id, authenticationEventId: signature.authenticationEventId, payloadHash: signature.payloadHash } : {})}}}); return assessment;
     }, programWriteTransaction);
   }
 }

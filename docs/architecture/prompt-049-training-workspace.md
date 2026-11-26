@@ -137,3 +137,14 @@ recorded results and observations for the selected assessment using the existing
 training read permission. Later additions to the program do not appear in an
 earlier assessment's results. These records use the existing assessment and
 audit events. The observation fields do not add an electronic signature.
+
+### Electronic assessment sign-off
+
+On the assessment form, the recording evaluator can confirm the displayed
+verification statement and reauthenticate with their password. This optional
+step records an electronic signature and its authentication event in the same
+transaction as the assessment, method results, and audit event. The versioned
+payload hash binds the assessor, employee, program, outcome, dates, notes,
+method results, and attached evidence identity. Assessment history shows the
+signature meaning, signer account, time, and status. Unsigned assessments
+remain visible as unsigned, including assessments created before this feature.

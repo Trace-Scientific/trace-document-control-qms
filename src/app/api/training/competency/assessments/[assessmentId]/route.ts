@@ -14,7 +14,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const assessmentId = z.string().uuid().parse((await params).assessmentId);
     const observations = await store.readAssessmentObservations(organizationId, assessmentId);
     if (!observations) return NextResponse.json({ error: "Assessment not found." }, { status: 404 });
-    return NextResponse.json({ data: observations });
+    const signature = await store.readAssessmentSignature(organizationId, assessmentId);
+    return NextResponse.json({ data: observations, signature });
   } catch (error) {
     if (error instanceof AuthenticationRequiredError) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     if (error instanceof z.ZodError) return NextResponse.json({ error: "Invalid assessment ID." }, { status: 422 });
