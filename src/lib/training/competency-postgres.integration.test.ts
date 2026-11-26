@@ -94,7 +94,7 @@ describe.skipIf(!enabled)("CLIA template writes in migrated PostgreSQL", () => {
         do {
           const [row] = await db.$queryRaw<{ count: number }[]>`
             SELECT COUNT(*)::int AS count FROM pg_stat_activity
-            WHERE wait_event_type = 'Lock' AND query LIKE '%SELECT "active", "validityDays" FROM "CompetencyProgram"%FOR UPDATE%'
+            WHERE wait_event_type = 'Lock' AND query LIKE '%FROM "CompetencyProgram"%WHERE "organizationId" = %AND "id" = %FOR UPDATE%'
           `;
           if (row.count === count) return;
           await delay(20);
