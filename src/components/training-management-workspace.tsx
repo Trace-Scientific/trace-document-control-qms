@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { GovernedEvidenceFilePicker } from "./governed-evidence-file-picker";
 import { DemoTrainingLesson } from "./demo-training-lesson";
 import { TrainingAssessmentReport } from "./training-assessment-report";
+import type { CompetencyCoverage } from "@/lib/training/competency-coverage";
 import { TrainingRenewalForecast } from "./training-renewal-forecast";
 
 type Employee = { id: string; employeeNumber: string; firstName: string; lastName: string; status: "ACTIVE" | "INACTIVE" | "TERMINATED" };
@@ -68,6 +69,10 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [completionAssignmentId, setCompletionAssignmentId] = useState("");
   const [completionEvidenceFileId, setCompletionEvidenceFileId] = useState("");
   const [employeeOverviewQuery, setEmployeeOverviewQuery] = useState("");
+  const [competencyCoverage, setCompetencyCoverage] = useState<{ data: (CompetencyCoverage & { employeeId: string })[]; asOf: string }>();
+  const [coverageState, setCoverageState] = useState<"loading" | "ready" | "denied" | "error">("loading");
+  const [coverageRevision, setCoverageRevision] = useState(0);
+  const [competencyAttentionOnly, setCompetencyAttentionOnly] = useState(false);
   const [employeeAttentionOnly, setEmployeeAttentionOnly] = useState(false);
   const [assignmentEmployeeId, setAssignmentEmployeeId] = useState("");
   const [assignmentQuery, setAssignmentQuery] = useState("");
@@ -103,6 +108,33 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
   const [pinnedPreview, setPinnedPreview] = useState<LearnerCourseContent | null>(null);
   const [pinnedPreviewBusy, setPinnedPreviewBusy] = useState(false);
   const [previewAssignmentId, setPreviewAssignmentId] = useState("");
+
+  useEffect(() => {
+    if (section !== "assignments") return;
+    const controller = new AbortController();
+    void fetch("/api/training/competency/coverage", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (response.status === 403) {
+          if (!controller.signal.aborted) setCoverageState("denied");
+          return;
+        }
+        if (!response.ok) throw new Error("Competency coverage unavailable.");
+        const coverage = await response.json();
+        if (!controller.signal.aborted) {
+          setCompetencyCoverage(coverage);
+          setCoverageState("ready");
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setCoverageState("error");
+      });
+    return () => controller.abort();
+  }, [section, coverageRevision]);
+
+  function refreshCompetencyCoverage() {
+    setCoverageState("loading");
+    setCoverageRevision((revision) => revision + 1);
+  }
 
   async function load() {
     setOverviewStatus("loading");
@@ -246,13 +278,18 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
     return due !== null && due >= todayStart && due <= dueSoonEnd;
   }).length;
   const unscheduledCount = activeAssignments.filter((assignment) => !assignment.dueAt).length;
+  const coverageByEmployee = useMemo(() => new Map(competencyCoverage?.data.map((row) => [row.employeeId, row])), [competencyCoverage]);
   const employeeOverview = employees.filter(employee => employee.status === "ACTIVE").map(employee => {
     const rows = assignments.filter(assignment => assignment.employeeId === employee.id && assignment.status !== "CANCELLED");
     const completed = rows.filter(assignment => assignment.status === "COMPLETED").length;
     const outstanding = rows.filter(assignment => assignment.status === "ASSIGNED");
     const overdue = outstanding.filter(assignment => { const due = dateOnlyTime(assignment.dueAt); return due !== null && due < todayStart; }).length;
-    return { employee, completed, outstanding: outstanding.length, overdue, total: rows.length };
-  }).filter(row => (!employeeAttentionOnly || row.outstanding > 0) && employeeOverviewQuery.trim().toLowerCase().split(/\s+/).filter(Boolean).every(word => `${row.employee.employeeNumber} ${row.employee.firstName} ${row.employee.lastName}`.toLowerCase().includes(word))).sort((a, b) => b.overdue - a.overdue || b.outstanding - a.outstanding || a.employee.lastName.localeCompare(b.employee.lastName));
+    const competency = coverageState === "ready" ? coverageByEmployee.get(employee.id) : undefined;
+    return { employee, completed, outstanding: outstanding.length, overdue, total: rows.length, competency };
+  }).filter(row => (!employeeAttentionOnly || row.outstanding > 0)
+    && (!competencyAttentionOnly || coverageState !== "ready" || (row.competency && (
+      row.competency.missingInitial + row.competency.expired + row.competency.conditional + row.competency.notQualified + row.competency.pastDue > 0
+    ))) && employeeOverviewQuery.trim().toLowerCase().split(/\s+/).filter(Boolean).every(word => `${row.employee.employeeNumber} ${row.employee.firstName} ${row.employee.lastName}`.toLowerCase().includes(word))).sort((a, b) => b.overdue - a.overdue || b.outstanding - a.outstanding || a.employee.lastName.localeCompare(b.employee.lastName));
   const queryWords = assignmentQuery.trim().toLowerCase().split(/\\s+/).filter(Boolean);
   const visibleAssignments = assignments.map((assignment) => {
     const dueTime = dateOnlyTime(assignment.dueAt);
@@ -527,13 +564,13 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
 
   return <section className="workspace-section" aria-labelledby="training-heading">
     <div className="section-heading"><div><p className="eyebrow">Training & competency</p><h2 id="training-heading">Training management</h2><p>Open one governed training function at a time while preserving assignment, completion, and lifecycle history.</p></div></div>
-    <nav className="module-subnav" aria-label="Training management sections">{sections.map((item) => <button key={item.id} type="button" className={section === item.id ? "active" : ""} aria-current={section === item.id ? "page" : undefined} onClick={() => { setPreselectedCourseId(""); setPreselectedAssignmentId(""); setAssessmentReportStatus("loading"); setSection(item.id); setNotice(""); void load(); }}><strong>{item.label}</strong><span>{item.description}</span></button>)}</nav>
+    <nav className="module-subnav" aria-label="Training management sections">{sections.map((item) => <button key={item.id} type="button" className={section === item.id ? "active" : ""} aria-current={section === item.id ? "page" : undefined} onClick={() => { setPreselectedCourseId(""); setPreselectedAssignmentId(""); setAssessmentReportStatus("loading"); setSection(item.id); setNotice(""); if (item.id === "assignments") refreshCompetencyCoverage(); void load(); }}><strong>{item.label}</strong><span>{item.description}</span></button>)}</nav>
     {notice && <p role="status">{notice}</p>}
 
     {section === "assignments" && <div className="module-section-stack">
       <section aria-label="Training assignment overview">
         <h3>Training assignment overview</h3>
-        <button type="button" disabled={overviewStatus === "loading" || busy} onClick={() => void load()}>Refresh assignment counts</button>
+        <button type="button" disabled={overviewStatus === "loading" || busy} onClick={() => { void load(); refreshCompetencyCoverage(); }}>Refresh assignment and competency counts</button>
         {overviewStatus !== "ready" ? <p role="status">{overviewStatus === "loading" ? "Loading assignment counts…" : "Assignment counts unavailable. Refresh to retry."}</p> : <>
           <div className="stat-grid">{[["Non-cancelled assignments", countedAssignments], ["Completed", completedCount], ["Outstanding", activeAssignments.length], ["Overdue", overdueCount], ["Due within 30 days", dueSoonCount]].map(([label, value]) => <article key={label}><strong>{value}</strong><span>{label}</span></article>)}</div>
           <p><strong>Assignment completion:</strong> {countedAssignments ? Math.round(completedCount / countedAssignments * 1000) / 10 + "%" : "Not applicable"} (excludes cancelled assignments; not a current competency measure).</p>
@@ -542,13 +579,44 @@ export function TrainingManagementWorkspace({ canManage, today }: { canManage: b
           <div className="table-wrap"><table><thead><tr><th>Course</th><th>Completed</th><th>Outstanding</th><th>Completion</th></tr></thead><tbody>{courses.map(course => { const rows = assignments.filter(assignment => assignment.courseId === course.id && assignment.status !== "CANCELLED"); const done = rows.filter(assignment => assignment.status === "COMPLETED").length; return <tr key={course.id}><td>{course.title}</td><td>{done}</td><td>{rows.length - done}</td><td>{rows.length ? Math.round(done / rows.length * 1000) / 10 + "%" : "Not applicable"}</td></tr>; })}</tbody></table></div>
         </>}
       </section>
-      {overviewStatus === "ready" && <section aria-label="Employee training assignment summary">
-        <h3>Employee training summary</h3>
-        <p>Active employees visible to your account. Historical non-cancelled assignment completion is not proof of current competency or renewal compliance.</p>
+      {overviewStatus === "ready" && <section aria-label="Employee training and competency summary">
+        <h3>Employee training and competency</h3>
+        <p>Training counts exclude cancelled assignments. Competency counts cover active requirements and use recorded assessment outcomes.</p>
         <label>Search employees<input type="search" value={employeeOverviewQuery} onChange={event => setEmployeeOverviewQuery(event.target.value)} /></label>
         <label><input type="checkbox" checked={employeeAttentionOnly} onChange={event => setEmployeeAttentionOnly(event.target.checked)} /> Outstanding assignments only</label>
-        <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Completed</th><th>Outstanding</th><th>Overdue</th><th>Completion</th><th>Action</th></tr></thead><tbody>{employeeOverview.map(row => <tr key={row.employee.id}><td>{row.employee.employeeNumber} · {row.employee.lastName}, {row.employee.firstName}</td><td>{row.completed}</td><td>{row.outstanding}</td><td>{row.overdue}</td><td>{row.total ? Math.round(row.completed / row.total * 1000) / 10 + "%" : "Not applicable"}</td><td><button type="button" onClick={() => { setAssignmentEmployeeId(row.employee.id); setAssignmentQuery(""); setAssignmentStatus("ALL"); document.getElementById("training-assignment-list")?.scrollIntoView({block:"start"}); }}>View assignments</button></td></tr>)}</tbody></table></div>
-        {!employeeOverview.length && <p>No visible active employees match these filters. Employee directory access may be restricted.</p>}
+        {coverageState === "ready" ? <>
+          <label><input type="checkbox" checked={competencyAttentionOnly}
+            onChange={event => setCompetencyAttentionOnly(event.target.checked)} /> Competency needs attention only</label>
+          <p>Competency as of {competencyCoverage?.asOf} UTC. Past-due deadlines can overlap with qualification statuses.</p>
+        </> : <p role="status">{coverageState === "loading" ? "Loading competency coverage…"
+          : coverageState === "denied" ? "Competency coverage requires personnel read access."
+          : "Competency coverage unavailable. Refresh to retry."}</p>}
+        <div className="table-wrap"><table>
+          <thead>
+            <tr><th rowSpan={2} scope="col">Employee</th><th colSpan={4} scope="colgroup">Training assignments</th>
+              {coverageState === "ready" && <th colSpan={7} scope="colgroup">Competency requirements</th>}
+              <th rowSpan={2} scope="col">Action</th>
+            </tr>
+            <tr><th scope="col">Completed</th><th scope="col">Outstanding</th><th scope="col">Overdue</th><th scope="col">Completion</th>
+              {coverageState === "ready" && <>
+                <th scope="col">Required</th><th scope="col">Qualified</th><th scope="col">Missing initial</th>
+                <th scope="col">Expired</th><th scope="col">Conditional</th><th scope="col">Not qualified</th><th scope="col">Past due</th>
+              </>}
+            </tr>
+          </thead>
+          <tbody>{employeeOverview.map((row) => <tr key={row.employee.id}>
+            <td>{row.employee.employeeNumber} · {row.employee.lastName}, {row.employee.firstName}</td>
+            <td>{row.completed}</td><td>{row.outstanding}</td><td>{row.overdue}</td>
+            <td>{row.total ? Math.round(row.completed / row.total * 1000) / 10 + "%" : "Not applicable"}</td>
+            {coverageState === "ready" && <>
+              <td>{row.competency?.required ?? 0}</td><td>{row.competency?.qualified ?? 0}</td>
+              <td>{row.competency?.missingInitial ?? 0}</td><td>{row.competency?.expired ?? 0}</td>
+              <td>{row.competency?.conditional ?? 0}</td><td>{row.competency?.notQualified ?? 0}</td><td>{row.competency?.pastDue ?? 0}</td>
+            </>}
+            <td><button type="button" onClick={() => { setAssignmentEmployeeId(row.employee.id); setAssignmentQuery(""); setAssignmentStatus("ALL"); document.getElementById("training-assignment-list")?.scrollIntoView({ block: "start" }); }}>View assignments</button></td>
+          </tr>)}</tbody>
+        </table></div>
+        {!employeeOverview.length && <p>No visible active employees match these filters.</p>}
       </section>}
       <TrainingRenewalForecast />
       <div id="training-assignment-list" className="section-heading"><div><h3>Training assignments</h3><p>Browse governed training assignments and their current lifecycle state.</p></div></div>

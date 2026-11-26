@@ -6,8 +6,7 @@ import {
   type CompetencyRequirementScope,
   type CompetencyRequirementsView,
 } from "@/lib/training/competency-requirements";
-import { competencySchedule } from "@/lib/training/competency-schedule";
-import { competencyRollups } from "@/lib/training/competency-rollup";
+import { evaluateCompetencyRequirement } from "@/lib/training/competency-coverage";
 
 const scopeLabels: Record<CompetencyRequirementScope, string> = {
   EMPLOYEE: "Employee",
@@ -110,13 +109,7 @@ export function CompetencyRequirementsMatrix({ canManage, programs, today, onAss
     }
   }
 
-  const assessments = view?.rows.flatMap((row) => row.assessment ? [row.assessment] : []) ?? [];
-  const rollups = new Map(competencyRollups(assessments, today).map((row) => [row.id, row]));
-  const rows = view?.rows.map((row) => ({
-    ...row,
-    schedule: competencySchedule({ ...row, today, latestAssessment: row.assessment }),
-    status: (row.assessment && rollups.get(row.assessment.id)?.status) || "MISSING_INITIAL",
-  } as const)) ?? [];
+  const rows = view?.rows.map((row) => ({ ...row, ...evaluateCompetencyRequirement(row, today) })) ?? [];
   const searchWords = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const visibleRows = rows.filter((row) => {
     const matchesStatus = filter === "ALL" || row.status === filter;
