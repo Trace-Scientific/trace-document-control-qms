@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { competencyDashboard, competencyRollups, type CompetencyAssessmentSummary } from "@/lib/training/competency-rollup";
 import { cliaCompetencyMethods } from "@/lib/training/clia-competency-methods";
 import { CliaCompetencyProgramBuilder } from "./clia-competency-program-builder";
+import { CompetencyRequirementsMatrix } from "./competency-requirements-matrix";
 import { GovernedEvidenceFilePicker } from "./governed-evidence-file-picker";
 
 type Employee = { id: string; employeeNumber: string; firstName: string; lastName: string; status: "ACTIVE" | "INACTIVE" | "TERMINATED" };
@@ -11,7 +12,7 @@ type Program = { id: string; code: string; title: string; active: boolean; valid
 type Element = { id: string; programId: string; code: string; title: string; required: boolean; sortOrder: number };
 type Assessment = CompetencyAssessmentSummary & { fileId: string | null; notes: string | null; assessorUserId: string };
 type EvidenceFileSummary = { id: string; originalName: string; status: string };
-type Section = "status" | "history" | "assessment" | "programs" | "elements";
+type Section = "status" | "requirements" | "history" | "assessment" | "programs" | "elements";
 
 function formatDateOnly(value: string | null) {
   if (!value) return "—";
@@ -248,7 +249,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
 
   function startReassessment(employeeId: string, programId: string) {
     setSelectedEmployeeId(employeeId);
-    setElements([]);
+    if (selectedProgramId !== programId) setElements([]);
     setSelectedProgramId(programId);
     setNotice("");
     setSection("assessment");
@@ -256,6 +257,7 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
 
   const sections = [
     { id: "status" as const, label: "Competency status", description: "Review current qualification status, expirations, and reassessment needs.", visible: true },
+    { id: "requirements" as const, label: "Requirements matrix", description: "See required programs and missing initial assessments.", visible: true },
     { id: "history" as const, label: "Assessment history", description: "Search previous competency decisions without changing records.", visible: true },
     { id: "assessment" as const, label: "Record assessment", description: "Record an append-only competency assessment with governed supporting evidence.", visible: canManage },
     { id: "programs" as const, label: "Programs", description: "Create governed competency programs and validity periods.", visible: canManage },
@@ -287,6 +289,13 @@ export function CompetencyManagementWorkspace({ canManage, today }: { canManage:
       <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Program</th><th>Latest assessment</th><th>Expires</th><th>Status</th>{canManage && <th>Action</th>}</tr></thead><tbody>{visibleRollups.map((rollup) => { const employee = employeeById.get(rollup.employeeId); const program = programById.get(rollup.programId); return <tr key={`${rollup.employeeId}:${rollup.programId}`}><td>{employee ? `${employee.employeeNumber} · ${employee.lastName}, ${employee.firstName}` : rollup.employeeId}</td><td>{program ? `${program.code} · ${program.title}` : rollup.programId}</td><td>{new Date(rollup.assessedAt).toLocaleDateString()}</td><td>{formatDateOnly(rollup.expiresAt)}</td><td>{rollup.status}</td>{canManage && <td>{employee?.status === "ACTIVE" && program?.active && <button type="button" disabled={busy} onClick={() => startReassessment(rollup.employeeId, rollup.programId)}>Reassess</button>}</td>}</tr>; })}{!visibleRollups.length && <tr><td colSpan={canManage ? 6 : 5}>No recorded competency statuses match this view.</td></tr>}</tbody></table></div>
       </>}
     </div>}
+
+    {section === "requirements" && <CompetencyRequirementsMatrix
+      canManage={canManage}
+      programs={programs.filter((program) => program.active)}
+      today={today}
+      onAssess={startReassessment}
+    />}
 
     {section === "history" && <div className="module-section-stack">
       <div className="section-heading"><div><h3>Competency assessment history</h3><p>Review recorded assessments in newest-first order. Historical decisions remain unchanged when reassessments are added. The assessor account identifier, evidence file reference, and recorded notes are shown for audit traceability. An attached file reference alone does not establish competency.</p></div></div>

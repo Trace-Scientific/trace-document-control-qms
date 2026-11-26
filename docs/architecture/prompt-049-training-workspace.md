@@ -47,3 +47,30 @@ program row. Under Read Committed, the writer that waits for the lock reads the
 winner's committed assessments or elements before validating its own write.
 These safeguards apply to the application write paths. Templates configure
 assessment requirements and carry no regulatory compliance determination.
+
+## Competency requirements matrix
+
+In Training → Competency → Requirements matrix, a training manager can require
+an active program for an employee, department, or governed job description.
+Department and job rules use effective employee job assignments, including
+non-primary assignments. The effective interval includes the assignment start
+date and excludes its end date, evaluated in UTC. Active employees and programs
+appear once per pair, with every applicable rule listed. Matrix access requires
+organization-wide training and personnel read permissions. Rule changes require
+training management and personnel read permissions.
+
+The matrix displays missing initial assessments and derives recorded
+qualification status from the latest assessment and its expiration date. Earlier
+assessments remain in history. Department and job rules reflect the current
+personnel roster, so updates to that roster can change coverage. Retirement
+requires a reason, preserves the rule row, and records an attributed audit event.
+Creation and retirement each commit with their audit event. Tenant-scoped foreign
+keys protect the target and program relationships, and a partial unique index
+allows one active rule per program and target.
+
+Instrument- and test-system-specific programs can be configured by program
+name. This slice has no direct instrument or test-system relationship and adds
+no recurrence schedules or reminders. The matrix shows configured obligations
+and recorded decisions. A current result with no expiration still has no
+scheduled renewal, and a requirement created after a historical assessment
+does not restart the assessment cycle.
