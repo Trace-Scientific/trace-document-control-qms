@@ -26,3 +26,9 @@ It adds:
 
 ## Migration
 `0029_quality_event_lifecycle`
+
+## Register worklist
+
+The quality event register provides all, active, my active, overdue, and unassigned active views. Search matches event number or summary and can be combined with status and severity. My active events uses the signed-in user's event assignments. Overdue means an active event with a due date before the current UTC date. Event rows open the lifecycle or the Investigation & CAPA workspace directly.
+
+Filters apply to events returned by the existing tenant-scoped read endpoint. The worklist adds no database changes or mutation permissions. Switching events clears pending lifecycle form inputs so they cannot carry over to another record. Investigation, CAPA, and closure continue through their existing server authorization and audit controls.

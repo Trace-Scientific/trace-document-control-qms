@@ -113,7 +113,7 @@ export default async function HomePage() {
   ) : null;
 
   const quality = visibility.qualityEventManagement ? (
-    <QualityEventWorkspace canManage={visibility.qualityEventManage} today={today} />
+    <QualityEventWorkspace canManage={visibility.qualityEventManage} today={today} userId={session.user.id} />
   ) : null;
 
   const laboratory = visibility.equipmentManagement ? (
