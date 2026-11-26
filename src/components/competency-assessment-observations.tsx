@@ -9,7 +9,7 @@ type RecordedSignature = {
   signedAt: string;
   status: "VALID" | "INVALIDATED";
 };
-type AssessmentDetails = { data: CompetencyObservation[]; signature: RecordedSignature | null };
+type AssessmentDetails = { data: CompetencyObservation[]; signature: RecordedSignature | null; canPrint: boolean };
 
 const outcomeLabels: Record<CompetencyObservation["outcome"], string> = {
   PASS: "Pass",
@@ -46,6 +46,8 @@ export function CompetencyAssessmentObservations({ assessmentId }: { assessmentI
   if (!details) return <p role="status">Loading assessment details…</p>;
 
   return <div className="module-section-stack">
+    {details.canPrint && <p><a href={`/api/training/competency/assessments/${encodeURIComponent(assessmentId)}/print`}
+      target="_blank" rel="noopener noreferrer">Open printable assessment record</a></p>}
     <h4>Electronic sign-off</h4>
     {details.signature ? <div>
       <p>{details.signature.status === "VALID" ? "Signed" : "Signature invalidated"} · {new Date(details.signature.signedAt).toLocaleString()}</p>
