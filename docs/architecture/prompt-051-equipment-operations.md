@@ -17,3 +17,9 @@ The workspace does not directly mutate regulated status or compliance evidence. 
 
 ## Boundary
 Recall/quarantine, broader automated escalation, inventory linkage, and final Prompt 051 completeness review remain subsequent work.
+
+## Equipment register worklist
+
+Staff can search by equipment number or name and combine status with views for active holds, open recalls, unavailable equipment, overdue schedules, upcoming work, and missing required dates. Calibration and maintenance are evaluated independently. The 30-day window includes today and the date 30 calendar days later in UTC. Schedule worklists consider required schedules on active equipment and preserve other records for general browsing. The register shows the server's existing usability decision and adds the count of open recalls from the same tenant-scoped query.
+
+Opening a different instrument clears the prior instrument's service draft and loads history for the selected record. The worklist adds no writes or changes to release, recall, hold, or usability rules.
