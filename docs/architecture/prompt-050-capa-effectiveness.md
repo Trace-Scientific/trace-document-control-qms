@@ -42,3 +42,9 @@ The event's CAPA read endpoint returns the existing action list plus the effecti
 ## CAPA evidence after signed closure
 
 Completion and effectiveness recording lock the associated quality event before locking the CAPA action. Signed closure locks that same event, so a CAPA change either commits before closure or is rejected after it. Closed events show the existing CAPA actions and check history for review. This guard applies to historical records as well and requires no migration.
+
+## Downloading attached quality evidence
+
+Investigation history, CAPA completion, and effectiveness checks link to supporting file downloads. The endpoint requires quality event read access and confirms the file is available and attached to the requested event in the signed-in tenant. If the file lacks a quality upload audit record matching its stored hash, the endpoint also requires the existing document read permission. This preserves access for authorized readers of legacy attachments without opening other file domains to quality-only accounts.
+
+The endpoint reads from private storage, verifies the file hash, records the download against the file and quality event, and returns the bytes as a non-cacheable attachment. Closed events retain access to their supporting evidence through these same checks.

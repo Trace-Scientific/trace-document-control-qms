@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "../db";
 import { PrismaQualityCapaStore } from "./capa-store";
+import { findQualityEvidenceFile } from "./evidence-download";
 import { PrismaQualityEventStore } from "./events-store";
 import { PrismaQualityClosureStore } from "./closure-store";
 import { PrismaQualityInvestigationStore } from "./investigations-store";
@@ -279,5 +280,56 @@ describe.skipIf(!enabled)("CAPA worklist in migrated PostgreSQL", () => {
       reporterName: "Synthetic Owner", discoveredAt, createdAt: report.createdAt,
     });
     await expect(store.getIntake(otherTenant.organizationId, report.id)).resolves.toBeNull();
+  });
+
+  it("resolves only available supporting files attached to the selected event", async () => {
+    const tenant = await createTenant();
+    const otherTenant = await createTenant();
+    const eventId = await createEvent(tenant, "QE-000001");
+    const otherEventId = await createEvent(tenant, "QE-000002");
+    const { organizationId, ownerId } = tenant;
+
+    async function file(name: string, audited: boolean) {
+      const uploaded = await db.fileObject.create({ data: {
+        organizationId, uploadedByUserId: ownerId, originalName: name, storageKey: `${organizationId}/${randomUUID()}/${name}`,
+        mimeType: "text/plain", sizeBytes: 8, sha256: "a".repeat(64), status: "AVAILABLE",
+      } });
+      if (audited) await db.auditEvent.create({ data: {
+        organizationId, actorUserId: ownerId, entityType: "FileObject", entityId: uploaded.id,
+        action: "EVIDENCE_FILE_UPLOADED_PENDING_SCAN", newHash: uploaded.sha256, metadata: { evidenceDomain: "QUALITY" },
+      } });
+      return uploaded;
+    }
+
+    const investigationFile = await file("investigation.txt", true);
+    const completionFile = await file("legacy.txt", false);
+    const effectivenessFile = await file("check.txt", true);
+    const unrelatedFile = await file("unrelated.txt", true);
+    const action = await createAction(tenant, eventId, "Action requiring evidence", null);
+    const capa = new PrismaQualityCapaStore();
+    await new PrismaQualityInvestigationStore().create({
+      organizationId, eventId, investigatorUserId: ownerId, findings: "Finding", affectedScope: "Synthetic scope",
+      evidenceSummary: null, evidenceFileId: investigationFile.id, rootCauseMethod: "FIVE_WHYS", rootCause: "Cause",
+      riskLikelihood: 1, riskImpact: 2,
+    });
+    await capa.complete({
+      organizationId, eventId, actorUserId: ownerId, capaActionId: action, completionEvidence: "Complete",
+      completionEvidenceFileId: completionFile.id,
+    });
+    await capa.verify({
+      organizationId, eventId, actorUserId: ownerId, capaActionId: action, result: "PASS", evidence: "Verified",
+      evidenceFileId: effectivenessFile.id,
+    });
+
+    await expect(findQualityEvidenceFile(organizationId, eventId, investigationFile.id, false)).resolves.toMatchObject({ id: investigationFile.id });
+    await expect(findQualityEvidenceFile(organizationId, eventId, effectivenessFile.id, false)).resolves.toMatchObject({ id: effectivenessFile.id });
+    await expect(findQualityEvidenceFile(organizationId, eventId, completionFile.id, false)).resolves.toBeNull();
+    await expect(findQualityEvidenceFile(organizationId, eventId, completionFile.id, true)).resolves.toMatchObject({ id: completionFile.id });
+    await expect(findQualityEvidenceFile(organizationId, eventId, unrelatedFile.id, true)).resolves.toBeNull();
+    await expect(findQualityEvidenceFile(organizationId, otherEventId, investigationFile.id, true)).resolves.toBeNull();
+    await expect(findQualityEvidenceFile(otherTenant.organizationId, eventId, investigationFile.id, true)).resolves.toBeNull();
+
+    await db.fileObject.update({ where: { id: effectivenessFile.id }, data: { status: "QUARANTINED" } });
+    await expect(findQualityEvidenceFile(organizationId, eventId, effectivenessFile.id, true)).resolves.toBeNull();
   });
 });

@@ -1,4 +1,5 @@
 import type { QualityInvestigationHistoryEntry, RootCauseMethod } from "@/lib/quality/investigations";
+import { QualityEvidenceDownload } from "./quality-evidence-download";
 
 export type Investigation = Omit<QualityInvestigationHistoryEntry, "createdAt"> & { createdAt: string };
 
@@ -31,7 +32,7 @@ export function QualityInvestigationHistory({ investigations }: { investigations
         <dt>Risk assessment</dt>
         <dd>Likelihood {record.riskLikelihood} × Impact {record.riskImpact} = {record.riskScore}</dd>
         {record.evidenceSummary && <><dt>Evidence summary</dt><dd>{record.evidenceSummary}</dd></>}
-        {record.evidenceFileId && <><dt>Supporting evidence</dt><dd>File attached</dd></>}
+        {record.evidenceFileId && <><dt>Supporting evidence</dt><dd><QualityEvidenceDownload eventId={record.eventId} fileId={record.evidenceFileId} /></dd></>}
       </dl>
     </details>)}
   </div>;
