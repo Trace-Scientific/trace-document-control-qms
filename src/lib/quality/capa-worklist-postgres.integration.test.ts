@@ -124,6 +124,7 @@ describe.skipIf(!enabled)("CAPA worklist in migrated PostgreSQL", () => {
     const eventNumber = "QE-000001";
     const eventId = await createEvent(tenant, eventNumber);
     const store = new PrismaQualityClosureStore();
+    const capaStore = new PrismaQualityCapaStore();
     const readiness = () => store.loadReadiness(tenant.organizationId, eventId);
     const sign = () => store.commitClosure({
       organizationId: tenant.organizationId, eventId, eventNumber, signerUserId: tenant.ownerId,
@@ -152,17 +153,38 @@ describe.skipIf(!enabled)("CAPA worklist in migrated PostgreSQL", () => {
       status: "VERIFICATION", hasInvestigation: true, totalActions: 2, openActions: 1, completedWithoutPass: 1,
     });
     await expect(sign()).rejects.toThrow("All CAPA actions must be completed before closure");
-    await new PrismaQualityCapaStore().complete({
+    await capaStore.complete({
       organizationId: tenant.organizationId, eventId, capaActionId: openAction, completionEvidence: "Synthetic completion",
       completionEvidenceFileId: null, actorUserId: tenant.ownerId,
     });
     await expect(sign()).rejects.toThrow("Every CAPA action requires a passing effectiveness check before closure");
     await recordCheck(tenant, eventId, completedAction, "PASS");
-    await recordCheck(tenant, eventId, openAction, "PASS");
+    await expect(capaStore.verify({
+      organizationId: tenant.organizationId, eventId, capaActionId: openAction, actorUserId: tenant.ownerId,
+      result: "PASS", evidence: "Synthetic passing check", evidenceFileId: null,
+    })).resolves.toMatchObject({ result: "PASS", capaActionId: openAction });
     await expect(readiness()).resolves.toEqual({
       status: "VERIFICATION", hasInvestigation: true, totalActions: 2, openActions: 0, completedWithoutPass: 0,
     });
     await expect(sign()).resolves.toEqual({ closureId: expect.any(String), signatureId: expect.any(String) });
     await expect(readiness()).resolves.toMatchObject({ status: "CLOSED" });
+
+    const closedAction = { organizationId: tenant.organizationId, eventId, actorUserId: tenant.ownerId };
+    const historyBefore = await capaStore.listEffectivenessHistory(tenant.organizationId, eventId);
+    await expect(capaStore.verify({
+      ...closedAction, capaActionId: completedAction, result: "FAIL", evidence: "Synthetic late check", evidenceFileId: null,
+    })).rejects.toThrow("CAPA evidence cannot be changed after quality event closure");
+    await expect(capaStore.listEffectivenessHistory(tenant.organizationId, eventId)).resolves.toEqual(historyBefore);
+
+    // Older closed records may contain inconsistent CAPA state. Keep those records read-only too.
+    const historicalEventId = await createEvent(tenant, "QE-000002", true);
+    const historicalActionId = await createAction(tenant, historicalEventId, "Historical open action", null);
+    await expect(capaStore.complete({
+      ...closedAction, eventId: historicalEventId, capaActionId: historicalActionId,
+      completionEvidence: "Synthetic late completion", completionEvidenceFileId: null,
+    })).rejects.toThrow("CAPA evidence cannot be changed after quality event closure");
+    await expect(capaStore.list(tenant.organizationId, historicalEventId)).resolves.toEqual([
+      expect.objectContaining({ id: historicalActionId, status: "OPEN", completionEvidence: null }),
+    ]);
   });
 });
