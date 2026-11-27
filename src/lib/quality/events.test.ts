@@ -7,6 +7,7 @@ const userId="00000000-0000-0000-0000-000000000002";
 const context=(permissions:string[]):AuthorizationContext=>({organizationId,userId,userState:"ACTIVE",grants:permissions.map(permission=>({permission,scopeType:"ORGANIZATION" as const,scopeId:null}))});
 const event=(status:QualityEventRecord["status"]="OPEN"):QualityEventRecord=>({id:"00000000-0000-0000-0000-000000000003",organizationId,eventNumber:"QE-2026-000001",type:"NONCONFORMANCE",severity:"MEDIUM",source:"MANUAL",status,summary:"Example",description:null,discoveredAt:new Date(),reportedByUserId:userId,ownerUserId:null,dueAt:null,createdAt:new Date(),updatedAt:new Date()});
 const store=():QualityEventStore=>({
+  getIntake:vi.fn(async()=>null),
   listLifecycleHistory:vi.fn(async()=>[]),
   listEvents:vi.fn(async()=>[]),
   listAssignableOwners:vi.fn(async()=>[]),
@@ -15,6 +16,15 @@ const store=():QualityEventStore=>({
 });
 
 describe("QualityEventService",()=>{
+  it("reads the original report only for an authorized organization", async () => {
+    const eventId = event().id;
+    const s = store();
+    const service = new QualityEventService(s);
+    expect(() => service.getIntake(context([]), eventId)).toThrow("Access denied");
+    expect(s.getIntake).not.toHaveBeenCalled();
+    await expect(service.getIntake(context(["quality_event.read"]), eventId)).resolves.toBeNull();
+    expect(s.getIntake).toHaveBeenCalledWith(organizationId, eventId);
+  });
   it("scopes lifecycle history to the signed-in tenant and requires read permission", async () => {
     const eventId = event().id;
     const s = store();

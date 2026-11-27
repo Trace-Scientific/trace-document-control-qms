@@ -258,4 +258,26 @@ describe.skipIf(!enabled)("CAPA worklist in migrated PostgreSQL", () => {
     ]));
     await expect(store.listLifecycleHistory(otherTenant.organizationId, eventId)).resolves.toEqual([]);
   });
+
+  it("returns recorded intake fields only for events in the requested tenant", async () => {
+    const tenant = await createTenant();
+    const otherTenant = await createTenant();
+    const store = new PrismaQualityEventStore();
+    const discoveredAt = new Date("2026-11-06T08:45:00Z");
+    const report = await store.createEvent({
+      organizationId: tenant.organizationId, actorUserId: tenant.ownerId,
+      type: "NONCONFORMANCE", severity: "HIGH", source: "MANUAL", summary: "Synthetic incident",
+      description: "Original reported description", discoveredAt, ownerUserId: null, dueAt: null,
+    });
+    await store.updateLifecycle({
+      organizationId: tenant.organizationId, actorUserId: tenant.ownerId, eventId: report.id,
+      status: "INVESTIGATING", reason: "Begin investigation",
+    });
+
+    await expect(store.getIntake(tenant.organizationId, report.id)).resolves.toEqual({
+      type: "NONCONFORMANCE", severity: "HIGH", source: "MANUAL", description: "Original reported description",
+      reporterName: "Synthetic Owner", discoveredAt, createdAt: report.createdAt,
+    });
+    await expect(store.getIntake(otherTenant.organizationId, report.id)).resolves.toBeNull();
+  });
 });
