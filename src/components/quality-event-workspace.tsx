@@ -1,6 +1,7 @@
 "use client";
 
 import type { CapaWorkItem } from "@/lib/quality/capa";
+import { getLifecycleAssignmentChanges } from "@/lib/quality/lifecycle-assignment";
 import { filterQualityEvents, isQualityEventOverdue, type QualityEventView } from "@/lib/quality/event-register";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { QualityCapaWorklist } from "./quality-capa-worklist";
@@ -9,7 +10,7 @@ import { QualityEventLifecycleHistory } from "./quality-event-lifecycle-history"
 import { QualityEventGovernedActions } from "./quality-event-governed-actions";
 
 type Status="OPEN"|"INVESTIGATING"|"ACTION_REQUIRED"|"VERIFICATION"|"CLOSED";
-type EventRecord={id:string;eventNumber:string;type:string;severity:string;status:Status;summary:string;ownerUserId:string|null;dueAt:string|null;createdAt:string};
+type EventRecord={id:string;eventNumber:string;type:string;severity:string;status:Status;summary:string;ownerUserId:string|null;ownerName?:string|null;dueAt:string|null;createdAt:string};
 type OwnerOption={id:string;email:string;firstName:string;lastName:string};
 type Analytics={total:number;open:number;overdue:number;closed:number;byType:Array<{type:string;count:number}>;monthly:Array<{month:string;count:number}>};
 type Section="register"|"capa-worklist"|"create"|"lifecycle"|"governed";
@@ -56,8 +57,7 @@ export function QualityEventWorkspace({canManage,today,userId}:{canManage:boolea
   const [capaSelection, setCapaSelection] = useState<CapaWorkItem | null>(null);
   const [section,setSection]=useState<Section>("register");
   const [reason,setReason]=useState("");
-  const [ownerUserId,setOwnerUserId]=useState("");
-  const [dueAt,setDueAt]=useState("");
+  const [assignmentDraft, setAssignmentDraft] = useState<{ ownerUserId?: string | null; dueAt?: string | null }>({});
   const [error,setError]=useState("");
   const [notice,setNotice]=useState("");
   const [busy,setBusy]=useState(false);
@@ -88,23 +88,23 @@ export function QualityEventWorkspace({canManage,today,userId}:{canManage:boolea
     });
     return () => controller.abort();
   }, [canManage, applyRegister]);
-  const selected = useMemo(() => events.find(event => event.id === selectedId) ?? (
+  const selectedRecord = useMemo(() => events.find(event => event.id === selectedId), [events, selectedId]);
+  const selected = selectedRecord ?? (
     capaSelection?.eventId === selectedId ? {
       id: capaSelection.eventId,
       eventNumber: capaSelection.eventNumber,
       summary: capaSelection.eventSummary,
       status: capaSelection.eventStatus,
     } : null
-  ), [events, selectedId, capaSelection]);
+  );
   const ownerById=useMemo(()=>new Map(owners.map(owner=>[owner.id,owner])),[owners]);
   const visibleEvents = filterQualityEvents(events, filters, userId, today);
-  const ownerLabel=(id:string|null)=>{if(!id)return "Unassigned";const owner=ownerById.get(id);return owner?`${owner.firstName} ${owner.lastName} · ${owner.email}`:"Assigned user";};
+  const ownerLabel=(id:string|null, recordedName?:string|null)=>{if(!id)return "Unassigned";const owner=ownerById.get(id);return owner?`${owner.firstName} ${owner.lastName} · ${owner.email}`:recordedName || "Assigned user";};
 
   function openEvent(id: string, destination: "lifecycle" | "governed", action: CapaWorkItem | null = null) {
     if (id !== selectedId) {
       setReason("");
-      setOwnerUserId("");
-      setDueAt("");
+      setAssignmentDraft({});
       setError("");
       setNotice("");
     }
@@ -123,8 +123,44 @@ export function QualityEventWorkspace({canManage,today,userId}:{canManage:boolea
     formElement.reset();openEvent(body.data.id, "lifecycle");setNotice(`Quality event ${body.data.eventNumber} created with audit evidence.`);await load();
   }
 
-  async function update(payload:Record<string,unknown>){if(!selected)return;setBusy(true);setError("");setNotice("");const response=await fetch(`/api/quality/events/${selected.id}`,{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({reason,...payload})});const body=await response.json().catch(()=>null);setBusy(false);if(!response.ok){setError(body?.error??"Quality event update failed");return;}setReason("");setOwnerUserId("");setDueAt("");setNotice("Quality event lifecycle update recorded with audit evidence.");setHistoryRevision(revision => revision + 1);await load();}
-  async function saveMetadata(event:FormEvent){event.preventDefault();const payload:Record<string,unknown>={};if(ownerUserId)payload.ownerUserId=ownerUserId;if(dueAt)payload.dueAt=dueAt;await update(payload);}
+  const assignmentChanges = selectedRecord ? getLifecycleAssignmentChanges(selectedRecord, assignmentDraft) : {};
+  const currentDueDate = selectedRecord?.dueAt?.slice(0, 10) ?? "";
+  const selectedOwner = assignmentDraft.ownerUserId === undefined ? selectedRecord?.ownerUserId ?? "" : assignmentDraft.ownerUserId ?? "";
+  const selectedDueDate = assignmentDraft.dueAt === undefined ? currentDueDate : assignmentDraft.dueAt ?? "";
+
+  async function update(payload: { status?: Status; ownerUserId?: string | null; dueAt?: string | null }) {
+    if (!selected || busy) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/quality/events/${selected.id}`, {
+        method: "PATCH", credentials: "same-origin", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason, ...payload }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        setError(body?.error ?? "Quality event update failed");
+        return;
+      }
+      if (body?.data?.id !== selected.id) throw new Error("Invalid quality event update response");
+      setEvents(current => current.map(event => event.id === selected.id ? body.data : event));
+      setReason("");
+      setAssignmentDraft({});
+      setNotice("Quality event lifecycle update recorded with audit evidence.");
+      setHistoryRevision(revision => revision + 1);
+      await load();
+    } catch {
+      setError("Quality event update could not be confirmed. Refresh the event before retrying.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function saveMetadata(event: FormEvent) {
+    event.preventDefault();
+    if (selectedRecord && Object.keys(assignmentChanges).length > 0) void update(assignmentChanges);
+  }
 
   const sections=[
     {id:"register" as const,label:"Quality events",description:"Review the event register, status, severity, ownership, and due dates.",visible:true},
@@ -172,7 +208,7 @@ export function QualityEventWorkspace({canManage,today,userId}:{canManage:boolea
               <td>{event.type.replaceAll("_", " ")}</td>
               <td>{event.severity}</td>
               <td>{event.status.replaceAll("_", " ")}{isQualityEventOverdue(event, today) ? " · OVERDUE" : ""}</td>
-              <td>{ownerLabel(event.ownerUserId)}</td>
+              <td>{ownerLabel(event.ownerUserId, event.ownerName)}</td>
               <td>{event.dueAt?.slice(0, 10) ?? "—"}</td>
               <td><button className="secondary-button" type="button" aria-label={`Investigation & CAPA for ${event.eventNumber}`}
                 onClick={() => openEvent(event.id, "governed")}>Investigation &amp; CAPA</button></td>
@@ -197,7 +233,41 @@ export function QualityEventWorkspace({canManage,today,userId}:{canManage:boolea
 
     {section==="lifecycle"&&selected&&<div className="module-section-stack"><div className="section-heading"><div><h3>Governed lifecycle — {selected.eventNumber}</h3><p>Advance the regulated event status or update assignment and due date with a required reason.</p></div></div>
       <QualityEventOriginalReport key={selected.id} eventId={selected.id} />
-      {canManage&&selected.status!=="CLOSED"?<><label className="quality-lifecycle-reason">Required reason<textarea rows={3} value={reason} onChange={event=>setReason(event.target.value)} maxLength={1000}/></label>{nextStatus[selected.status]&&<button type="button" disabled={busy||!reason.trim()} onClick={()=>void update({status:nextStatus[selected.status]})}>Advance to {nextStatus[selected.status]}</button>}<form onSubmit={saveMetadata} className="admin-form"><label>Owner<select value={ownerUserId} onChange={event=>setOwnerUserId(event.target.value)}><option value="">Select an active user</option>{owners.map(owner=><option key={owner.id} value={owner.id}>{owner.firstName} {owner.lastName} · {owner.email}</option>)}</select></label><label>Due date<input type="date" value={dueAt} onChange={event=>setDueAt(event.target.value)}/></label><button type="submit" disabled={busy||!reason.trim()||(!ownerUserId&&!dueAt)}>Update assignment / due date</button></form></>:<p>{selected.status==="CLOSED"?"This quality event is closed.":"You have read-only access to this event lifecycle."}</p>}
+      {selectedRecord && <dl className="quality-record-details">
+        <dt>Current owner</dt><dd>{ownerLabel(selectedRecord.ownerUserId, selectedRecord.ownerName)}</dd>
+        <dt>Current due date</dt><dd>{currentDueDate || "No due date"}</dd>
+      </dl>}
+      {canManage && selectedRecord && selected.status !== "CLOSED" ? <>
+        <label className="quality-lifecycle-reason">Required reason
+          <textarea rows={3} value={reason} disabled={busy} onChange={event => setReason(event.target.value)} maxLength={1000} />
+        </label>
+        {nextStatus[selected.status] && <button type="button" className="secondary-button" disabled={busy || !reason.trim()}
+          onClick={() => void update({ status: nextStatus[selected.status] })}>
+          Advance to {nextStatus[selected.status]?.replaceAll("_", " ").toLowerCase()}
+        </button>}
+        <form onSubmit={saveMetadata} className="admin-form">
+          <label>Owner
+            <select value={selectedOwner} disabled={busy}
+              onChange={event => setAssignmentDraft(draft => ({ ...draft, ownerUserId: event.target.value || null }))}>
+              <option value="">Unassigned</option>
+              {selectedRecord.ownerUserId && !ownerById.has(selectedRecord.ownerUserId) &&
+                <option value={selectedRecord.ownerUserId} disabled>Current owner (unavailable for assignment)</option>}
+              {owners.map(owner => <option key={owner.id} value={owner.id}>{owner.firstName} {owner.lastName} · {owner.email}</option>)}
+            </select>
+          </label>
+          <label>Due date
+            <input type="date" value={selectedDueDate} disabled={busy}
+              onChange={event => setAssignmentDraft(draft => ({ ...draft, dueAt: event.target.value || null }))} />
+          </label>
+          <button type="button" className="secondary-button" disabled={busy || !selectedDueDate}
+            onClick={() => setAssignmentDraft(draft => ({ ...draft, dueAt: null }))}>Clear due date</button>
+          <button type="submit" disabled={busy || !reason.trim() || Object.keys(assignmentChanges).length === 0}>
+            Update assignment / due date
+          </button>
+        </form>
+      </> : <p>{selected.status === "CLOSED" ? "This quality event is closed." : canManage
+        ? "Assignment controls are unavailable until the event register loads."
+        : "You have read-only access to this event lifecycle."}</p>}
       <QualityEventLifecycleHistory key={`${selected.id}:${historyRevision}`} eventId={selected.id} />
     </div>}
 

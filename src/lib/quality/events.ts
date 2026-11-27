@@ -13,6 +13,8 @@ export type QualityEventRecord = {
   summary:string; description:string|null; discoveredAt:Date; reportedByUserId:string; ownerUserId:string|null; dueAt:Date|null; createdAt:Date; updatedAt:Date;
 };
 
+export type QualityEventRegisterEntry = QualityEventRecord & { ownerName: string | null };
+
 export type QualityEventIntake = Pick<QualityEventRecord,
   "type" | "severity" | "source" | "description" | "discoveredAt" | "createdAt"
 > & { reporterName: string };
@@ -39,7 +41,7 @@ export type QualityEventLifecycleChange = {
 export interface QualityEventStore {
   getIntake(organizationId: string, eventId: string): Promise<QualityEventIntake | null>;
   listLifecycleHistory(organizationId: string, eventId: string): Promise<QualityEventLifecycleChange[]>;
-  listEvents(organizationId:string, status?:QualityEventStatus):Promise<QualityEventRecord[]>;
+  listEvents(organizationId:string, status?:QualityEventStatus):Promise<QualityEventRegisterEntry[]>;
   listAssignableOwners(organizationId:string):Promise<QualityEventOwnerOption[]>;
   createEvent(input:{organizationId:string;type:QualityEventType;severity:QualityEventSeverity;source:QualityEventSource;summary:string;description:string|null;discoveredAt:Date;ownerUserId:string|null;dueAt:Date|null;actorUserId:string}):Promise<QualityEventRecord>;
   updateLifecycle(input:QualityEventLifecycleUpdate):Promise<QualityEventRecord>;

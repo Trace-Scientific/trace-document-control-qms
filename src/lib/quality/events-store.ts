@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import { QualityEventValidationError, type QualityEventIntake, type QualityEventLifecycleChange, type QualityEventLifecycleUpdate, type QualityEventOwnerOption, type QualityEventRecord, type QualityEventStatus, type QualityEventStore } from "./events";
+import { QualityEventValidationError, type QualityEventIntake, type QualityEventLifecycleChange, type QualityEventLifecycleUpdate, type QualityEventOwnerOption, type QualityEventRecord, type QualityEventRegisterEntry, type QualityEventStatus, type QualityEventStore } from "./events";
 
 const nextStatus:Record<Exclude<QualityEventStatus,"CLOSED">,QualityEventStatus|undefined>={OPEN:"INVESTIGATING",INVESTIGATING:"ACTION_REQUIRED",ACTION_REQUIRED:"VERIFICATION",VERIFICATION:undefined};
 
@@ -33,10 +33,15 @@ export class PrismaQualityEventStore implements QualityEventStore {
     `);
   }
 
-  listEvents(organizationId:string,status?:QualityEventStatus) {
-    return db.$queryRaw<QualityEventRecord[]>(status
-      ? Prisma.sql`SELECT * FROM "QualityEvent" WHERE "organizationId"=${organizationId}::uuid AND "status"=${status}::"QualityEventStatus" ORDER BY "createdAt" DESC`
-      : Prisma.sql`SELECT * FROM "QualityEvent" WHERE "organizationId"=${organizationId}::uuid ORDER BY "createdAt" DESC`);
+  listEvents(organizationId: string, status?: QualityEventStatus) {
+    const statusFilter = status ? Prisma.sql`AND q."status" = ${status}::"QualityEventStatus"` : Prisma.empty;
+    return db.$queryRaw<QualityEventRegisterEntry[]>(Prisma.sql`
+      SELECT q.*, NULLIF(TRIM(CONCAT(owner."firstName", ' ', owner."lastName")), '') AS "ownerName"
+      FROM "QualityEvent" q
+      LEFT JOIN "User" owner ON owner."organizationId" = q."organizationId" AND owner."id" = q."ownerUserId"
+      WHERE q."organizationId" = ${organizationId}::uuid ${statusFilter}
+      ORDER BY q."createdAt" DESC
+    `);
   }
 
   listAssignableOwners(organizationId:string) {

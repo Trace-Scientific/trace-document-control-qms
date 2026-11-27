@@ -42,3 +42,7 @@ The endpoint requires organization-wide quality event read permission and scopes
 ## Original event report
 
 The lifecycle view displays the originally recorded event type, severity, source, reporter, discovery time, record time, and description above the change history. Timestamps display in UTC. The detail endpoint uses the existing quality event read permission, restricts lookup to the signed-in organization, and returns only the fields needed for the report. The feature reads existing records and requires no migration.
+
+## Updating the owner and due date
+
+The lifecycle panel displays the recorded owner and due date. Managers can set the owner to Unassigned or clear the date, then submit with a reason. The form sends only fields that differ from the values shown, and the existing lifecycle transaction records previous and new values in history. The same validation, access checks, and closed-event restrictions apply.
