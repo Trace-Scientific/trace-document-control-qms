@@ -26,3 +26,7 @@ Investigation evidence may be recorded only while an event is `INVESTIGATING`, `
 
 ## Migration
 `0030_quality_event_investigation_risk`
+
+## Reviewing recorded investigations
+
+The investigation workspace shows the newest entry first and lets readers expand earlier entries. Each entry identifies who recorded it and when, and shows the findings, affected scope, root cause, risk inputs, calculated score, evidence summary, and supporting-file indicator. The list remains available for closed events through the existing tenant-scoped quality read permission. Entries are still appended through the governed investigation workflow.

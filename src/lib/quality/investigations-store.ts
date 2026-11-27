@@ -1,9 +1,17 @@
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import { QualityInvestigationValidationError,type QualityInvestigationRecord,type QualityInvestigationStore } from "./investigations";
+import { QualityInvestigationValidationError,type QualityInvestigationHistoryEntry,type QualityInvestigationRecord,type QualityInvestigationStore } from "./investigations";
 
 export class PrismaQualityInvestigationStore implements QualityInvestigationStore {
-  list(organizationId:string,eventId:string){return db.$queryRaw<QualityInvestigationRecord[]>(Prisma.sql`SELECT * FROM "QualityEventInvestigation" WHERE "organizationId"=${organizationId}::uuid AND "eventId"=${eventId}::uuid ORDER BY "sequence" DESC`);}
+  list(organizationId: string, eventId: string) {
+    return db.$queryRaw<QualityInvestigationHistoryEntry[]>(Prisma.sql`
+      SELECT i.*, TRIM(CONCAT(u."firstName", ' ', u."lastName")) AS "investigatorName"
+      FROM "QualityEventInvestigation" i
+      JOIN "User" u ON u."organizationId" = i."organizationId" AND u."id" = i."investigatorUserId"
+      WHERE i."organizationId" = ${organizationId}::uuid AND i."eventId" = ${eventId}::uuid
+      ORDER BY i."sequence" DESC
+    `);
+  }
   async create(input:Parameters<QualityInvestigationStore["create"]>[0]){
     return db.$transaction(async tx=>{
       const events=await tx.$queryRaw<Array<{id:string;eventNumber:string;status:string}>>(Prisma.sql`SELECT "id","eventNumber","status"::text AS "status" FROM "QualityEvent" WHERE "organizationId"=${input.organizationId}::uuid AND "id"=${input.eventId}::uuid FOR UPDATE`);
