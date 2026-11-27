@@ -38,3 +38,7 @@ The read endpoint requires organization-wide `quality_event.read` and uses the s
 Each completed action shows its completion evidence and recorded effectiveness checks. The history includes the result, reviewer name, UTC timestamp, evidence, and whether the reviewer attached a supporting file. Checks are shown newest first. An action shows a passing check on record when any check passed, consistent with the existing closure gate.
 
 The event's CAPA read endpoint returns the existing action list plus the effectiveness history under the same organization-wide quality read permission. History is scoped to the selected event and its actions. This adds no writes or migration.
+
+## CAPA evidence after signed closure
+
+Completion and effectiveness recording lock the associated quality event before locking the CAPA action. Signed closure locks that same event, so a CAPA change either commits before closure or is rejected after it. Closed events show the existing CAPA actions and check history for review. This guard applies to historical records as well and requires no migration.
