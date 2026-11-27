@@ -1,8 +1,9 @@
 "use client";
 
+import type { QualityEventSeverity } from "@/lib/quality/events";
 import type { CapaWorkItem } from "@/lib/quality/capa";
 import { getLifecycleAssignmentChanges } from "@/lib/quality/lifecycle-assignment";
-import { filterQualityEvents, isQualityEventOverdue, type QualityEventView } from "@/lib/quality/event-register";
+import { filterQualityEvents, isQualityEventOverdue, type QualityEventSort, type QualityEventView } from "@/lib/quality/event-register";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { QualityCapaWorklist } from "./quality-capa-worklist";
 import { QualityEventOriginalReport } from "./quality-event-original-report";
@@ -10,7 +11,7 @@ import { QualityEventLifecycleHistory } from "./quality-event-lifecycle-history"
 import { QualityEventGovernedActions } from "./quality-event-governed-actions";
 
 type Status="OPEN"|"INVESTIGATING"|"ACTION_REQUIRED"|"VERIFICATION"|"CLOSED";
-type EventRecord={id:string;eventNumber:string;type:string;severity:string;status:Status;summary:string;ownerUserId:string|null;ownerName?:string|null;dueAt:string|null;createdAt:string};
+type EventRecord={id:string;eventNumber:string;type:string;severity:QualityEventSeverity;status:Status;summary:string;ownerUserId:string|null;ownerName?:string|null;dueAt:string|null;createdAt:string};
 type OwnerOption={id:string;email:string;firstName:string;lastName:string};
 type Analytics={total:number;open:number;overdue:number;closed:number;byType:Array<{type:string;count:number}>;monthly:Array<{month:string;count:number}>};
 type Section="register"|"capa-worklist"|"create"|"lifecycle"|"governed";
@@ -27,7 +28,7 @@ const views: { value: QualityEventView; label: string }[] = [
   { value: "overdue", label: "Overdue events" },
   { value: "unassigned", label: "Unassigned active events" },
 ];
-const emptyFilters = { view: "all" as QualityEventView, query: "", status: "", severity: "" };
+const emptyFilters = { view: "all" as QualityEventView, query: "", status: "", severity: "", type: "", sort: "newest" as QualityEventSort };
 
 async function readRegister(canManage: boolean, signal?: AbortSignal) {
   const options = { credentials: "same-origin" as const, signal };
@@ -195,6 +196,15 @@ export function QualityEventWorkspace({canManage,today,userId}:{canManage:boolea
         <label>Severity<select value={filters.severity} onChange={event => setFilters(current => ({ ...current, severity: event.target.value }))}>
           <option value="">All severities</option>
           {severities.map(severity => <option key={severity} value={severity}>{severity}</option>)}
+        </select></label>
+        <label>Event type<select value={filters.type} onChange={event => setFilters(current => ({ ...current, type: event.target.value }))}>
+          <option value="">All event types</option>
+          {eventTypes.map(type => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}
+        </select></label>
+        <label>Sort by<select value={filters.sort} onChange={event => setFilters(current => ({ ...current, sort: event.target.value as QualityEventSort }))}>
+          <option value="newest">Newest recorded</option>
+          <option value="due">Earliest due date</option>
+          <option value="severity">Highest severity</option>
         </select></label>
         <button className="secondary-button" type="button" disabled={filters === emptyFilters} onClick={() => setFilters(emptyFilters)}>Clear filters</button>
       </form>

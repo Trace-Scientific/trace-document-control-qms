@@ -46,3 +46,5 @@ The lifecycle view displays the originally recorded event type, severity, source
 ## Updating the owner and due date
 
 The lifecycle panel displays the recorded owner and due date. Managers can set the owner to Unassigned or clear the date, then submit with a reason. The form sends only fields that differ from the values shown, and the existing lifecycle transaction records previous and new values in history. The same validation, access checks, and closed-event restrictions apply.
+
+The register also supports filtering by event type and sorting by earliest due date or highest severity. Both priority sorts place closed events after active ones. The default remains newest recorded. These filters operate on the existing authorized register results.
