@@ -32,3 +32,9 @@ It adds:
 The quality event register provides all, active, my active, overdue, and unassigned active views. Search matches event number or summary and can be combined with status and severity. My active events uses the signed-in user's event assignments. Overdue means an active event with a due date before the current UTC date. Event rows open the lifecycle or the Investigation & CAPA workspace directly.
 
 Filters apply to events returned by the existing tenant-scoped read endpoint. The worklist adds no database changes or mutation permissions. Switching events clears pending lifecycle form inputs so they cannot carry over to another record. Investigation, CAPA, and closure continue through their existing server authorization and audit controls.
+
+## Reviewing lifecycle history
+
+The event's lifecycle panel lists recorded status, ownership, and due-date changes with their previous and new values, reason, actor, and UTC timestamp. It includes the signed transition to Closed. Owner names come from tenant user records, including inactive users when those records remain available. The panel refreshes after an update and can be refreshed on demand.
+
+The endpoint requires organization-wide quality event read permission and scopes history to the selected event in the signed-in tenant. It uses the existing append-only change records and requires no changes to stored history or the workflow.

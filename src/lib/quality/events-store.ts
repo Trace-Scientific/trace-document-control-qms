@@ -1,10 +1,27 @@
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import { QualityEventValidationError, type QualityEventLifecycleUpdate, type QualityEventOwnerOption, type QualityEventRecord, type QualityEventStatus, type QualityEventStore } from "./events";
+import { QualityEventValidationError, type QualityEventLifecycleChange, type QualityEventLifecycleUpdate, type QualityEventOwnerOption, type QualityEventRecord, type QualityEventStatus, type QualityEventStore } from "./events";
 
 const nextStatus:Record<Exclude<QualityEventStatus,"CLOSED">,QualityEventStatus|undefined>={OPEN:"INVESTIGATING",INVESTIGATING:"ACTION_REQUIRED",ACTION_REQUIRED:"VERIFICATION",VERIFICATION:undefined};
 
 export class PrismaQualityEventStore implements QualityEventStore {
+  listLifecycleHistory(organizationId: string, eventId: string) {
+    return db.$queryRaw<QualityEventLifecycleChange[]>(Prisma.sql`
+      SELECT c."id", c."kind", c."fromValue", c."toValue", c."reason", c."createdAt",
+        TRIM(CONCAT(actor."firstName", ' ', actor."lastName")) AS "actorName",
+        NULLIF(TRIM(CONCAT(previous_owner."firstName", ' ', previous_owner."lastName")), '') AS "fromOwnerName",
+        NULLIF(TRIM(CONCAT(next_owner."firstName", ' ', next_owner."lastName")), '') AS "toOwnerName"
+      FROM "QualityEventChange" c
+      JOIN "User" actor ON actor."organizationId" = c."organizationId" AND actor."id" = c."actorUserId"
+      LEFT JOIN "User" previous_owner ON previous_owner."organizationId" = c."organizationId"
+        AND c."kind" = 'OWNER' AND previous_owner."id"::text = c."fromValue"
+      LEFT JOIN "User" next_owner ON next_owner."organizationId" = c."organizationId"
+        AND c."kind" = 'OWNER' AND next_owner."id"::text = c."toValue"
+      WHERE c."organizationId" = ${organizationId}::uuid AND c."eventId" = ${eventId}::uuid
+      ORDER BY c."createdAt" DESC, c."id" DESC
+    `);
+  }
+
   listEvents(organizationId:string,status?:QualityEventStatus) {
     return db.$queryRaw<QualityEventRecord[]>(status
       ? Prisma.sql`SELECT * FROM "QualityEvent" WHERE "organizationId"=${organizationId}::uuid AND "status"=${status}::"QualityEventStatus" ORDER BY "createdAt" DESC`
