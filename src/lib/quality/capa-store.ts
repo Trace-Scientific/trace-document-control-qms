@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import { QualityCapaValidationError, type CapaRecord, type CapaWorkItem, type EffectivenessCheckRecord, type QualityCapaStore } from "./capa";
+import { QualityCapaValidationError, type CapaEffectivenessHistoryEntry, type CapaRecord, type CapaWorkItem, type EffectivenessCheckRecord, type QualityCapaStore } from "./capa";
 
 const allowedStatuses=new Set(["ACTION_REQUIRED","VERIFICATION"]);
 
@@ -12,6 +12,19 @@ async function requireAvailableEvidenceFile(tx:Prisma.TransactionClient,organiza
 
 export class PrismaQualityCapaStore implements QualityCapaStore{
   list(organizationId:string,eventId:string){return db.$queryRaw<CapaRecord[]>(Prisma.sql`SELECT * FROM "QualityCapaAction" WHERE "organizationId"=${organizationId}::uuid AND "eventId"=${eventId}::uuid ORDER BY "createdAt" ASC`);}
+  listEffectivenessHistory(organizationId: string, eventId: string) {
+    return db.$queryRaw<CapaEffectivenessHistoryEntry[]>(Prisma.sql`
+      SELECT e."id", e."capaActionId", e."result", e."evidence", e."evidenceFileId", e."checkedAt",
+             TRIM(CONCAT(u."firstName", ' ', u."lastName")) AS "checkerName"
+      FROM "QualityEffectivenessCheck" e
+      JOIN "QualityCapaAction" a ON a."organizationId" = e."organizationId"
+        AND a."eventId" = e."eventId" AND a."id" = e."capaActionId"
+      JOIN "User" u ON u."organizationId" = e."organizationId" AND u."id" = e."checkedByUserId"
+      WHERE e."organizationId" = ${organizationId}::uuid AND e."eventId" = ${eventId}::uuid
+      ORDER BY e."checkedAt" DESC, e."id" DESC
+    `);
+  }
+
   listWorklist(organizationId: string) {
     return db.$queryRaw<CapaWorkItem[]>(Prisma.sql`
       SELECT a."id", a."eventId", q."eventNumber", q."summary" AS "eventSummary",

@@ -7,9 +7,18 @@ const context=(permissions:string[]):AuthorizationContext=>({organizationId,user
 const action: CapaRecord={id:actionId,organizationId,eventId,actionType:"CORRECTIVE",description:"Correct process",ownerUserId:userId,dueAt:new Date("2026-09-30"),status:"OPEN",completedAt:null,completionEvidence:null,completionEvidenceFileId:null,createdByUserId:userId,createdAt:new Date()};
 const completedAction: CapaRecord={...action,status:"COMPLETED",completedAt:new Date(),completionEvidence:"Implemented"};
 const check: EffectivenessCheckRecord={id:"00000000-0000-0000-0000-000000000005",organizationId,eventId,capaActionId:actionId,result:"PASS",evidence:"No recurrence",evidenceFileId:null,checkedByUserId:userId,checkedAt:new Date()};
-const store=():QualityCapaStore=>({listWorklist:vi.fn(async()=>[]),list:vi.fn(async()=>[]),create:vi.fn(async()=>action),complete:vi.fn(async()=>completedAction),verify:vi.fn(async()=>check)});
+const store=():QualityCapaStore=>({listEffectivenessHistory:vi.fn(async()=>[]),listWorklist:vi.fn(async()=>[]),list:vi.fn(async()=>[]),create:vi.fn(async()=>action),complete:vi.fn(async()=>completedAction),verify:vi.fn(async()=>check)});
 
 describe("QualityCapaService",()=>{
+  it("authorizes effectiveness history at the organization and event boundary", async () => {
+    const s = store();
+    const service = new QualityCapaService(s);
+    expect(() => service.listEffectivenessHistory(context([]), eventId)).toThrow("Access denied");
+    expect(s.listEffectivenessHistory).not.toHaveBeenCalled();
+    await expect(service.listEffectivenessHistory(context(["quality_event.read"]), eventId)).resolves.toEqual([]);
+    expect(s.listEffectivenessHistory).toHaveBeenCalledWith(organizationId, eventId);
+  });
+
   it("scopes the worklist to the signed-in organization", async () => {
     const s = store();
     const service = new QualityCapaService(s);
