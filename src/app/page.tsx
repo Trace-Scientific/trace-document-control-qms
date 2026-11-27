@@ -118,7 +118,7 @@ export default async function HomePage() {
 
   const laboratory = visibility.equipmentManagement ? (
     <>
-      <EquipmentManagementWorkspace canManage={visibility.equipmentManage} />
+      <EquipmentManagementWorkspace canManage={visibility.equipmentManage} today={today} />
       {visibility.equipmentManage && <EquipmentComplianceEvidenceWorkspace today={today} />}
       {visibility.equipmentManage && <EquipmentScheduleCorrectionWorkspace />}
       <EquipmentComplianceWorkspace canManage={visibility.equipmentManage} />

@@ -38,6 +38,8 @@ jobs:
         run: npx vitest run src/lib/training/competency-postgres.integration.test.ts src/lib/training/competency-requirements-postgres.integration.test.ts
       - name: Verify CAPA worklist and tenant isolation
         run: npx vitest run src/lib/quality/capa-worklist-postgres.integration.test.ts
+      - name: Verify equipment register worklist and tenant isolation
+        run: npx vitest run src/lib/equipment/worklist-postgres.integration.test.ts
 
   verify:
     runs-on: ubuntu-latest
