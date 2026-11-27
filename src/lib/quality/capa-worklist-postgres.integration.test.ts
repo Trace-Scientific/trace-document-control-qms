@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "../db";
 import { PrismaQualityCapaStore } from "./capa-store";
+import { PrismaQualityEventStore } from "./events-store";
 import { PrismaQualityClosureStore } from "./closure-store";
 import { PrismaQualityInvestigationStore } from "./investigations-store";
 
@@ -169,6 +170,12 @@ describe.skipIf(!enabled)("CAPA worklist in migrated PostgreSQL", () => {
     });
     await expect(sign()).resolves.toEqual({ closureId: expect.any(String), signatureId: expect.any(String) });
     await expect(readiness()).resolves.toMatchObject({ status: "CLOSED" });
+    await expect(new PrismaQualityEventStore().listLifecycleHistory(tenant.organizationId, eventId)).resolves.toEqual([
+      expect.objectContaining({
+        kind: "STATUS", fromValue: "VERIFICATION", toValue: "CLOSED", actorName: "Synthetic Owner",
+        reason: "Synthetic closure",
+      }),
+    ]);
 
     const closedAction = { organizationId: tenant.organizationId, eventId, actorUserId: tenant.ownerId };
     const historyBefore = await capaStore.listEffectivenessHistory(tenant.organizationId, eventId);
@@ -216,5 +223,39 @@ describe.skipIf(!enabled)("CAPA worklist in migrated PostgreSQL", () => {
       expect.objectContaining({ id: first.id, sequence: 1, findings: "Initial finding", riskScore: 6 }),
     ]);
     await expect(store.list(otherTenant.organizationId, eventId)).resolves.toEqual([]);
+  });
+
+  it("returns recorded lifecycle changes for the requested event and tenant", async () => {
+    const tenant = await createTenant();
+    const otherTenant = await createTenant();
+    const eventId = await createEvent(tenant, "QE-000001");
+    const secondEventId = await createEvent(tenant, "QE-000002");
+    const assignee = await db.user.create({ data: {
+      organizationId: tenant.organizationId, email: "assignee@example.invalid", firstName: "Assigned", lastName: "Reviewer",
+      status: "ACTIVE",
+    } });
+    const store = new PrismaQualityEventStore();
+    const actor = { organizationId: tenant.organizationId, actorUserId: tenant.ownerId };
+    await store.updateLifecycle({
+      ...actor, eventId, ownerUserId: assignee.id, dueAt: new Date("2026-12-01"), reason: "Assign for review",
+    });
+    await store.updateLifecycle({ ...actor, eventId: secondEventId, dueAt: new Date("2026-12-04"), reason: "Separate event" });
+    await db.user.update({ where: { id: assignee.id }, data: { status: "INACTIVE" } });
+    await store.updateLifecycle({ ...actor, eventId, ownerUserId: null, reason: "Return to the queue" });
+
+    const history = await store.listLifecycleHistory(tenant.organizationId, eventId);
+    expect(history).toHaveLength(3);
+    expect(history).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "OWNER", fromValue: null, toValue: assignee.id, fromOwnerName: null, toOwnerName: "Assigned Reviewer",
+        actorName: "Synthetic Owner", reason: "Assign for review", createdAt: expect.any(Date),
+      }),
+      expect.objectContaining({
+        kind: "OWNER", fromValue: assignee.id, toValue: null, fromOwnerName: "Assigned Reviewer", toOwnerName: null,
+        actorName: "Synthetic Owner", reason: "Return to the queue",
+      }),
+      expect.objectContaining({ kind: "DUE_DATE", fromValue: null, toValue: "2026-12-01", reason: "Assign for review" }),
+    ]));
+    await expect(store.listLifecycleHistory(otherTenant.organizationId, eventId)).resolves.toEqual([]);
   });
 });
