@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "../db";
 import { PrismaQualityCapaStore } from "./capa-store";
+import { PrismaQualityClosureStore } from "./closure-store";
 
 const enabled = process.env.RUN_DEMO_FIXTURE_INTEGRATION === "1";
 const disposableUrl = "postgresql://trace_qms_test:local_integration_test_only@127.0.0.1:5433/trace_qms_integration_test?schema=public";
@@ -115,5 +116,53 @@ describe.skipIf(!enabled)("CAPA worklist in migrated PostgreSQL", () => {
       expect.objectContaining({ capaActionId: action, result: "FAIL", checkedAt: failedAt }),
     ]);
     await expect(store.listEffectivenessHistory(otherTenant.organizationId, eventId)).resolves.toEqual([]);
+  });
+
+  it("uses current tenant-scoped prerequisites for both readiness and transactional closure", async () => {
+    const tenant = await createTenant();
+    const otherTenant = await createTenant();
+    const eventNumber = "QE-000001";
+    const eventId = await createEvent(tenant, eventNumber);
+    const store = new PrismaQualityClosureStore();
+    const readiness = () => store.loadReadiness(tenant.organizationId, eventId);
+    const sign = () => store.commitClosure({
+      organizationId: tenant.organizationId, eventId, eventNumber, signerUserId: tenant.ownerId,
+      closureReason: "Synthetic closure", payloadHash: "a".repeat(64),
+      signedAt: new Date("2026-11-30T12:00:00Z"), authenticationValidUntil: new Date("2026-11-30T12:05:00Z"),
+    });
+
+    await expect(store.loadReadiness(otherTenant.organizationId, eventId)).resolves.toBeNull();
+    await expect(readiness()).resolves.toEqual({
+      status: "VERIFICATION", hasInvestigation: false, totalActions: 0, openActions: 0, completedWithoutPass: 0,
+    });
+    await expect(sign()).rejects.toThrow("Investigation evidence is required before closure");
+    await db.$executeRaw`
+      INSERT INTO "QualityEventInvestigation"
+        ("organizationId", "eventId", "sequence", "findings", "affectedScope", "rootCauseMethod",
+         "rootCause", "riskLikelihood", "riskImpact", "riskScore", "investigatorUserId")
+      VALUES (${tenant.organizationId}::uuid, ${eventId}::uuid, 1, 'Synthetic findings', 'Synthetic scope',
+              'FIVE_WHYS', 'Synthetic root cause', 1, 1, 1, ${tenant.ownerId}::uuid)
+    `;
+    await expect(sign()).rejects.toThrow("At least one CAPA action is required before closure");
+    const openAction = await createAction(tenant, eventId, "Pending action", null);
+    const completedAction = await createAction(tenant, eventId, "Completed action", new Date("2026-11-02T00:00:00Z"));
+    await recordCheck(tenant, eventId, completedAction, "FAIL");
+
+    await expect(readiness()).resolves.toEqual({
+      status: "VERIFICATION", hasInvestigation: true, totalActions: 2, openActions: 1, completedWithoutPass: 1,
+    });
+    await expect(sign()).rejects.toThrow("All CAPA actions must be completed before closure");
+    await new PrismaQualityCapaStore().complete({
+      organizationId: tenant.organizationId, eventId, capaActionId: openAction, completionEvidence: "Synthetic completion",
+      completionEvidenceFileId: null, actorUserId: tenant.ownerId,
+    });
+    await expect(sign()).rejects.toThrow("Every CAPA action requires a passing effectiveness check before closure");
+    await recordCheck(tenant, eventId, completedAction, "PASS");
+    await recordCheck(tenant, eventId, openAction, "PASS");
+    await expect(readiness()).resolves.toEqual({
+      status: "VERIFICATION", hasInvestigation: true, totalActions: 2, openActions: 0, completedWithoutPass: 0,
+    });
+    await expect(sign()).resolves.toEqual({ closureId: expect.any(String), signatureId: expect.any(String) });
+    await expect(readiness()).resolves.toMatchObject({ status: "CLOSED" });
   });
 });
