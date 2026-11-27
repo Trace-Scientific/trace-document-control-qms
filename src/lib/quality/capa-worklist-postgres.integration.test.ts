@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "../db";
 import { PrismaQualityCapaStore } from "./capa-store";
 import { PrismaQualityClosureStore } from "./closure-store";
+import { PrismaQualityInvestigationStore } from "./investigations-store";
 
 const enabled = process.env.RUN_DEMO_FIXTURE_INTEGRATION === "1";
 const disposableUrl = "postgresql://trace_qms_test:local_integration_test_only@127.0.0.1:5433/trace_qms_integration_test?schema=public";
@@ -186,5 +187,34 @@ describe.skipIf(!enabled)("CAPA worklist in migrated PostgreSQL", () => {
     await expect(capaStore.list(tenant.organizationId, historicalEventId)).resolves.toEqual([
       expect.objectContaining({ id: historicalActionId, status: "OPEN", completionEvidence: null }),
     ]);
+  });
+
+  it("returns complete investigation entries in sequence order within their event and tenant", async () => {
+    const tenant = await createTenant();
+    const otherTenant = await createTenant();
+    const eventId = await createEvent(tenant, "QE-000001");
+    const secondEventId = await createEvent(tenant, "QE-000002");
+    const store = new PrismaQualityInvestigationStore();
+    const input = {
+      organizationId: tenant.organizationId, eventId, investigatorUserId: tenant.ownerId,
+      findings: "Initial finding", affectedScope: "Synthetic intake workflow",
+      evidenceSummary: null, evidenceFileId: null, rootCauseMethod: "FIVE_WHYS" as const,
+      rootCause: "Incomplete intake instructions", riskLikelihood: 2, riskImpact: 3,
+    };
+    const first = await store.create(input);
+    await store.create({ ...input, eventId: secondEventId });
+    const second = await store.create({
+      ...input, findings: "A second finding", evidenceSummary: "Synthetic review notes", riskLikelihood: 4,
+    });
+
+    await expect(store.list(tenant.organizationId, eventId)).resolves.toEqual([
+      expect.objectContaining({
+        id: second.id, sequence: 2, investigatorName: "Synthetic Owner", findings: "A second finding",
+        affectedScope: input.affectedScope, rootCause: input.rootCause, riskLikelihood: 4, riskImpact: 3,
+        riskScore: 12, evidenceSummary: "Synthetic review notes", createdAt: expect.any(Date),
+      }),
+      expect.objectContaining({ id: first.id, sequence: 1, findings: "Initial finding", riskScore: 6 }),
+    ]);
+    await expect(store.list(otherTenant.organizationId, eventId)).resolves.toEqual([]);
   });
 });

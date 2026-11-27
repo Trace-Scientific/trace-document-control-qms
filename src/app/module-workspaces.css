@@ -511,3 +511,14 @@
 .clia-template-form textarea {
   min-height: 6em;
 }
+
+.quality-investigation-evidence > dd {
+  margin-inline-start: 0;
+  margin-bottom: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.quality-investigation-evidence > dt {
+  font-weight: 700;
+}
