@@ -512,13 +512,13 @@
   min-height: 6em;
 }
 
-.quality-investigation-evidence > dd {
+.quality-record-details > dd {
   margin-inline-start: 0;
   margin-bottom: 0.75rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.quality-investigation-evidence > dt {
+.quality-record-details > dt {
   font-weight: 700;
 }

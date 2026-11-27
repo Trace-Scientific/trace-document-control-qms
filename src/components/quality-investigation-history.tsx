@@ -17,7 +17,7 @@ export function QualityInvestigationHistory({ investigations }: { investigations
       <summary>
         Investigation {record.sequence} · {rootCauseMethodLabels[record.rootCauseMethod]} · Risk score {record.riskScore}
       </summary>
-      <dl className="quality-investigation-evidence">
+      <dl className="quality-record-details">
         <dt>Recorded by</dt>
         <dd>{record.investigatorName || "Recorded investigator"}</dd>
         <dt>Recorded at</dt>

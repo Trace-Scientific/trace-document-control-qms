@@ -1,10 +1,21 @@
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import { QualityEventValidationError, type QualityEventLifecycleChange, type QualityEventLifecycleUpdate, type QualityEventOwnerOption, type QualityEventRecord, type QualityEventStatus, type QualityEventStore } from "./events";
+import { QualityEventValidationError, type QualityEventIntake, type QualityEventLifecycleChange, type QualityEventLifecycleUpdate, type QualityEventOwnerOption, type QualityEventRecord, type QualityEventStatus, type QualityEventStore } from "./events";
 
 const nextStatus:Record<Exclude<QualityEventStatus,"CLOSED">,QualityEventStatus|undefined>={OPEN:"INVESTIGATING",INVESTIGATING:"ACTION_REQUIRED",ACTION_REQUIRED:"VERIFICATION",VERIFICATION:undefined};
 
 export class PrismaQualityEventStore implements QualityEventStore {
+  async getIntake(organizationId: string, eventId: string) {
+    const [intake] = await db.$queryRaw<QualityEventIntake[]>(Prisma.sql`
+      SELECT q."type", q."severity", q."source", q."description", q."discoveredAt", q."createdAt",
+             TRIM(CONCAT(reporter."firstName", ' ', reporter."lastName")) AS "reporterName"
+      FROM "QualityEvent" q
+      JOIN "User" reporter ON reporter."organizationId" = q."organizationId" AND reporter."id" = q."reportedByUserId"
+      WHERE q."organizationId" = ${organizationId}::uuid AND q."id" = ${eventId}::uuid
+    `);
+    return intake ?? null;
+  }
+
   listLifecycleHistory(organizationId: string, eventId: string) {
     return db.$queryRaw<QualityEventLifecycleChange[]>(Prisma.sql`
       SELECT c."id", c."kind", c."fromValue", c."toValue", c."reason", c."createdAt",

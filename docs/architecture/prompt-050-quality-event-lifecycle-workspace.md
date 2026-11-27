@@ -38,3 +38,7 @@ Filters apply to events returned by the existing tenant-scoped read endpoint. Th
 The event's lifecycle panel lists recorded status, ownership, and due-date changes with their previous and new values, reason, actor, and UTC timestamp. It includes the signed transition to Closed. Owner names come from tenant user records, including inactive users when those records remain available. The panel refreshes after an update and can be refreshed on demand.
 
 The endpoint requires organization-wide quality event read permission and scopes history to the selected event in the signed-in tenant. It uses the existing append-only change records and requires no changes to stored history or the workflow.
+
+## Original event report
+
+The lifecycle view displays the originally recorded event type, severity, source, reporter, discovery time, record time, and description above the change history. Timestamps display in UTC. The detail endpoint uses the existing quality event read permission, restricts lookup to the signed-in organization, and returns only the fields needed for the report. The feature reads existing records and requires no migration.

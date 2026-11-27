@@ -13,6 +13,10 @@ export type QualityEventRecord = {
   summary:string; description:string|null; discoveredAt:Date; reportedByUserId:string; ownerUserId:string|null; dueAt:Date|null; createdAt:Date; updatedAt:Date;
 };
 
+export type QualityEventIntake = Pick<QualityEventRecord,
+  "type" | "severity" | "source" | "description" | "discoveredAt" | "createdAt"
+> & { reporterName: string };
+
 export type QualityEventOwnerOption={id:string;email:string;firstName:string;lastName:string};
 
 export type QualityEventLifecycleUpdate = {
@@ -33,6 +37,7 @@ export type QualityEventLifecycleChange = {
 };
 
 export interface QualityEventStore {
+  getIntake(organizationId: string, eventId: string): Promise<QualityEventIntake | null>;
   listLifecycleHistory(organizationId: string, eventId: string): Promise<QualityEventLifecycleChange[]>;
   listEvents(organizationId:string, status?:QualityEventStatus):Promise<QualityEventRecord[]>;
   listAssignableOwners(organizationId:string):Promise<QualityEventOwnerOption[]>;
@@ -42,6 +47,11 @@ export interface QualityEventStore {
 
 export class QualityEventService {
   constructor(private readonly store:QualityEventStore) {}
+
+  getIntake(context: AuthorizationContext, eventId: string) {
+    requireAuthorization(context, { organizationId: context.organizationId, permission: "quality_event.read" });
+    return this.store.getIntake(context.organizationId, eventId);
+  }
 
   listLifecycleHistory(context: AuthorizationContext, eventId: string) {
     requireAuthorization(context, { organizationId: context.organizationId, permission: "quality_event.read" });
