@@ -32,3 +32,9 @@ It adds:
 The Quality workspace lists open CAPA actions and completed actions still awaiting a passing effectiveness check across active quality events. Staff can narrow the list to actions they own and filter by work status. The action due date measures completion and is flagged overdue only while the action is open. A failed check remains visible until a passing check is recorded, matching the existing closure gate, which requires at least one pass. The worklist opens the CAPA tab for the associated event and focuses the selected action.
 
 The read endpoint requires organization-wide `quality_event.read` and uses the signed-in organization on each database join. It returns no completion or effectiveness evidence text. Completion, effectiveness records, closure, and their audit controls use the existing governed workflows. The worklist requires no schema or data migration.
+
+## Recorded evidence in the CAPA workspace
+
+Each completed action shows its completion evidence and recorded effectiveness checks. The history includes the result, reviewer name, UTC timestamp, evidence, and whether the reviewer attached a supporting file. Checks are shown newest first. An action shows a passing check on record when any check passed, consistent with the existing closure gate.
+
+The event's CAPA read endpoint returns the existing action list plus the effectiveness history under the same organization-wide quality read permission. History is scoped to the selected event and its actions. This adds no writes or migration.

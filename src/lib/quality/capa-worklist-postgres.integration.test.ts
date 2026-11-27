@@ -51,11 +51,11 @@ describe.skipIf(!enabled)("CAPA worklist in migrated PostgreSQL", () => {
     return action.id;
   }
 
-  async function recordCheck({ organizationId, ownerId }: Tenant, eventId: string, actionId: string, result: "PASS" | "FAIL") {
+  async function recordCheck({ organizationId, ownerId }: Tenant, eventId: string, actionId: string, result: "PASS" | "FAIL", checkedAt = new Date()) {
     await db.$executeRaw`
-      INSERT INTO "QualityEffectivenessCheck" ("organizationId", "eventId", "capaActionId", "result", "evidence", "checkedByUserId")
+      INSERT INTO "QualityEffectivenessCheck" ("organizationId", "eventId", "capaActionId", "result", "evidence", "checkedByUserId", "checkedAt")
       VALUES (${organizationId}::uuid, ${eventId}::uuid, ${actionId}::uuid, ${result}::"QualityEffectivenessResult",
-              'Synthetic effectiveness evidence', ${ownerId}::uuid)
+              'Synthetic effectiveness evidence', ${ownerId}::uuid, ${checkedAt})
     `;
   }
 
@@ -88,5 +88,32 @@ describe.skipIf(!enabled)("CAPA worklist in migrated PostgreSQL", () => {
     await recordCheck(tenant, secondEventId, failed, "PASS");
     await recordCheck(tenant, secondEventId, failed, "FAIL");
     expect((await store.listWorklist(tenant.organizationId)).map(item => item.id)).toEqual([open, pending]);
+  });
+
+  it("returns all recorded checks newest first only for the requested event and tenant", async () => {
+    const store = new PrismaQualityCapaStore();
+    const tenant = await createTenant();
+    const otherTenant = await createTenant();
+    const eventId = await createEvent(tenant, "QE-000001");
+    const secondEventId = await createEvent(tenant, "QE-000002");
+    const completedAt = new Date("2026-11-01T10:30:00Z");
+    const action = await createAction(tenant, eventId, "Reviewed action", completedAt);
+    const otherAction = await createAction(tenant, secondEventId, "Separate event action", completedAt);
+    const failedAt = new Date("2026-11-02T10:30:00Z");
+    const passedAt = new Date("2026-11-03T10:30:00Z");
+
+    await recordCheck(tenant, eventId, action, "FAIL", failedAt);
+    await recordCheck(tenant, secondEventId, otherAction, "PASS", passedAt);
+    await recordCheck(tenant, eventId, action, "PASS", passedAt);
+
+    const history = await store.listEffectivenessHistory(tenant.organizationId, eventId);
+    expect(history).toEqual([
+      expect.objectContaining({
+        capaActionId: action, result: "PASS", checkedAt: passedAt, checkerName: "Synthetic Owner",
+        evidence: "Synthetic effectiveness evidence", evidenceFileId: null,
+      }),
+      expect.objectContaining({ capaActionId: action, result: "FAIL", checkedAt: failedAt }),
+    ]);
+    await expect(store.listEffectivenessHistory(otherTenant.organizationId, eventId)).resolves.toEqual([]);
   });
 });

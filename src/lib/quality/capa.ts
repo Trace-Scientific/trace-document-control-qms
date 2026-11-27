@@ -9,6 +9,10 @@ export type EffectivenessResult="PASS"|"FAIL";
 export type CapaRecord={id:string;organizationId:string;eventId:string;actionType:CapaActionType;description:string;ownerUserId:string;dueAt:Date;status:CapaActionStatus;completedAt:Date|null;completionEvidence:string|null;completionEvidenceFileId:string|null;createdByUserId:string;createdAt:Date};
 export type EffectivenessCheckRecord={id:string;organizationId:string;eventId:string;capaActionId:string;result:EffectivenessResult;evidence:string;evidenceFileId:string|null;checkedByUserId:string;checkedAt:Date};
 
+export type CapaEffectivenessHistoryEntry = Pick<EffectivenessCheckRecord,
+  "id" | "capaActionId" | "result" | "evidence" | "evidenceFileId" | "checkedAt"
+> & { checkerName: string };
+
 export type CapaWorkItem = {
   id: string;
   eventId: string;
@@ -24,6 +28,7 @@ export type CapaWorkItem = {
 };
 
 export interface QualityCapaStore{
+  listEffectivenessHistory(organizationId: string, eventId: string): Promise<CapaEffectivenessHistoryEntry[]>;
   listWorklist(organizationId: string): Promise<CapaWorkItem[]>;
   list(organizationId:string,eventId:string):Promise<CapaRecord[]>;
   create(input:{organizationId:string;eventId:string;actionType:CapaActionType;description:string;ownerUserId:string;dueAt:Date;actorUserId:string}):Promise<CapaRecord>;
@@ -36,6 +41,11 @@ export class QualityCapaService{
   listWorklist(context: AuthorizationContext) {
     requireAuthorization(context, { organizationId: context.organizationId, permission: "quality_event.read" });
     return this.store.listWorklist(context.organizationId);
+  }
+
+  listEffectivenessHistory(context: AuthorizationContext, eventId: string) {
+    requireAuthorization(context, { organizationId: context.organizationId, permission: "quality_event.read" });
+    return this.store.listEffectivenessHistory(context.organizationId, eventId);
   }
 
   list(context:AuthorizationContext,organizationId:string,eventId:string){requireAuthorization(context,{organizationId,permission:"quality_event.read"});return this.store.list(organizationId,eventId);}
