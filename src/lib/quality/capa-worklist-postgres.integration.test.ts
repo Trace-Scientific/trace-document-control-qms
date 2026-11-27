@@ -242,10 +242,17 @@ describe.skipIf(!enabled)("CAPA worklist in migrated PostgreSQL", () => {
     });
     await store.updateLifecycle({ ...actor, eventId: secondEventId, dueAt: new Date("2026-12-04"), reason: "Separate event" });
     await db.user.update({ where: { id: assignee.id }, data: { status: "INACTIVE" } });
-    await store.updateLifecycle({ ...actor, eventId, ownerUserId: null, reason: "Return to the queue" });
+    expect((await store.listEvents(tenant.organizationId, "VERIFICATION")).find(event => event.id === eventId))
+      .toMatchObject({ ownerName: "Assigned Reviewer" });
+    await expect(store.updateLifecycle({
+      ...actor, eventId, ownerUserId: null, reason: "Return to the queue",
+    })).resolves.toMatchObject({ ownerUserId: null, status: "VERIFICATION", dueAt: new Date("2026-12-01") });
+    await expect(store.updateLifecycle({
+      ...actor, eventId, dueAt: null, reason: "Remove the previous deadline",
+    })).resolves.toMatchObject({ ownerUserId: null, status: "VERIFICATION", dueAt: null });
 
     const history = await store.listLifecycleHistory(tenant.organizationId, eventId);
-    expect(history).toHaveLength(3);
+    expect(history).toHaveLength(4);
     expect(history).toEqual(expect.arrayContaining([
       expect.objectContaining({
         kind: "OWNER", fromValue: null, toValue: assignee.id, fromOwnerName: null, toOwnerName: "Assigned Reviewer",
@@ -256,6 +263,7 @@ describe.skipIf(!enabled)("CAPA worklist in migrated PostgreSQL", () => {
         actorName: "Synthetic Owner", reason: "Return to the queue",
       }),
       expect.objectContaining({ kind: "DUE_DATE", fromValue: null, toValue: "2026-12-01", reason: "Assign for review" }),
+      expect.objectContaining({ kind: "DUE_DATE", fromValue: "2026-12-01", toValue: null, reason: "Remove the previous deadline" }),
     ]));
     await expect(store.listLifecycleHistory(otherTenant.organizationId, eventId)).resolves.toEqual([]);
   });
