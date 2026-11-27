@@ -1,14 +1,16 @@
 "use client";
 
+import type { CapaWorkItem } from "@/lib/quality/capa";
 import { filterQualityEvents, isQualityEventOverdue, type QualityEventView } from "@/lib/quality/event-register";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { QualityCapaWorklist } from "./quality-capa-worklist";
 import { QualityEventGovernedActions } from "./quality-event-governed-actions";
 
 type Status="OPEN"|"INVESTIGATING"|"ACTION_REQUIRED"|"VERIFICATION"|"CLOSED";
 type EventRecord={id:string;eventNumber:string;type:string;severity:string;status:Status;summary:string;ownerUserId:string|null;dueAt:string|null;createdAt:string};
 type OwnerOption={id:string;email:string;firstName:string;lastName:string};
 type Analytics={total:number;open:number;overdue:number;closed:number;byType:Array<{type:string;count:number}>;monthly:Array<{month:string;count:number}>};
-type Section="register"|"create"|"lifecycle"|"governed";
+type Section="register"|"capa-worklist"|"create"|"lifecycle"|"governed";
 
 const nextStatus:Partial<Record<Status,Status>>={OPEN:"INVESTIGATING",INVESTIGATING:"ACTION_REQUIRED",ACTION_REQUIRED:"VERIFICATION"};
 const eventTypes=["NONCONFORMANCE","PATIENT_COMPLAINT","PHYSICIAN_COMPLAINT","SPECIMEN_PROBLEM","TESTING_ERROR","QC_FAILURE","PT_FAILURE","EQUIPMENT_FAILURE","REPORTING_ERROR","BILLING_ADMINISTRATIVE","SAFETY_EVENT","PERSONNEL_EVENT","DEVIATION","OTHER"];
@@ -49,6 +51,7 @@ export function QualityEventWorkspace({canManage,today,userId}:{canManage:boolea
   const [owners,setOwners]=useState<OwnerOption[]>([]);
   const [analytics,setAnalytics]=useState<Analytics|null>(null);
   const [selectedId,setSelectedId]=useState("");
+  const [capaSelection, setCapaSelection] = useState<CapaWorkItem | null>(null);
   const [section,setSection]=useState<Section>("register");
   const [reason,setReason]=useState("");
   const [ownerUserId,setOwnerUserId]=useState("");
@@ -82,12 +85,19 @@ export function QualityEventWorkspace({canManage,today,userId}:{canManage:boolea
     });
     return () => controller.abort();
   }, [canManage, applyRegister]);
-  const selected=useMemo(()=>events.find(event=>event.id===selectedId)??null,[events,selectedId]);
+  const selected = useMemo(() => events.find(event => event.id === selectedId) ?? (
+    capaSelection?.eventId === selectedId ? {
+      id: capaSelection.eventId,
+      eventNumber: capaSelection.eventNumber,
+      summary: capaSelection.eventSummary,
+      status: capaSelection.eventStatus,
+    } : null
+  ), [events, selectedId, capaSelection]);
   const ownerById=useMemo(()=>new Map(owners.map(owner=>[owner.id,owner])),[owners]);
   const visibleEvents = filterQualityEvents(events, filters, userId, today);
   const ownerLabel=(id:string|null)=>{if(!id)return "Unassigned";const owner=ownerById.get(id);return owner?`${owner.firstName} ${owner.lastName} · ${owner.email}`:"Assigned user";};
 
-  function openEvent(id: string, destination: "lifecycle" | "governed") {
+  function openEvent(id: string, destination: "lifecycle" | "governed", action: CapaWorkItem | null = null) {
     if (id !== selectedId) {
       setReason("");
       setOwnerUserId("");
@@ -96,6 +106,7 @@ export function QualityEventWorkspace({canManage,today,userId}:{canManage:boolea
       setNotice("");
     }
     setSelectedId(id);
+    setCapaSelection(action);
     setSection(destination);
   }
 
@@ -114,6 +125,7 @@ export function QualityEventWorkspace({canManage,today,userId}:{canManage:boolea
 
   const sections=[
     {id:"register" as const,label:"Quality events",description:"Review the event register, status, severity, ownership, and due dates.",visible:true},
+    {id:"capa-worklist" as const,label:"CAPA worklist",description:"Find open actions and effectiveness checks across quality events.",visible:true},
     {id:"create" as const,label:"Create event",description:"Open a new manually reported quality event.",visible:canManage},
     {id:"lifecycle" as const,label:"Lifecycle",description:"Advance status and manage event ownership or due dates.",visible:!!selected},
     {id:"governed" as const,label:"Investigation & CAPA",description:"Investigation, root cause, CAPA, effectiveness, and controlled closure.",visible:!!selected},
@@ -171,6 +183,9 @@ export function QualityEventWorkspace({canManage,today,userId}:{canManage:boolea
       {registerState === "loading" && <p role="status">Loading quality events…</p>}
     </div>}
 
+    {section === "capa-worklist" && <QualityCapaWorklist userId={userId} today={today}
+      onOpen={item => openEvent(item.eventId, "governed", item)} />}
+
     {section==="create"&&canManage&&<div className="module-section-stack"><div className="section-heading"><div><h3>Create quality event</h3><p>Record a manually discovered quality event. Ownership may be assigned after creation.</p></div></div><form onSubmit={createEvent} className="admin-form">
       <label>Event type<select name="type" defaultValue="NONCONFORMANCE" required>{eventTypes.map(type=><option key={type} value={type}>{type.replaceAll("_"," ")}</option>)}</select></label>
       <label>Severity<select name="severity" defaultValue="MEDIUM" required>{severities.map(severity=><option key={severity} value={severity}>{severity}</option>)}</select></label>
@@ -179,6 +194,6 @@ export function QualityEventWorkspace({canManage,today,userId}:{canManage:boolea
 
     {section==="lifecycle"&&selected&&<div className="module-section-stack"><div className="section-heading"><div><h3>Governed lifecycle — {selected.eventNumber}</h3><p>Advance the regulated event status or update assignment and due date with a required reason.</p></div></div>{canManage&&selected.status!=="CLOSED"?<><label className="quality-lifecycle-reason">Required reason<textarea rows={3} value={reason} onChange={event=>setReason(event.target.value)} maxLength={1000}/></label>{nextStatus[selected.status]&&<button type="button" disabled={busy||!reason.trim()} onClick={()=>void update({status:nextStatus[selected.status]})}>Advance to {nextStatus[selected.status]}</button>}<form onSubmit={saveMetadata} className="admin-form"><label>Owner<select value={ownerUserId} onChange={event=>setOwnerUserId(event.target.value)}><option value="">Select an active user</option>{owners.map(owner=><option key={owner.id} value={owner.id}>{owner.firstName} {owner.lastName} · {owner.email}</option>)}</select></label><label>Due date<input type="date" value={dueAt} onChange={event=>setDueAt(event.target.value)}/></label><button type="submit" disabled={busy||!reason.trim()||(!ownerUserId&&!dueAt)}>Update assignment / due date</button></form></>:<p>{selected.status==="CLOSED"?"This quality event is closed.":"You have read-only access to this event lifecycle."}</p>}</div>}
 
-    {section==="governed"&&selected&&<QualityEventGovernedActions key={selected.id} event={{id:selected.id,eventNumber:selected.eventNumber,status:selected.status}} canManage={canManage} onChanged={load}/>}
+    {section==="governed"&&selected&&<QualityEventGovernedActions key={selected.id} initialActionId={capaSelection?.id} event={{id:selected.id,eventNumber:selected.eventNumber,status:selected.status}} canManage={canManage} onChanged={load}/>}
   </section>;
 }
