@@ -39,3 +39,9 @@ Closure evidence, signature evidence, successful authentication, `VERIFICATION -
 
 ## Boundary
 Escalation/notifications, cross-event trending, automated quality-event triggers, and operational reporting remain subsequent Prompt 050 slices.
+
+## Closure prerequisites in the workspace
+
+Before signing, the closure panel shows the current lifecycle status, whether investigation evidence exists, and counts for CAPA completion and passing effectiveness checks. The signature form appears for authorized managers after all prerequisites are met. Read access uses the existing organization-wide quality event permission and the signed-in tenant.
+
+The panel gets a read-only snapshot and offers a refresh. The signing transaction rechecks the same evidence conditions after locking the event. Password reauthentication, signature confirmation, and audit writes still apply. No schema change is required.

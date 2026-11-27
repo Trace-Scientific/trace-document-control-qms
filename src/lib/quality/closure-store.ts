@@ -1,8 +1,36 @@
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import { QualityClosureValidationError, type QualityClosureEvidence, type QualityClosureRecord, type QualityClosureStore } from "./closure";
+import { QualityClosureValidationError, type QualityClosureEvidence, type QualityClosureReadiness, type QualityClosureRecord, type QualityClosureStore } from "./closure";
+
+async function readReadiness(client: Prisma.TransactionClient, organizationId: string, eventId: string) {
+  const [readiness] = await client.$queryRaw<QualityClosureReadiness[]>(Prisma.sql`
+    SELECT q."status",
+           EXISTS (
+             SELECT 1 FROM "QualityEventInvestigation" i
+             WHERE i."organizationId" = q."organizationId" AND i."eventId" = q."id"
+           ) AS "hasInvestigation",
+           gates."totalActions", gates."openActions", gates."completedWithoutPass"
+    FROM "QualityEvent" q
+    CROSS JOIN LATERAL (
+      SELECT COUNT(*)::int AS "totalActions",
+             (COUNT(*) FILTER (WHERE a."status" = 'OPEN'))::int AS "openActions",
+             (COUNT(*) FILTER (WHERE a."status" = 'COMPLETED' AND NOT EXISTS (
+               SELECT 1 FROM "QualityEffectivenessCheck" e
+               WHERE e."organizationId" = a."organizationId" AND e."eventId" = a."eventId"
+                 AND e."capaActionId" = a."id" AND e."result" = 'PASS'
+             )))::int AS "completedWithoutPass"
+      FROM "QualityCapaAction" a
+      WHERE a."organizationId" = q."organizationId" AND a."eventId" = q."id"
+    ) gates
+    WHERE q."organizationId" = ${organizationId}::uuid AND q."id" = ${eventId}::uuid
+  `);
+  return readiness ?? null;
+}
 
 export class PrismaQualityClosureStore implements QualityClosureStore{
+  loadReadiness(organizationId: string, eventId: string) {
+    return readReadiness(db, organizationId, eventId);
+  }
   recentFailedReauthentications(organizationId:string,userId:string,since:Date){return db.authenticationEvent.count({where:{organizationId,userId,eventType:"REAUTHENTICATION",outcome:"FAILURE",occurredAt:{gte:since},metadata:{path:["purpose"],equals:"QUALITY_EVENT_CLOSURE"}}});}
   async loadEvidence(organizationId:string,userId:string,eventId:string):Promise<QualityClosureEvidence|null>{
     const user=await db.user.findFirst({where:{organizationId,id:userId,status:"ACTIVE",credential:{disabledAt:null}},select:{credential:{select:{passwordHash:true}}}});if(!user?.credential)return null;
@@ -17,8 +45,12 @@ export class PrismaQualityClosureStore implements QualityClosureStore{
   async commitClosure(input:Parameters<QualityClosureStore["commitClosure"]>[0]){
     return db.$transaction(async tx=>{
       const events=await tx.$queryRaw<Array<{status:string}>>(Prisma.sql`SELECT "status"::text AS "status" FROM "QualityEvent" WHERE "organizationId"=${input.organizationId}::uuid AND "id"=${input.eventId}::uuid FOR UPDATE`);const event=events[0];if(!event)throw new QualityClosureValidationError("Quality event not found");if(event.status!=="VERIFICATION")throw new QualityClosureValidationError("Quality event must be in VERIFICATION before closure");
-      const investigations=await tx.$queryRaw<Array<{count:bigint}>>(Prisma.sql`SELECT COUNT(*)::bigint AS "count" FROM "QualityEventInvestigation" WHERE "organizationId"=${input.organizationId}::uuid AND "eventId"=${input.eventId}::uuid`);if(Number(investigations[0]?.count??0)<1)throw new QualityClosureValidationError("Investigation evidence is required before closure");
-      const capa=await tx.$queryRaw<Array<{total:bigint;open:bigint;withoutPass:bigint}>>(Prisma.sql`SELECT COUNT(*)::bigint AS "total",COUNT(*) FILTER (WHERE a."status"='OPEN')::bigint AS "open",COUNT(*) FILTER (WHERE a."status"='COMPLETED' AND NOT EXISTS (SELECT 1 FROM "QualityEffectivenessCheck" e WHERE e."organizationId"=a."organizationId" AND e."eventId"=a."eventId" AND e."capaActionId"=a."id" AND e."result"='PASS'))::bigint AS "withoutPass" FROM "QualityCapaAction" a WHERE a."organizationId"=${input.organizationId}::uuid AND a."eventId"=${input.eventId}::uuid`);const gates=capa[0];if(Number(gates?.total??0)<1)throw new QualityClosureValidationError("At least one CAPA action is required before closure");if(Number(gates?.open??0)>0)throw new QualityClosureValidationError("All CAPA actions must be completed before closure");if(Number(gates?.withoutPass??0)>0)throw new QualityClosureValidationError("Every CAPA action requires a passing effectiveness check before closure");
+      const readiness = await readReadiness(tx, input.organizationId, input.eventId);
+      if (!readiness) throw new QualityClosureValidationError("Quality event not found");
+      if (!readiness.hasInvestigation) throw new QualityClosureValidationError("Investigation evidence is required before closure");
+      if (readiness.totalActions === 0) throw new QualityClosureValidationError("At least one CAPA action is required before closure");
+      if (readiness.openActions > 0) throw new QualityClosureValidationError("All CAPA actions must be completed before closure");
+      if (readiness.completedWithoutPass > 0) throw new QualityClosureValidationError("Every CAPA action requires a passing effectiveness check before closure");
       const prior=await tx.$queryRaw<Array<{id:string}>>(Prisma.sql`SELECT "id" FROM "QualityEventClosure" WHERE "organizationId"=${input.organizationId}::uuid AND "eventId"=${input.eventId}::uuid`);if(prior[0])throw new QualityClosureValidationError("Quality event is already closed");
       const authentication=await tx.authenticationEvent.create({data:{organizationId:input.organizationId,userId:input.signerUserId,eventType:"REAUTHENTICATION",outcome:"SUCCESS",method:"PASSWORD",occurredAt:input.signedAt,validUntil:input.authenticationValidUntil,metadata:{purpose:"QUALITY_EVENT_CLOSURE"}}});
       const signature=await tx.electronicSignature.create({data:{organizationId:input.organizationId,signerUserId:input.signerUserId,entityType:"QualityEvent",entityId:input.eventId,entityVersion:input.eventNumber,meaning:"COMPLETED",meaningText:"I confirm this quality event is complete, required CAPA actions have been implemented and verified effective, and the event may be closed.",authenticationEventId:authentication.id,payloadHash:input.payloadHash,signedAt:input.signedAt}});
