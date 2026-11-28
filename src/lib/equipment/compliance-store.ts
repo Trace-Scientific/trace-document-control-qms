@@ -1,9 +1,23 @@
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import { EquipmentComplianceValidationError,type EquipmentComplianceStore,type EquipmentHoldRecord,type EquipmentImpactRecord } from "./compliance";
+import { EquipmentComplianceValidationError,type EquipmentComplianceStore,type EquipmentHoldRecord,type EquipmentImpactHistoryEntry,type EquipmentImpactRecord } from "./compliance";
 
 export class PrismaEquipmentComplianceStore implements EquipmentComplianceStore{
   listHolds(organizationId:string,equipmentId:string){return db.$queryRaw<EquipmentHoldRecord[]>(Prisma.sql`SELECT * FROM "EquipmentComplianceHold" WHERE "organizationId"=${organizationId}::uuid AND "equipmentId"=${equipmentId}::uuid ORDER BY "detectedAt" DESC`);}
+  listImpactHistory(organizationId: string, equipmentId: string, includeQualityEvent: boolean) {
+    return db.$queryRaw<EquipmentImpactHistoryEntry[]>(Prisma.sql`
+      SELECT a."id", a."holdId", a."disposition", a."scopeSummary", a."rationale", a."assessedAt",
+             TRIM(CONCAT(u."firstName", ' ', u."lastName")) AS "assessorName",
+             q."eventNumber" AS "qualityEventNumber"
+      FROM "EquipmentImpactAssessment" a
+      JOIN "User" u ON u."organizationId" = a."organizationId" AND u."id" = a."assessedByUserId"
+      LEFT JOIN "QualityEvent" q ON ${includeQualityEvent} AND q."organizationId" = a."organizationId"
+        AND q."id" = a."qualityEventId"
+      WHERE a."organizationId" = ${organizationId}::uuid AND a."equipmentId" = ${equipmentId}::uuid
+      ORDER BY a."assessedAt" DESC, a."id" DESC
+    `);
+  }
+
   async detectOverdue(){
     return db.$transaction(async tx=>{
       const rows=await tx.$queryRaw<Array<{organizationId:string;equipmentId:string;equipmentNumber:string;kind:string;dueAt:Date}>>(Prisma.sql`
