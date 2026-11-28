@@ -10,14 +10,18 @@ type Recall = Pick<EquipmentRecallRecord, "id" | "status" | "reason" | "scopeSum
 type Command = { operation: "OPEN"; reason: string; scopeSummary: string } |
   { operation: "CLOSE"; recallId: string; reason: string };
 
-export function EquipmentRecallPanel({ equipmentId, equipmentNumber, canManage, retired, activeHoldCount, headingRef, onChanged }: {
+export function EquipmentRecallPanel({
+  equipmentId, equipmentNumber, canManage, retired, activeHoldCount, readyHoldCount, headingRef, onChanged, onReviewHolds,
+}: {
   equipmentId: string;
   equipmentNumber: string;
   canManage: boolean;
   retired: boolean;
   activeHoldCount: number;
+  readyHoldCount: number;
   headingRef: Ref<HTMLHeadingElement>;
   onChanged: () => void;
+  onReviewHolds: () => void;
 }) {
   const [recalls, setRecalls] = useState<Recall[] | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -69,6 +73,7 @@ export function EquipmentRecallPanel({ equipmentId, equipmentNumber, canManage, 
       const body = await response.json().catch(() => null);
       if (!response.ok) {
         setError(body?.error ?? "Equipment recall operation failed.");
+        if (response.status === 409 && command.operation === "CLOSE") onChanged();
         return;
       }
       setNotice(command.operation === "OPEN"
@@ -106,9 +111,15 @@ export function EquipmentRecallPanel({ equipmentId, equipmentNumber, canManage, 
       </li>)}
     </ul>}
     <div><button type="button" className="secondary-button" disabled={busy || (!recalls && !loadError)}
-      onClick={refresh}>Refresh recall history</button></div>
+      onClick={() => { refresh(); onChanged(); }}>Refresh recall history</button></div>
     {canManage && recalls && (openRecall || !retired) && (
-      openRecall && activeHoldCount > 0 ? <p role="status">Clear the active compliance holds before closing this recall.</p> :
+      openRecall && activeHoldCount > 0 ? <div className="form-stack">
+        <p role="status">
+          Clear {activeHoldCount === 1 ? "the active compliance hold" : `all ${activeHoldCount} active compliance holds`} before closing this recall.
+          {readyHoldCount > 0 && ` ${readyHoldCount} ${readyHoldCount === 1 ? "is" : "are"} ready for clearance review.`}
+        </p>
+        <div><button type="button" className="secondary-button" disabled={busy} onClick={onReviewHolds}>Review blocking holds</button></div>
+      </div> :
         <form className="admin-form equipment-admin-form" onSubmit={submit}>
           <h4 className="equipment-form-span">{openRecall ? "Close recall" : "Open recall and quarantine"}</h4>
           <label className="equipment-form-wide">{openRecall ? "Closure reason" : "Recall reason"}

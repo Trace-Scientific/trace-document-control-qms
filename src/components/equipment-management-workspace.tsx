@@ -30,7 +30,20 @@ export function EquipmentManagementWorkspace({ canManage, today, onReviewHolds, 
  const [registerLoaded, setRegisterLoaded] = useState(false);
  const selectedItem=useMemo(()=>equipment.find(x=>x.id===selected)??null,[equipment,selected]);
 
- async function refresh(){setError("");const r=await fetch("/api/equipment/operations",{cache:"no-store"});if(!r.ok){setError("Unable to load equipment operations");return;}const j=await r.json();setAnalytics(j.data.analytics);setEquipment(j.data.equipment);setRegisterLoaded(true);setSelected(current=>current&&j.data.equipment.some((x:EquipmentWorklistItem)=>x.id===current)?current:j.data.equipment[0]?.id||"");}
+ async function refresh() {
+   setError("");
+   try {
+     const response = await fetch("/api/equipment/operations", { cache: "no-store" });
+     if (!response.ok) throw new Error("Equipment operations unavailable");
+     const { data }: { data: { analytics: Analytics; equipment: EquipmentWorklistItem[] } } = await response.json();
+     setAnalytics(data.analytics);
+     setEquipment(data.equipment);
+     setRegisterLoaded(true);
+     setSelected(current => current && data.equipment.some(item => item.id === current) ? current : data.equipment[0]?.id ?? "");
+   } catch {
+     setError("Unable to load equipment operations");
+   }
+ }
  const recallHeading = useRef<HTMLHeadingElement>(null);
  const [recallTarget, setRecallTarget] = useState<{ id: string } | null>(null);
  useEffect(() => {
@@ -116,7 +129,9 @@ export function EquipmentManagementWorkspace({ canManage, today, onReviewHolds, 
    canManage={canManage}
    retired={selectedItem.status === "RETIRED"}
    activeHoldCount={selectedItem.activeHoldCount}
+   readyHoldCount={selectedItem.readyHoldCount}
    headingRef={recallHeading}
+   onReviewHolds={() => onReviewHolds(selectedItem.id, selectedItem.firstReadyHoldId ?? undefined)}
    onChanged={() => window.dispatchEvent(new CustomEvent("qms:equipment-changed", { detail: { equipmentId: selectedItem.id } }))}
  />}
  {canManage&&<form className="card admin-form equipment-admin-form" onSubmit={recordService}><h3 className="equipment-form-span">Record service / repair evidence</h3><label>Equipment<select value={selected} onChange={e=>selectEquipment(e.target.value)} disabled={!equipment.length}>{equipment.length?<>{equipment.map(x=><option key={x.id} value={x.id}>{x.equipmentNumber} — {x.name}</option>)}</>:<option value="">Register equipment first</option>}</select></label><label>Provider<input value={provider} onChange={e=>setProvider(e.target.value)} maxLength={240}/></label><label>Outcome<select value={outcome} onChange={e=>setOutcome(e.target.value)}><option value="COMPLETED">Completed</option><option value="FAILED">Failed</option></select></label><label className="equipment-form-wide">Description<textarea value={description} onChange={e=>setDescription(e.target.value)} maxLength={5000} required/></label><div className="equipment-form-span"><GovernedEvidenceFilePicker key={selected} domain="equipment" name="serviceEvidenceFileId" onSelectionChange={setServiceEvidenceFileId}/></div><button type="submit" disabled={!selected}>Save audited service record</button>{message&&<p className="equipment-form-span">{message}</p>}</form>}
