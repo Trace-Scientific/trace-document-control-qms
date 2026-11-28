@@ -1,7 +1,9 @@
 import type { MaterialLotRecord, MaterialLotStatus, MaterialRecord } from "./inventory";
 
 export type CatalogMaterial = Pick<MaterialRecord, "id" | "materialNumber" | "name" | "manufacturer" | "catalogNumber" | "status">;
-export type RegisterLot = Pick<MaterialLotRecord, "id" | "materialId" | "lotNumber" | "status" | "quantityReceived" | "unitOfMeasure"> & {
+export type RegisterLot = Pick<MaterialLotRecord,
+  "id" | "materialId" | "lotNumber" | "status" | "quantityReceived" | "unitOfMeasure" | "siteId" | "departmentId"
+> & {
   receivedAt: string;
   expirationDate: string | null;
 };
@@ -19,12 +21,13 @@ export const lotStatusLabels: Record<MaterialLotStatus, string> = {
 export function filterLotRegister(
   lots: readonly RegisterLot[],
   materials: ReadonlyMap<string, CatalogMaterial>,
-  filters: { query: string; status: MaterialLotStatus | ""; materialId: string },
+  filters: { query: string; status: MaterialLotStatus | ""; materialId: string; receiptSiteId: string | null },
 ) {
   const query = filters.query.trim().toLowerCase();
   return lots.filter(lot => {
     if (filters.status && lot.status !== filters.status) return false;
     if (filters.materialId && lot.materialId !== filters.materialId) return false;
+    if (filters.receiptSiteId !== "" && lot.siteId !== filters.receiptSiteId) return false;
     const material = materials.get(lot.materialId);
     return [lot.lotNumber, material?.materialNumber, material?.name]
       .some(value => value?.toLowerCase().includes(query));

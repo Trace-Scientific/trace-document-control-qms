@@ -4,6 +4,7 @@ import { db } from "../db";
 import type { AuthorizationContext } from "../security/authorization";
 import { InventoryService } from "./inventory";
 import { PrismaInventoryStore } from "./inventory-store";
+import { listReceiptLocations } from "./receipt-location-directory";
 
 const enabled = process.env.RUN_DEMO_FIXTURE_INTEGRATION === "1";
 const disposableUrl = "postgresql://trace_qms_test:local_integration_test_only@127.0.0.1:5433/trace_qms_integration_test?schema=public";
@@ -53,5 +54,54 @@ describe.skipIf(!enabled)("inventory receiving in migrated PostgreSQL", () => {
     expect(() => service.listLots(other, organizationId)).toThrow("Access denied");
     const audit = await db.auditEvent.findMany({ where: { organizationId, actorUserId: userId, entityId: { in: [material.id, lot.id] } } });
     expect(audit.map(event => event.action).sort()).toEqual(["MATERIAL_CREATED", "MATERIAL_LOT_RECEIVED"]);
+  });
+
+  it("lists only tenant receipt locations and posts accepted stock to its recorded site and department", async () => {
+    const service = new InventoryService(new PrismaInventoryStore());
+    const manager = await createContext("inventory.read", "inventory.manage");
+    const other = await createContext("inventory.read");
+    const { organizationId } = manager;
+    const site = await db.site.create({ data: { organizationId, name: "Main lab" } });
+    const inactive = await db.site.create({ data: { organizationId, name: "Previous lab", active: false } });
+    const otherSite = await db.site.create({ data: { organizationId: other.organizationId, name: "Other tenant site" } });
+    const department = await db.department.create({ data: { organizationId, name: "Receiving", siteId: site.id } });
+    const inactiveDepartment = await db.department.create({ data: { organizationId, name: "Old receiving", siteId: site.id, active: false } });
+    const incorrectDepartment = await db.department.create({ data: { organizationId, name: "Shared facilities" } });
+    const directory = await listReceiptLocations(manager);
+    expect(directory.sites).toEqual([
+      { id: site.id, name: "Main lab", active: true }, { id: inactive.id, name: "Previous lab", active: false },
+    ]);
+    expect(directory.departments.map(item => item.id)).toEqual([inactiveDepartment.id, department.id, incorrectDepartment.id]);
+    await expect(listReceiptLocations(other)).resolves.toMatchObject({ sites: [{ id: otherSite.id }], departments: [] });
+    await expect(listReceiptLocations({ ...manager, grants: [{ permission: "inventory.manage", scopeType: "ORGANIZATION", scopeId: null }] }))
+      .rejects.toThrow("Access denied");
+
+    const material = await service.createMaterial(manager, { organizationId, materialNumber: "MAT-001", name: "Sample tubes" });
+    const receipt = {
+      organizationId, materialId: material.id, lotNumber: "L-001", receivedAt: new Date("2026-11-27"),
+      quantityReceived: 3, unitOfMeasure: "box", siteId: site.id, departmentId: department.id,
+    };
+    await expect(service.receiveLot(manager, { ...receipt, siteId: otherSite.id })).rejects.toThrow("Access denied");
+    await expect(service.receiveLot(manager, { ...receipt, siteId: inactive.id, departmentId: null })).rejects.toThrow("Access denied");
+    await expect(service.receiveLot(manager, { ...receipt, departmentId: incorrectDepartment.id })).rejects.toThrow("Access denied");
+    await expect(service.receiveLot(manager, { ...receipt, departmentId: inactiveDepartment.id })).rejects.toThrow("Access denied");
+    const lot = await service.receiveLot(manager, receipt);
+    expect(lot).toMatchObject({ siteId: site.id, departmentId: department.id, status: "RECEIVED" });
+    const audit = await db.auditEvent.findFirst({ where: { organizationId, entityId: lot.id, action: "MATERIAL_LOT_RECEIVED" } });
+    expect(audit?.metadata).toMatchObject({ siteId: site.id, departmentId: department.id });
+    await expect(service.listBalances(manager, organizationId, lot.id)).resolves.toEqual([]);
+
+    const transition = { organizationId, lotId: lot.id, reason: "Synthetic status review" };
+    await service.transitionLot(manager, { ...transition, status: "ACCEPTED" });
+    await service.transitionLot(manager, { ...transition, status: "QUARANTINED" });
+    await service.transitionLot(manager, { ...transition, status: "ACCEPTED" });
+    const balances = await service.listBalances(manager, organizationId, lot.id);
+    expect(balances).toEqual([expect.objectContaining({ siteId: site.id, departmentId: department.id, unitOfMeasure: "box" })]);
+    expect(balances[0].quantityOnHand.toString()).toBe("3");
+    const unassignedLot = await service.receiveLot(manager, { ...receipt, lotNumber: "L-002", siteId: null, departmentId: null });
+    await service.transitionLot(manager, { ...transition, lotId: unassignedLot.id, status: "ACCEPTED" });
+    await expect(service.listBalances(manager, organizationId, unassignedLot.id)).resolves.toEqual([
+      expect.objectContaining({ siteId: null, departmentId: null, unitOfMeasure: "box" }),
+    ]);
   });
 });
