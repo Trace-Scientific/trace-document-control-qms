@@ -5,7 +5,7 @@ export type EquipmentWorklistItem = Omit<EquipmentWorkspaceItem, "nextCalibratio
   nextMaintenanceDueAt: string | null;
 };
 
-export type EquipmentWorklistView = "all" | "holds" | "recalls" | "unavailable" | "overdue" | "due-soon" | "missing-date";
+export type EquipmentWorklistView = "all" | "holds" | "clearance-ready" | "recalls" | "unavailable" | "overdue" | "due-soon" | "missing-date";
 type ScheduleState = "not-required" | "missing-date" | "overdue" | "due-soon" | "scheduled" | "inactive";
 
 function scheduleState(item: EquipmentWorklistItem, required: boolean, date: string | null, today: string, through: string): ScheduleState {
@@ -38,6 +38,7 @@ export function filterEquipmentWorklist(
     if (!item.equipmentNumber.toLowerCase().includes(query) && !item.name.toLowerCase().includes(query)) return false;
     switch (filters.view) {
       case "holds": return item.activeHoldCount > 0;
+      case "clearance-ready": return item.readyHoldCount > 0;
       case "recalls": return item.openRecallCount > 0;
       case "unavailable": return item.status !== "RETIRED" && !item.usable;
       case "all": return true;

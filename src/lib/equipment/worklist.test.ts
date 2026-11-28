@@ -5,7 +5,7 @@ const today = "2026-11-26";
 const fixture: EquipmentWorklistItem = {
   id: "equipment-1", equipmentNumber: "EQ-001", name: "Chemistry analyzer", status: "ACTIVE",
   calibrationRequired: true, maintenanceRequired: false, nextCalibrationDueAt: "2026-11-25T00:00:00Z",
-  nextMaintenanceDueAt: null, activeHoldCount: 1, openRecallCount: 0, usable: false,
+  nextMaintenanceDueAt: null, activeHoldCount: 1, readyHoldCount: 0, firstReadyHoldId: null, openRecallCount: 0, usable: false,
 };
 const rows = equipmentWorklist([
   fixture,
@@ -41,5 +41,16 @@ describe("equipment register worklist", () => {
     expect(filterEquipmentWorklist(rows, { view: "holds", query: "  ANALYZER ", status: "ACTIVE" })).toEqual([rows[0]]);
     expect(filterEquipmentWorklist(rows, { view: "holds", query: "eq-001", status: "RETIRED" })).toEqual([]);
     expect(filterEquipmentWorklist(rows, { view: "all", query: "eq-004", status: "RETIRED" })).toEqual([rows[3]]);
+  });
+
+  it("finds equipment with a ready hold while preserving the usability decision", () => {
+    const ready = { ...fixture, activeHoldCount: 2, readyHoldCount: 1, firstReadyHoldId: "ready-hold" };
+    const blocked = { ...fixture, id: "equipment-2", equipmentNumber: "EQ-002", name: "Analyzer with blocked hold" };
+    const candidates = equipmentWorklist([ready, blocked], today);
+    const filters = { view: "clearance-ready", query: "analyzer", status: "ACTIVE" } as const;
+
+    expect(filterEquipmentWorklist(candidates, filters).map(row => row.item)).toEqual([ready]);
+    expect(filterEquipmentWorklist(candidates, { ...filters, query: "EQ-002" })).toEqual([]);
+    expect(filterEquipmentWorklist(candidates, { ...filters, status: "RETIRED" })).toEqual([]);
   });
 });

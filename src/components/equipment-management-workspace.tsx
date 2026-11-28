@@ -14,7 +14,7 @@ const transitions:Record<EquipmentStatus,EquipmentStatus[]>={PLANNED:["ACTIVE","
 export function EquipmentManagementWorkspace({ canManage, today, onReviewHolds, onRecordEvidence }: {
  canManage: boolean;
  today: string;
- onReviewHolds: (id: string) => void;
+ onReviewHolds: (id: string, holdId?: string) => void;
  onRecordEvidence?: (id: string, type: EquipmentEvidenceType) => void;
 }){
  const [analytics,setAnalytics]=useState<Analytics|null>(null),[equipment,setEquipment]=useState<EquipmentWorklistItem[]>([]),[error,setError]=useState("");

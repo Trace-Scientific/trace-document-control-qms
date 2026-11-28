@@ -53,10 +53,10 @@ describe.skipIf(!enabled)("equipment register in migrated PostgreSQL", () => {
 
     const store = new PrismaEquipmentOperationsStore();
     await expect(store.workspace(organizationId)).resolves.toEqual([
-      expect.objectContaining({ id: equipmentId, activeHoldCount: 2, openRecallCount: 1, usable: false }),
+      expect.objectContaining({ id: equipmentId, activeHoldCount: 2, readyHoldCount: 0, firstReadyHoldId: null, openRecallCount: 1, usable: false }),
     ]);
     await expect(store.workspace(other.organizationId)).resolves.toEqual([
-      expect.objectContaining({ id: other.equipmentId, activeHoldCount: 0, openRecallCount: 0, usable: true }),
+      expect.objectContaining({ id: other.equipmentId, activeHoldCount: 0, readyHoldCount: 0, firstReadyHoldId: null, openRecallCount: 0, usable: true }),
     ]);
   });
 
@@ -105,9 +105,10 @@ describe.skipIf(!enabled)("equipment register in migrated PostgreSQL", () => {
       INSERT INTO "EquipmentComplianceHold" ("organizationId", "equipmentId", "kind", "dueAt")
       VALUES
         (${organizationId}::uuid, ${equipmentId}::uuid, 'CALIBRATION_OVERDUE', DATE '2026-01-01'),
-        (${organizationId}::uuid, ${equipmentId}::uuid, 'MAINTENANCE_OVERDUE', DATE '2026-01-01')
+        (${organizationId}::uuid, ${equipmentId}::uuid, 'MAINTENANCE_OVERDUE', DATE '2026-01-03')
     `;
     const store = new PrismaEquipmentComplianceStore();
+    const register = new PrismaEquipmentOperationsStore();
     const initial = await store.listHolds(organizationId, equipmentId);
     expect(initial).toHaveLength(2);
     for (const hold of initial) expect(hold).toMatchObject({ currentDueAt: null, canClear: false });
@@ -116,24 +117,40 @@ describe.skipIf(!enabled)("equipment register in migrated PostgreSQL", () => {
     await db.$executeRaw`
       UPDATE "Equipment" SET "calibrationRequired" = true, "calibrationIntervalDays" = 30,
         "nextCalibrationDueAt" = DATE '2026-01-02', "maintenanceRequired" = true, "maintenanceIntervalDays" = 30,
-        "nextMaintenanceDueAt" = DATE '2026-01-01'
+        "nextMaintenanceDueAt" = DATE '2026-01-03'
       WHERE "organizationId" = ${organizationId}::uuid AND "id" = ${equipmentId}::uuid
     `;
     const holds = await store.listHolds(organizationId, equipmentId);
     const calibration = holds.find(hold => hold.kind === "CALIBRATION_OVERDUE")!;
     const maintenance = holds.find(hold => hold.kind === "MAINTENANCE_OVERDUE")!;
     expect(calibration).toMatchObject({ canClear: true, currentDueAt: new Date("2026-01-02") });
-    expect(maintenance).toMatchObject({ canClear: false, currentDueAt: new Date("2026-01-01") });
+    expect(maintenance).toMatchObject({ canClear: false, currentDueAt: new Date("2026-01-03") });
+    await expect(register.workspace(organizationId)).resolves.toEqual([
+      expect.objectContaining({ id: equipmentId, activeHoldCount: 2, readyHoldCount: 1, firstReadyHoldId: calibration.id, usable: false }),
+    ]);
+    await expect(register.workspace(other.organizationId)).resolves.toEqual([
+      expect.objectContaining({ id: other.equipmentId, readyHoldCount: 0, firstReadyHoldId: null }),
+    ]);
 
     const command = { organizationId, equipmentId, actorUserId: actorId, reason: "Synthetic calibration evidence" };
     await expect(store.clearHold({ ...command, holdId: maintenance.id })).rejects.toThrow("does not support clearing this hold");
+    await db.$executeRaw`
+      UPDATE "Equipment" SET "nextMaintenanceDueAt" = DATE '2026-01-04'
+      WHERE "organizationId" = ${organizationId}::uuid AND "id" = ${equipmentId}::uuid
+    `;
+    await expect(register.workspace(organizationId)).resolves.toEqual([
+      expect.objectContaining({ readyHoldCount: 2, firstReadyHoldId: calibration.id, usable: false }),
+    ]);
     await expect(store.clearHold({ ...command, holdId: calibration.id })).resolves.toMatchObject({
       clearedAt: expect.any(Date), clearedByUserId: actorId, clearanceReason: command.reason,
     });
     expect(await store.listHolds(organizationId, equipmentId)).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: calibration.id, canClear: false, clearedAt: expect.any(Date) }),
-      expect.objectContaining({ id: maintenance.id, canClear: false, clearedAt: null }),
+      expect.objectContaining({ id: maintenance.id, canClear: true, clearedAt: null }),
     ]));
+    await expect(register.workspace(organizationId)).resolves.toEqual([
+      expect.objectContaining({ activeHoldCount: 1, readyHoldCount: 1, firstReadyHoldId: maintenance.id, usable: false }),
+    ]);
     await expect(db.auditEvent.findMany({ where: {
       organizationId, entityId: equipmentId, action: "EQUIPMENT_COMPLIANCE_HOLD_CLEARED",
     } })).resolves.toEqual([expect.objectContaining({ actorUserId: actorId, reason: command.reason })]);
