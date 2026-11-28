@@ -1,18 +1,22 @@
 "use client";
 
 import { type Ref, useEffect, useState } from "react";
-import { initialEquipmentSelection } from "@/lib/equipment/workspace-selection";
+import { initialEquipmentSelection, type EquipmentEvidenceType } from "@/lib/equipment/workspace-selection";
+import type { EquipmentStatus } from "@/lib/equipment/equipment";
 import { EquipmentCompliancePanel } from "./equipment-compliance-panel";
 
-type Item = { id: string; equipmentNumber: string; name: string };
+type Item = { id: string; equipmentNumber: string; name: string; status: EquipmentStatus };
 
-export function EquipmentComplianceWorkspace({ canManage, initialEquipmentId, headingRef }: {
+export function EquipmentComplianceWorkspace({ canManage, initialEquipmentId, initialHoldId, headingRef, onRecordEvidence }: {
   canManage: boolean;
   initialEquipmentId?: string;
+  initialHoldId?: string;
   headingRef?: Ref<HTMLHeadingElement>;
+  onRecordEvidence?: (equipmentId: string, holdId: string, evidenceType: EquipmentEvidenceType) => void;
 }) {
   const [equipment, setEquipment] = useState<Item[]>([]);
   const [selected, setSelected] = useState("");
+  const [requestedHoldId, setRequestedHoldId] = useState(initialHoldId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -47,13 +51,22 @@ export function EquipmentComplianceWorkspace({ canManage, initialEquipmentId, he
     {error && <p className="status-error" role="alert">{error}</p>}
     <div className="admin-form equipment-admin-form">
       <label>Equipment
-        <select value={selected} onChange={event => { setSelected(event.target.value); setError(""); }} disabled={loading || !equipment.length}>
+        <select value={selected} onChange={event => {
+          setSelected(event.target.value);
+          setRequestedHoldId(undefined);
+          setError("");
+        }} disabled={loading || !equipment.length}>
           <option value="" disabled>{loading ? "Loading equipment…" : equipment.length ? "Select equipment" : "No equipment available"}</option>
           {equipment.map(item => <option key={item.id} value={item.id}>{item.equipmentNumber} — {item.name}</option>)}
         </select>
       </label>
       <div className="equipment-form-span">
-        {selected && <EquipmentCompliancePanel key={selected} equipmentId={selected} canManage={canManage} onChanged={refreshRegister} />}
+        {selected && <EquipmentCompliancePanel key={selected} equipmentId={selected}
+          initialHoldId={requestedHoldId} canManage={canManage} onChanged={refreshRegister}
+          onRecordEvidence={onRecordEvidence && equipment.some(item => item.id === selected && item.status !== "RETIRED")
+            ? (holdId, evidenceType) => onRecordEvidence(selected, holdId, evidenceType)
+            : undefined}
+        />}
       </div>
     </div>
   </section>;

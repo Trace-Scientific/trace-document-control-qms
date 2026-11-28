@@ -7,11 +7,12 @@ import { EquipmentComplianceEvidenceWorkspace } from "./equipment-compliance-evi
 import { EquipmentScheduleCorrectionWorkspace } from "./equipment-schedule-correction-workspace";
 import { EquipmentComplianceWorkspace } from "./equipment-compliance-workspace";
 
-type Shortcut = { id: string; evidenceType?: EquipmentEvidenceType; revision: number };
+type HoldShortcut = { id: string; holdId?: string; revision: number };
+type EvidenceShortcut = { id: string; evidenceType: EquipmentEvidenceType; holdId?: string; revision: number };
 
 export function EquipmentOperationsWorkspace({ today, canManage }: { today: string; canManage: boolean }) {
-  const [holdTarget, setHoldTarget] = useState<Shortcut | null>(null);
-  const [evidenceTarget, setEvidenceTarget] = useState<Shortcut | null>(null);
+  const [holdTarget, setHoldTarget] = useState<HoldShortcut | null>(null);
+  const [evidenceTarget, setEvidenceTarget] = useState<EvidenceShortcut | null>(null);
   const holdHeading = useRef<HTMLHeadingElement>(null);
   const evidenceHeading = useRef<HTMLHeadingElement>(null);
 
@@ -22,13 +23,20 @@ export function EquipmentOperationsWorkspace({ today, canManage }: { today: stri
     if (evidenceTarget) evidenceHeading.current?.focus();
   }, [evidenceTarget]);
 
+  function reviewHolds(id: string, holdId?: string) {
+    setHoldTarget(current => ({ id, holdId, revision: (current?.revision ?? 0) + 1 }));
+  }
+
+  function recordEvidence(id: string, evidenceType: EquipmentEvidenceType, holdId?: string) {
+    setEvidenceTarget(current => ({ id, evidenceType, holdId, revision: (current?.revision ?? 0) + 1 }));
+  }
+
   return <>
     <EquipmentManagementWorkspace
       today={today}
       canManage={canManage}
-      onReviewHolds={id => setHoldTarget(current => ({ id, revision: (current?.revision ?? 0) + 1 }))}
-      onRecordEvidence={canManage ? (id, evidenceType) => setEvidenceTarget(current =>
-        ({ id, evidenceType, revision: (current?.revision ?? 0) + 1 })) : undefined}
+      onReviewHolds={reviewHolds}
+      onRecordEvidence={canManage ? recordEvidence : undefined}
     />
     {canManage && <EquipmentComplianceEvidenceWorkspace
       key={evidenceTarget?.revision ?? 0}
@@ -36,6 +44,7 @@ export function EquipmentOperationsWorkspace({ today, canManage }: { today: stri
       headingRef={evidenceHeading}
       initialEquipmentId={evidenceTarget?.id}
       initialEvidenceType={evidenceTarget?.evidenceType}
+      onReturnToHold={evidenceTarget?.holdId ? () => reviewHolds(evidenceTarget.id, evidenceTarget.holdId) : undefined}
     />}
     {canManage && <EquipmentScheduleCorrectionWorkspace />}
     <EquipmentComplianceWorkspace
@@ -43,6 +52,8 @@ export function EquipmentOperationsWorkspace({ today, canManage }: { today: stri
       canManage={canManage}
       headingRef={holdHeading}
       initialEquipmentId={holdTarget?.id}
+      initialHoldId={holdTarget?.holdId}
+      onRecordEvidence={canManage ? (id, holdId, type) => recordEvidence(id, type, holdId) : undefined}
     />
   </>;
 }

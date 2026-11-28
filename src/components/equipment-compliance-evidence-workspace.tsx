@@ -13,11 +13,12 @@ type EquipmentItem={
   nextMaintenanceDueAt:string|null;
 };
 
-export function EquipmentComplianceEvidenceWorkspace({ today, initialEquipmentId, initialEvidenceType, headingRef }: {
+export function EquipmentComplianceEvidenceWorkspace({ today, initialEquipmentId, initialEvidenceType, headingRef, onReturnToHold }: {
   today: string;
   initialEquipmentId?: string;
   initialEvidenceType?: EquipmentEvidenceType;
   headingRef?: Ref<HTMLHeadingElement>;
+  onReturnToHold?: () => void;
 }){
   const [equipment,setEquipment]=useState<EquipmentItem[]>([]);
   const [selected,setSelected]=useState("");
@@ -27,6 +28,7 @@ export function EquipmentComplianceEvidenceWorkspace({ today, initialEquipmentId
   const [evidenceFileId,setEvidenceFileId]=useState("");
   const [message,setMessage]=useState("");
   const [error,setError]=useState("");
+  const [saving,setSaving]=useState(false);
   const selectedItem=useMemo(()=>equipment.find(item=>item.id===selected)??null,[equipment,selected]);
 
   async function loadEquipment(){
@@ -61,23 +63,31 @@ export function EquipmentComplianceEvidenceWorkspace({ today, initialEquipmentId
 
   async function recordEvidence(event:React.FormEvent){
     event.preventDefault();
-    if(!selected||!evidenceFileId)return;
+    if(!selected||!evidenceFileId||saving)return;
     setMessage("");
-    const occurredAt=new Date(`${eventDate}T12:00:00.000Z`).toISOString();
-    const response=await fetch(`/api/equipment/${selected}/events`,{
-      method:"POST",
-      headers:{"content-type":"application/json"},
-      body:JSON.stringify({eventType,occurredAt,summary,evidenceFileId}),
-    });
-    const body=await response.json().catch(()=>null);
     const label=eventType==="CALIBRATED"?"Calibration":"Maintenance";
-    setMessage(response.ok?`${label} evidence recorded and next due date advanced from the governed interval.`:body?.error??`${label} evidence could not be recorded`);
-    if(response.ok){
-      const changedEquipmentId=selected;
+    setSaving(true);
+    try {
+      const occurredAt=new Date(`${eventDate}T12:00:00.000Z`).toISOString();
+      const response=await fetch(`/api/equipment/${selected}/events`,{
+        method:"POST",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify({eventType,occurredAt,summary,evidenceFileId}),
+      });
+      if(!response.ok){
+        const body=await response.json().catch(()=>null);
+        setMessage(body?.error??`${label} evidence could not be recorded`);
+        return;
+      }
+      setMessage(`${label} evidence recorded.`);
       setSummary("");
       setEvidenceFileId("");
-      await loadEquipment();
-      window.dispatchEvent(new CustomEvent("qms:equipment-changed",{detail:{equipmentId:changedEquipmentId}}));
+      window.dispatchEvent(new CustomEvent("qms:equipment-changed",{detail:{equipmentId:selected}}));
+      await loadEquipment().catch(() => setError("Unable to refresh the equipment dates."));
+    } catch {
+      setMessage(`Unable to confirm that ${label.toLowerCase()} evidence was recorded. Review operational history before retrying.`);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -85,15 +95,18 @@ export function EquipmentComplianceEvidenceWorkspace({ today, initialEquipmentId
     <h3 ref={headingRef} tabIndex={-1}>Calibration &amp; maintenance evidence</h3>
     <p>Record completed calibration or preventive maintenance with governed supporting evidence. The next due date is calculated from the recorded event date and the equipment&apos;s configured interval.</p>
     <form className="admin-form equipment-admin-form" onSubmit={recordEvidence}>
-      <label>Equipment<select required value={selected} onChange={event=>{setSelected(event.target.value);setMessage("");setError("");setSummary("");setEventDate(today);setEvidenceFileId("");}} disabled={!equipment.length}><option value="" disabled>{equipment.length ? "Select equipment" : "No equipment available"}</option>{equipment.map(item=><option key={item.id} value={item.id}>{item.equipmentNumber} — {item.name}</option>)}</select></label>
+      <label>Equipment<select required value={selected} onChange={event=>{setSelected(event.target.value);setMessage("");setError("");setSummary("");setEventDate(today);setEvidenceFileId("");}} disabled={saving||!equipment.length}><option value="" disabled>{equipment.length ? "Select equipment" : "No equipment available"}</option>{equipment.map(item=><option key={item.id} value={item.id}>{item.equipmentNumber} — {item.name}</option>)}</select></label>
       {selectedItem&&<p className="equipment-form-span"><strong>Current calibration due:</strong> {selectedItem.nextCalibrationDueAt?.slice(0,10)??"—"} · <strong>Current maintenance due:</strong> {selectedItem.nextMaintenanceDueAt?.slice(0,10)??"—"}</p>}
-      <label className="equipment-schedule-date-field">Completed date<input required type="date" value={eventDate} onChange={event=>setEventDate(event.target.value)} aria-describedby="equipment-completed-date-help"/><span id="equipment-completed-date-help" className="field-help">Select or enter the completed calibration or maintenance date.</span></label>
-      <label className="equipment-schedule-date-field">Evidence type<select value={eventType} onChange={event=>{setEventType(event.target.value as EquipmentEvidenceType);setMessage("");setEvidenceFileId("");}}><option value="CALIBRATED">Calibration completed</option><option value="MAINTENANCE">Preventive maintenance completed</option></select><span className="field-help" aria-hidden="true">&nbsp;</span></label>
-      <label className="equipment-form-wide">Evidence summary<textarea required rows={3} maxLength={5000} value={summary} onChange={event=>setSummary(event.target.value)}/></label>
-      <div className="equipment-form-span"><GovernedEvidenceFilePicker key={`${selected}:${eventType}`} domain="equipment" name="equipmentComplianceEvidenceFileId" onSelectionChange={setEvidenceFileId}/></div>
-      <button type="submit" disabled={!selected||!eventDate||!summary.trim()||!evidenceFileId}>Record governed evidence</button>
+      <label className="equipment-schedule-date-field">Completed date<input required type="date" disabled={saving} value={eventDate} onChange={event=>setEventDate(event.target.value)} aria-describedby="equipment-completed-date-help"/><span id="equipment-completed-date-help" className="field-help">Select or enter the completed calibration or maintenance date.</span></label>
+      <label className="equipment-schedule-date-field">Evidence type<select disabled={saving} value={eventType} onChange={event=>{setEventType(event.target.value as EquipmentEvidenceType);setMessage("");setEvidenceFileId("");}}><option value="CALIBRATED">Calibration completed</option><option value="MAINTENANCE">Preventive maintenance completed</option></select><span className="field-help" aria-hidden="true">&nbsp;</span></label>
+      <label className="equipment-form-wide">Evidence summary<textarea required disabled={saving} rows={3} maxLength={5000} value={summary} onChange={event=>setSummary(event.target.value)}/></label>
+      <div className="equipment-form-span"><GovernedEvidenceFilePicker key={`${selected}:${eventType}`} domain="equipment" name="equipmentComplianceEvidenceFileId" disabled={saving} onSelectionChange={setEvidenceFileId}/></div>
+      <button type="submit" disabled={saving||!selected||!eventDate||!summary.trim()||!evidenceFileId}>Record governed evidence</button>
       {message&&<p className="equipment-form-span" role="status">{message}</p>}
       {error&&<p className="status-error equipment-form-span">{error}</p>}
     </form>
+    {onReturnToHold && <div>
+      <button type="button" className="secondary-button" disabled={saving} onClick={onReturnToHold}>Return to originating hold</button>
+    </div>}
   </section>;
 }

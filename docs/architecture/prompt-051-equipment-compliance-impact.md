@@ -13,6 +13,8 @@ A hold can be cleared only by an authorized equipment manager and only after the
 
 The compliance panel displays the held due date, the corresponding current next due date, and whether the date requirement is met. Recording compliance evidence or correcting the schedule refreshes this view. Managers can submit a clearance reason once the date requirement is met. The server checks the current schedule again when accepting clearance. The equipment register continues to evaluate overall usability, including other active holds and open recalls.
 
+When the current date does not support clearance, an equipment manager can open the existing evidence form with the instrument and the corresponding calibration or maintenance type selected. The form links back to the originating hold so the manager can review its current dates. If that hold has since been cleared, the panel leaves the active hold selection blank. These shortcuts use the existing permission checks, evidence requirements, and audit writes. Recording evidence alone leaves the hold open.
+
 ## Impact assessment
 Impact assessments are append-only and capture disposition, affected scope, rationale, assessor, time, optional linked compliance hold, and optional linked quality event.
 
