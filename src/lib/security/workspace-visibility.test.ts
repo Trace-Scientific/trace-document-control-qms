@@ -26,6 +26,8 @@ describe("workspace visibility", () => {
       qualityEventManage: false,
       equipmentManagement: false,
       equipmentManage: false,
+      inventoryRead: false,
+      inventoryManage: false,
       reportingManagement: false,
       reportingManage: false,
       reportingExport: false,
@@ -125,5 +127,11 @@ describe("workspace visibility", () => {
     expect(exporter.reportingManagement).toBe(true);
     expect(exporter.reportingManage).toBe(false);
     expect(exporter.reportingExport).toBe(true);
+  });
+
+  it("keeps inventory workspace access and inventory writes independently permissioned", () => {
+    expect(workspaceVisibility(["inventory.read"])).toMatchObject({ inventoryRead: true, inventoryManage: false, equipmentManagement: false });
+    expect(workspaceVisibility(["inventory.manage"])).toMatchObject({ inventoryRead: false, inventoryManage: true });
+    expect(workspaceVisibility(["inventory.read", "inventory.manage"])).toMatchObject({ inventoryRead: true, inventoryManage: true });
   });
 });

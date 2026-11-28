@@ -40,6 +40,8 @@ jobs:
         run: npx vitest run src/lib/quality/capa-worklist-postgres.integration.test.ts
       - name: Verify equipment register worklist and tenant isolation
         run: npx vitest run src/lib/equipment/worklist-postgres.integration.test.ts
+      - name: Verify inventory receiving and tenant isolation
+        run: npx vitest run src/lib/inventory/lot-register-postgres.integration.test.ts
 
   verify:
     runs-on: ubuntu-latest
