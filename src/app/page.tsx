@@ -1,3 +1,4 @@
+import { EquipmentOperationsWorkspace } from "@/components/equipment-operations-workspace";
 import { DocumentControlDashboard } from "@/components/document-control-dashboard";
 import { DashboardVisibilityGate } from "@/components/dashboard-visibility-gate";
 import { LifecycleOperations } from "@/components/lifecycle-operations";
@@ -17,10 +18,6 @@ import { TrainingManagementWorkspace } from "@/components/training-management-wo
 import { MyTrainingWorkspace } from "@/components/my-training-workspace";
 import { CompetencyManagementWorkspace } from "@/components/competency-management-workspace";
 import { QualityEventWorkspace } from "@/components/quality-event-workspace";
-import { EquipmentManagementWorkspace } from "@/components/equipment-management-workspace";
-import { EquipmentComplianceWorkspace } from "@/components/equipment-compliance-workspace";
-import { EquipmentComplianceEvidenceWorkspace } from "@/components/equipment-compliance-evidence-workspace";
-import { EquipmentScheduleCorrectionWorkspace } from "@/components/equipment-schedule-correction-workspace";
 import { ReportingWorkspace } from "@/components/reporting-workspace";
 import { QmsModuleShell } from "@/components/qms-module-shell";
 import { cookies } from "next/headers";
@@ -117,12 +114,7 @@ export default async function HomePage() {
   ) : null;
 
   const laboratory = visibility.equipmentManagement ? (
-    <>
-      <EquipmentManagementWorkspace canManage={visibility.equipmentManage} today={today} />
-      {visibility.equipmentManage && <EquipmentComplianceEvidenceWorkspace today={today} />}
-      {visibility.equipmentManage && <EquipmentScheduleCorrectionWorkspace />}
-      <EquipmentComplianceWorkspace canManage={visibility.equipmentManage} />
-    </>
+    <EquipmentOperationsWorkspace canManage={visibility.equipmentManage} today={today} />
   ) : null;
 
   const reporting = visibility.reportingManagement ? (

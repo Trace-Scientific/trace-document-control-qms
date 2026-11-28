@@ -23,3 +23,7 @@ Recall/quarantine, broader automated escalation, inventory linkage, and final Pr
 Staff can search by equipment number or name and combine status with views for active holds, open recalls, unavailable equipment, overdue schedules, upcoming work, and missing required dates. Calibration and maintenance are evaluated independently. The 30-day window includes today and the date 30 calendar days later in UTC. Schedule worklists consider required schedules on active equipment and preserve other records for general browsing. The register shows the server's existing usability decision and adds the count of open recalls from the same tenant-scoped query.
 
 Opening a different instrument clears the prior instrument's service draft and loads history for the selected record. The worklist adds no writes or changes to release, recall, hold, or usability rules.
+
+## Register shortcuts
+
+A register row with an active hold opens the existing compliance controls for that instrument. Authorized equipment managers also see calibration and maintenance shortcuts for required schedules that are overdue, upcoming, or missing a due date. These open the existing evidence form with the instrument and evidence type selected. Each shortcut focuses the destination heading. If the requested instrument is unavailable, the destination has no selected instrument until the user makes a selection. The shortcuts use the existing forms, permissions, validations, and audit writes.

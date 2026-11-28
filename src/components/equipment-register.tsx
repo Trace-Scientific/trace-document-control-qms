@@ -1,5 +1,6 @@
 "use client";
 
+import type { EquipmentEvidenceType } from "@/lib/equipment/workspace-selection";
 import { useMemo, useState } from "react";
 import { equipmentWorklist, filterEquipmentWorklist, type EquipmentWorklistItem, type EquipmentWorklistView } from "@/lib/equipment/worklist";
 
@@ -21,11 +22,15 @@ const scheduleLabels = {
   inactive: "",
 };
 
-export function EquipmentRegister({ equipment, today, selected, onSelect }: {
+const actionableSchedules = new Set(["overdue", "due-soon", "missing-date"]);
+
+export function EquipmentRegister({ equipment, today, selected, onSelect, onReviewHolds, onRecordEvidence }: {
   equipment: EquipmentWorklistItem[];
   today: string;
   selected: string;
   onSelect: (id: string) => void;
+  onReviewHolds: (id: string) => void;
+  onRecordEvidence?: (id: string, type: EquipmentEvidenceType) => void;
 }) {
   const [view, setView] = useState<EquipmentWorklistView>("all");
   const [query, setQuery] = useState("");
@@ -66,7 +71,7 @@ export function EquipmentRegister({ equipment, today, selected, onSelect }: {
     </div>
     <p role="status">Showing {visible.length} of {equipment.length} equipment records</p>
     <div className="table-wrap"><table>
-      <thead><tr><th>Equipment</th><th>Status</th><th>Usability</th><th>Calibration due</th><th>Maintenance due</th><th>Holds</th><th>Recalls</th></tr></thead>
+      <thead><tr><th>Equipment</th><th>Status</th><th>Usability</th><th>Calibration due</th><th>Maintenance due</th><th>Holds</th><th>Recalls</th><th>Actions</th></tr></thead>
       <tbody>
         {visible.map(({ item, calibration, maintenance }) => <tr key={item.id}>
           <td><button type="button" className="link-button" aria-pressed={selected === item.id}
@@ -77,8 +82,19 @@ export function EquipmentRegister({ equipment, today, selected, onSelect }: {
           <td>{schedule(item.nextMaintenanceDueAt, maintenance)}</td>
           <td>{item.activeHoldCount}</td>
           <td>{item.openRecallCount}</td>
+          <td>
+            {item.activeHoldCount > 0 && <button type="button" className="secondary-button"
+              aria-label={`Review holds for ${item.equipmentNumber}`}
+              onClick={() => onReviewHolds(item.id)}>Review holds</button>}
+            {onRecordEvidence && actionableSchedules.has(calibration) && <button type="button" className="secondary-button"
+              aria-label={`Record calibration for ${item.equipmentNumber}`}
+              onClick={() => onRecordEvidence(item.id, "CALIBRATED")}>Record calibration</button>}
+            {onRecordEvidence && actionableSchedules.has(maintenance) && <button type="button" className="secondary-button"
+              aria-label={`Record maintenance for ${item.equipmentNumber}`}
+              onClick={() => onRecordEvidence(item.id, "MAINTENANCE")}>Record maintenance</button>}
+          </td>
         </tr>)}
-        {visible.length === 0 && <tr><td colSpan={7}>{equipment.length
+        {visible.length === 0 && <tr><td colSpan={8}>{equipment.length
           ? "No equipment matches these filters."
           : "No equipment has been registered."}</td></tr>}
       </tbody>
