@@ -4,6 +4,7 @@ import { db } from "../db";
 import type { AuthorizationContext } from "../security/authorization";
 import { InventoryService } from "./inventory";
 import { PrismaInventoryStore } from "./inventory-store";
+import { InventoryTraceabilityService } from "./inventory-traceability";
 import { listReceiptLocations } from "./receipt-location-directory";
 
 const enabled = process.env.RUN_DEMO_FIXTURE_INTEGRATION === "1";
@@ -91,7 +92,15 @@ describe.skipIf(!enabled)("inventory receiving in migrated PostgreSQL", () => {
     expect(audit?.metadata).toMatchObject({ siteId: site.id, departmentId: department.id });
     await expect(service.listBalances(manager, organizationId, lot.id)).resolves.toEqual([]);
 
+    const traceability = new InventoryTraceabilityService();
+    const file = await db.fileObject.create({ data: {
+      organizationId, storageKey: `synthetic/${randomUUID()}`, originalName: "acceptance.pdf", mimeType: "application/pdf",
+      sizeBytes: BigInt(128), sha256: "0".repeat(64), status: "AVAILABLE", uploadedByUserId: manager.userId,
+    } });
+    const certificate = { organizationId, evidenceFileId: file.id, summary: "Synthetic acceptance evidence" };
     const transition = { organizationId, lotId: lot.id, reason: "Synthetic status review" };
+    await expect(service.transitionLot(manager, { ...transition, status: "ACCEPTED" })).rejects.toThrow("acceptance certificate evidence");
+    await traceability.createAcceptanceCertificate(manager, { ...certificate, lotId: lot.id });
     await service.transitionLot(manager, { ...transition, status: "ACCEPTED" });
     await service.transitionLot(manager, { ...transition, status: "QUARANTINED" });
     await service.transitionLot(manager, { ...transition, status: "ACCEPTED" });
@@ -99,6 +108,7 @@ describe.skipIf(!enabled)("inventory receiving in migrated PostgreSQL", () => {
     expect(balances).toEqual([expect.objectContaining({ siteId: site.id, departmentId: department.id, unitOfMeasure: "box" })]);
     expect(balances[0].quantityOnHand.toString()).toBe("3");
     const unassignedLot = await service.receiveLot(manager, { ...receipt, lotNumber: "L-002", siteId: null, departmentId: null });
+    await traceability.createAcceptanceCertificate(manager, { ...certificate, lotId: unassignedLot.id });
     await service.transitionLot(manager, { ...transition, lotId: unassignedLot.id, status: "ACCEPTED" });
     await expect(service.listBalances(manager, organizationId, unassignedLot.id)).resolves.toEqual([
       expect.objectContaining({ siteId: null, departmentId: null, unitOfMeasure: "box" }),
