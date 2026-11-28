@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "../db";
+import { PrismaEquipmentRecallStore } from "./recall-store";
 import { PrismaEquipmentOperationsStore } from "./operations-store";
 
 const enabled = process.env.RUN_DEMO_FIXTURE_INTEGRATION === "1";
@@ -56,5 +57,43 @@ describe.skipIf(!enabled)("equipment register in migrated PostgreSQL", () => {
     await expect(store.workspace(other.organizationId)).resolves.toEqual([
       expect.objectContaining({ id: other.equipmentId, activeHoldCount: 0, openRecallCount: 0, usable: true }),
     ]);
+  });
+
+  it("connects governed recall operations to register usability and preserves the recall history", async () => {
+    const { organizationId, actorId, equipmentId } = await createTenant();
+    const other = await createTenant();
+    const store = new PrismaEquipmentRecallStore();
+    const register = new PrismaEquipmentOperationsStore();
+    const target = { organizationId, equipmentId, actorUserId: actorId };
+    const recall = await store.open({ ...target, reason: "Synthetic recall", scopeSummary: "Synthetic runs" });
+    expect(recall.status).toBe("OPEN");
+    await expect(store.list(other.organizationId, equipmentId)).resolves.toEqual([]);
+    await expect(register.workspace(organizationId)).resolves.toEqual([
+      expect.objectContaining({ id: equipmentId, usable: false, openRecallCount: 1 }),
+    ]);
+
+    const [hold] = await db.$queryRaw<{ id: string }[]>`
+      INSERT INTO "EquipmentComplianceHold" ("organizationId", "equipmentId", "kind", "dueAt")
+      VALUES (${organizationId}::uuid, ${equipmentId}::uuid, 'CALIBRATION_OVERDUE', CURRENT_DATE - 1)
+      RETURNING "id"
+    `;
+    const resolution = { ...target, recallId: recall.id, reason: "Synthetic corrective work completed" };
+    await expect(store.close(resolution)).rejects.toThrow("compliance holds remain active");
+    await db.$executeRaw`
+      UPDATE "EquipmentComplianceHold" SET "clearedAt" = CURRENT_TIMESTAMP,
+        "clearedByUserId" = ${actorId}::uuid, "clearanceReason" = 'Synthetic resolved hold'
+      WHERE "organizationId" = ${organizationId}::uuid AND "id" = ${hold.id}::uuid
+    `;
+    await expect(store.close(resolution)).resolves.toMatchObject({ status: "CLOSED", closureReason: resolution.reason });
+    await expect(store.list(organizationId, equipmentId)).resolves.toEqual([
+      expect.objectContaining({ id: recall.id, status: "CLOSED", reason: "Synthetic recall", scopeSummary: "Synthetic runs" }),
+    ]);
+    await expect(register.workspace(organizationId)).resolves.toEqual([
+      expect.objectContaining({ id: equipmentId, usable: true, openRecallCount: 0 }),
+    ]);
+    const audit = await db.auditEvent.findMany({ where: { organizationId, entityId: equipmentId, action: {
+      in: ["EQUIPMENT_RECALL_OPENED", "EQUIPMENT_RECALL_CLOSED"],
+    } } });
+    expect(audit.map(row => row.action).sort()).toEqual(["EQUIPMENT_RECALL_CLOSED", "EQUIPMENT_RECALL_OPENED"]);
   });
 });
