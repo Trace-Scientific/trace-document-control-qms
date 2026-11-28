@@ -22,3 +22,5 @@ Broader escalation, inventory/material linkage, automated recall-source integrat
 ## Recall actions in the workspace
 
 The open-recall count in each equipment register row links to that instrument's recall history. Authorized equipment managers can open a recall with a reason and affected scope, or close an open recall with a closure reason after any active holds have been cleared. The workspace uses the existing recall service and refreshes the register after a write. Closing a recall removes that quarantine restriction. Administrative status, schedule validity, and compliance holds also inform the usability decision.
+
+When active compliance holds block recall closure, the recall panel shows the number of blockers and how many meet the date requirement for clearance. **Review blocking holds** opens that instrument's compliance controls and selects the oldest eligible hold when one exists. Refreshing recall history also reloads the equipment register and its hold counts. Managers clear each hold and close the recall through their existing audited actions.
