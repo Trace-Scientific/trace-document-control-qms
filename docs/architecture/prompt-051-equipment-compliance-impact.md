@@ -18,3 +18,7 @@ Impact assessments are append-only and capture disposition, affected scope, rati
 
 ## Boundary
 Notifications, equipment workspace usability indicators, analytics, service/repair impact workflows, recall/quarantine workflows, and Prompt 051 completeness review remain subsequent slices.
+
+## Reviewing impact assessments
+
+Open an instrument's compliance controls to review its impact assessment history. Entries show the disposition, associated hold, affected scope, rationale, assessor name, and UTC timestamp. The latest entry opens by default. An associated quality event number is shown when the reader also has organization-wide quality event read permission. The read path uses existing tenant-scoped records and does not change assessment or clearance requirements.

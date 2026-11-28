@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "../db";
+import { PrismaEquipmentComplianceStore } from "./compliance-store";
 import { PrismaEquipmentRecallStore } from "./recall-store";
 import { PrismaEquipmentOperationsStore } from "./operations-store";
 
@@ -95,5 +96,37 @@ describe.skipIf(!enabled)("equipment register in migrated PostgreSQL", () => {
       in: ["EQUIPMENT_RECALL_OPENED", "EQUIPMENT_RECALL_CLOSED"],
     } } });
     expect(audit.map(row => row.action).sort()).toEqual(["EQUIPMENT_RECALL_CLOSED", "EQUIPMENT_RECALL_OPENED"]);
+  });
+
+  it("retains impact assessment details and scopes the resulting quality event number", async () => {
+    const { organizationId, actorId, equipmentId } = await createTenant();
+    const other = await createTenant();
+    const [qualityEvent] = await db.$queryRaw<{ id: string }[]>`
+      INSERT INTO "QualityEvent" ("organizationId", "eventNumber", "type", "severity", "summary", "discoveredAt", "reportedByUserId")
+      VALUES (${organizationId}::uuid, 'QE-IMPACT-01', 'EQUIPMENT_FAILURE', 'MEDIUM', 'Synthetic impact', CURRENT_TIMESTAMP, ${actorId}::uuid)
+      RETURNING "id"
+    `;
+    const [hold] = await db.$queryRaw<{ id: string }[]>`
+      INSERT INTO "EquipmentComplianceHold" ("organizationId", "equipmentId", "kind", "dueAt")
+      VALUES (${organizationId}::uuid, ${equipmentId}::uuid, 'CALIBRATION_OVERDUE', CURRENT_DATE - 1)
+      RETURNING "id"
+    `;
+    const store = new PrismaEquipmentComplianceStore();
+    const assessment = await store.createImpact({
+      organizationId, equipmentId, actorUserId: actorId, holdId: hold.id, qualityEventId: qualityEvent.id,
+      disposition: "POTENTIAL_IMPACT", scopeSummary: "Synthetic runs", rationale: "Synthetic follow-up needed",
+    });
+
+    const [history] = await store.listImpactHistory(organizationId, equipmentId, true);
+    expect(history).toEqual({
+      id: assessment.id, holdId: hold.id, disposition: "POTENTIAL_IMPACT", scopeSummary: "Synthetic runs",
+      rationale: "Synthetic follow-up needed", assessorName: "Synthetic Operator", qualityEventNumber: "QE-IMPACT-01",
+      assessedAt: assessment.assessedAt,
+    });
+    await expect(store.listImpactHistory(organizationId, equipmentId, false)).resolves.toEqual([
+      expect.objectContaining({ id: assessment.id, qualityEventNumber: null }),
+    ]);
+    await expect(store.listImpactHistory(other.organizationId, equipmentId, true)).resolves.toEqual([]);
+    await expect(store.listImpactHistory(organizationId, other.equipmentId, true)).resolves.toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AuthorizationContext } from "../security/authorization";
-import { requireAuthorization } from "../security/authorization";
+import { evaluateAuthorization, requireAuthorization } from "../security/authorization";
 import { PrismaQualityEventSystemIntakeStore } from "../quality/system-intake-store";
 
 export class EquipmentComplianceValidationError extends Error {}
@@ -9,7 +9,12 @@ export type EquipmentImpactDisposition="NO_IMPACT"|"POTENTIAL_IMPACT"|"CONFIRMED
 export type EquipmentHoldRecord={id:string;organizationId:string;equipmentId:string;kind:EquipmentComplianceKind;dueAt:Date;detectedAt:Date;clearedAt:Date|null;clearedByUserId:string|null;clearanceReason:string|null};
 export type EquipmentImpactRecord={id:string;organizationId:string;equipmentId:string;holdId:string|null;disposition:EquipmentImpactDisposition;scopeSummary:string;rationale:string;qualityEventId:string|null;assessedByUserId:string;assessedAt:Date};
 
+export type EquipmentImpactHistoryEntry = Pick<EquipmentImpactRecord,
+  "id" | "holdId" | "disposition" | "scopeSummary" | "rationale" | "assessedAt"
+> & { assessorName: string; qualityEventNumber: string | null };
+
 export interface EquipmentComplianceStore{
+  listImpactHistory(organizationId: string, equipmentId: string, includeQualityEvent: boolean): Promise<EquipmentImpactHistoryEntry[]>;
   listHolds(organizationId:string,equipmentId:string):Promise<EquipmentHoldRecord[]>;
   detectOverdue():Promise<number>;
   clearHold(input:{organizationId:string;equipmentId:string;holdId:string;reason:string;actorUserId:string}):Promise<EquipmentHoldRecord>;
@@ -20,6 +25,13 @@ export interface EquipmentComplianceStore{
 export class EquipmentComplianceService{
   constructor(private readonly store:EquipmentComplianceStore,private readonly intake=new PrismaQualityEventSystemIntakeStore()){}
   listHolds(context:AuthorizationContext,organizationId:string,equipmentId:string){requireAuthorization(context,{organizationId,permission:"equipment.read"});return this.store.listHolds(organizationId,equipmentId);}
+  listImpactHistory(context: AuthorizationContext, equipmentId: string) {
+    const { organizationId } = context;
+    requireAuthorization(context, { organizationId, permission: "equipment.read" });
+    const includeQualityEvent = evaluateAuthorization(context, { organizationId, permission: "quality_event.read" }).allowed;
+    return this.store.listImpactHistory(organizationId, equipmentId, includeQualityEvent);
+  }
+
   detectOverdue(){return this.store.detectOverdue();}
   clearHold(context:AuthorizationContext,input:{organizationId:string;equipmentId:string;holdId:string;reason:string}){requireAuthorization(context,{organizationId:input.organizationId,permission:"equipment.manage"});const reason=input.reason.trim();if(!reason||reason.length>1000)throw new EquipmentComplianceValidationError("A hold clearance reason is required");return this.store.clearHold({...input,reason,actorUserId:context.userId});}
   async assess(context:AuthorizationContext,input:{organizationId:string;equipmentId:string;holdId?:string|null;disposition:EquipmentImpactDisposition;scopeSummary:string;rationale:string}){
