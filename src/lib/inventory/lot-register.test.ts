@@ -7,13 +7,14 @@ const materials = new Map<string, CatalogMaterial>([
 ]);
 const received: RegisterLot = {
   id: "lot-1", materialId: "material-1", lotNumber: "TUBES-01", status: "RECEIVED",
+  siteId: "site-1", departmentId: "department-1",
   receivedAt: "2026-11-26", expirationDate: null, quantityReceived: "0", unitOfMeasure: "case",
 };
 const quarantined: RegisterLot = {
-  ...received, id: "lot-2", materialId: "material-2", lotNumber: "TIPS-01", status: "QUARANTINED",
+  ...received, id: "lot-2", materialId: "material-2", lotNumber: "TIPS-01", status: "QUARANTINED", siteId: null, departmentId: null,
 };
 const lots = [received, quarantined];
-const filters = { query: "", status: "", materialId: "" } as const;
+const filters = { query: "", status: "", materialId: "", receiptSiteId: "" } as const;
 
 describe("inventory lot register", () => {
   it.each(["  tUbEs-01  ", "mat-101", "sample tubes"])("finds a lot by %s", query => {
@@ -22,9 +23,15 @@ describe("inventory lot register", () => {
 
   it("combines status, material, and search while retaining records for inactive materials", () => {
     expect(filterLotRegister(lots, materials, filters)).toEqual(lots);
-    const view = { query: "tips", status: "QUARANTINED", materialId: "material-2" } as const;
+    const view = { ...filters, query: "tips", status: "QUARANTINED", materialId: "material-2" } as const;
     expect(filterLotRegister(lots, materials, view)).toEqual([quarantined]);
     expect(filterLotRegister(lots, materials, { ...view, status: "RECEIVED" })).toEqual([]);
     expect(filterLotRegister(lots, materials, { ...view, materialId: "material-1" })).toEqual([]);
+  });
+
+  it("filters by the recorded site and can show lots with no assigned site", () => {
+    expect(filterLotRegister(lots, materials, { ...filters, receiptSiteId: "site-1" })).toEqual([received]);
+    expect(filterLotRegister(lots, materials, { ...filters, receiptSiteId: null })).toEqual([quarantined]);
+    expect(filterLotRegister(lots, materials, { ...filters, receiptSiteId: "site-1", status: "QUARANTINED" })).toEqual([]);
   });
 });
