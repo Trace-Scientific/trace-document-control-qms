@@ -2,6 +2,7 @@
 
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import type { EquipmentHoldReadiness, EquipmentImpactDisposition } from "@/lib/equipment/compliance";
+import { equipmentHoldEvidenceType, findActiveEquipmentHold, type EquipmentEvidenceType } from "@/lib/equipment/workspace-selection";
 import { EquipmentImpactHistory, type EquipmentImpactHistoryRow } from "./equipment-impact-history";
 
 type Hold = Pick<EquipmentHoldReadiness, "id" | "kind" | "clearanceReason" | "canClear"> & {
@@ -11,10 +12,12 @@ type Hold = Pick<EquipmentHoldReadiness, "id" | "kind" | "clearanceReason" | "ca
   currentDueAt: string | null;
 };
 
-export function EquipmentCompliancePanel({ equipmentId, canManage, onChanged }: {
+export function EquipmentCompliancePanel({ equipmentId, initialHoldId, canManage, onChanged, onRecordEvidence }: {
   equipmentId: string;
+  initialHoldId?: string;
   canManage: boolean;
   onChanged: () => Promise<void>;
+  onRecordEvidence?: (holdId: string, evidenceType: EquipmentEvidenceType) => void;
 }) {
   const [holds, setHolds] = useState<Hold[] | null>(null);
   const [impactHistory, setImpactHistory] = useState<EquipmentImpactHistoryRow[] | null>(null);
@@ -23,7 +26,7 @@ export function EquipmentCompliancePanel({ equipmentId, canManage, onChanged }: 
   const [message, setMessage] = useState("");
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [holdId, setHoldId] = useState("");
+  const [holdId, setHoldId] = useState(initialHoldId ?? "");
   const [disposition, setDisposition] = useState<EquipmentImpactDisposition>("NO_IMPACT");
   const [scopeSummary, setScopeSummary] = useState("");
   const [rationale, setRationale] = useState("");
@@ -33,7 +36,7 @@ export function EquipmentCompliancePanel({ equipmentId, canManage, onChanged }: 
     hold.id, `${hold.kind === "CALIBRATION_OVERDUE" ? "Calibration" : "Maintenance"} due ${hold.dueAt.slice(0, 10)}`,
   ])), [holds]);
   const activeHolds = holds?.filter(hold => !hold.clearedAt) ?? [];
-  const selectedHold = activeHolds.find(hold => hold.id === holdId);
+  const selectedHold = holds && findActiveEquipmentHold(holds, holdId);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -45,7 +48,7 @@ export function EquipmentCompliancePanel({ equipmentId, canManage, onChanged }: 
         const loaded: Hold[] = body.data;
         setHolds(loaded);
         setImpactHistory(body.impactHistory ?? []);
-        setHoldId(current => current || loaded.find(hold => !hold.clearedAt)?.id || "");
+        setHoldId(current => current || findActiveEquipmentHold(loaded)?.id || "");
       })
       .catch(error => { if (!controller.signal.aborted) setLoadError(error.message); });
     return () => controller.abort();
@@ -130,6 +133,8 @@ export function EquipmentCompliancePanel({ equipmentId, canManage, onChanged }: 
     </ul>}
     <div><button type="button" className="secondary-button" disabled={busy || (!holds && !loadError)} onClick={refresh}>Refresh compliance records</button></div>
     <EquipmentImpactHistory entries={impactHistory} holdLabels={holdLabels} />
+    {holds && initialHoldId && holdId === initialHoldId && !selectedHold && !message &&
+      <p role="status">The requested hold is no longer active.</p>}
     {activeHolds.length > 0 &&
       <label>Active hold
         <select disabled={busy} value={selectedHold?.id ?? ""} onChange={event => selectHold(event.target.value)}>
@@ -147,6 +152,12 @@ export function EquipmentCompliancePanel({ equipmentId, canManage, onChanged }: 
           ? "The date requirement is met. A manager can clear the hold with a reason."
           : "The current next due date must be later than the due date on the hold."}</dd>
       </dl>
+      {canManage && onRecordEvidence && !selectedHold.canClear && <div>
+        <button type="button" className="secondary-button" disabled={busy}
+          onClick={() => onRecordEvidence(selectedHold.id, equipmentHoldEvidenceType[selectedHold.kind])}>
+          {selectedHold.kind === "CALIBRATION_OVERDUE" ? "Record calibration evidence" : "Record maintenance evidence"}
+        </button>
+      </div>}
       {canManage && <>
         <form className="form-stack" onSubmit={event => void submit(event, "ASSESS_IMPACT")}>
           <h4>Record impact assessment</h4>
