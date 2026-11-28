@@ -29,12 +29,35 @@ export class PrismaEquipmentOperationsStore implements EquipmentOperationsStore{
       FROM "Equipment" e WHERE e."organizationId"=${organizationId}::uuid
     `);return rows[0]??{total:0,active:0,outOfService:0,retired:0,activeHolds:0,calibrationDue30:0,maintenanceDue30:0,serviceFailures90:0};
   }
-  workspace(organizationId:string){return db.$queryRaw<EquipmentWorkspaceItem[]>(Prisma.sql`
-    SELECT e.id,e."equipmentNumber",e.name,e.status,e."calibrationRequired",e."maintenanceRequired",e."nextCalibrationDueAt",e."nextMaintenanceDueAt",count(DISTINCT h.id)::int AS "activeHoldCount",count(DISTINCT r.id)::int AS "openRecallCount",
-      (e.status='ACTIVE' AND count(DISTINCT h.id)=0 AND count(DISTINCT r.id)=0 AND (NOT e."calibrationRequired" OR e."nextCalibrationDueAt">=CURRENT_DATE) AND (NOT e."maintenanceRequired" OR e."nextMaintenanceDueAt">=CURRENT_DATE)) AS usable
+  workspace(organizationId: string) {
+    return db.$queryRaw<EquipmentWorkspaceItem[]>(Prisma.sql`
+    SELECT e.id, e."equipmentNumber", e.name, e.status, e."calibrationRequired", e."maintenanceRequired",
+      e."nextCalibrationDueAt", e."nextMaintenanceDueAt",
+      holds."activeHoldCount", holds."readyHoldCount", holds."firstReadyHoldId", recalls."openRecallCount",
+      (e.status = 'ACTIVE' AND holds."activeHoldCount" = 0 AND recalls."openRecallCount" = 0
+        AND (NOT e."calibrationRequired" OR e."nextCalibrationDueAt" >= CURRENT_DATE)
+        AND (NOT e."maintenanceRequired" OR e."nextMaintenanceDueAt" >= CURRENT_DATE)) AS usable
     FROM "Equipment" e
-    LEFT JOIN "EquipmentComplianceHold" h ON h."organizationId"=e."organizationId" AND h."equipmentId"=e.id AND h."clearedAt" IS NULL
-    LEFT JOIN "EquipmentRecall" r ON r."organizationId"=e."organizationId" AND r."equipmentId"=e.id AND r.status='OPEN'
-    WHERE e."organizationId"=${organizationId}::uuid GROUP BY e.id ORDER BY e."equipmentNumber"
-  `);}
+    CROSS JOIN LATERAL (
+      SELECT count(*)::int AS "activeHoldCount",
+        count(*) FILTER (WHERE h.ready)::int AS "readyHoldCount",
+        (array_agg(h.id ORDER BY h."dueAt", h.id) FILTER (WHERE h.ready))[1] AS "firstReadyHoldId"
+      FROM (
+        SELECT id, "dueAt", CASE kind
+          WHEN 'CALIBRATION_OVERDUE' THEN e."nextCalibrationDueAt" > "dueAt"
+          WHEN 'MAINTENANCE_OVERDUE' THEN e."nextMaintenanceDueAt" > "dueAt"
+        END AS ready
+        FROM "EquipmentComplianceHold"
+        WHERE "organizationId" = e."organizationId" AND "equipmentId" = e.id AND "clearedAt" IS NULL
+      ) h
+    ) holds
+    CROSS JOIN LATERAL (
+      SELECT count(*)::int AS "openRecallCount"
+      FROM "EquipmentRecall" r
+      WHERE r."organizationId" = e."organizationId" AND r."equipmentId" = e.id AND r.status = 'OPEN'
+    ) recalls
+    WHERE e."organizationId" = ${organizationId}::uuid
+    ORDER BY e."equipmentNumber"
+    `);
+  }
 }

@@ -24,6 +24,8 @@ Staff can search by equipment number or name and combine status with views for a
 
 Opening a different instrument clears the prior instrument's service draft and loads history for the selected record. The worklist adds no writes or changes to release, recall, hold, or usability rules.
 
+The Holds column shows how many active holds meet the date requirement for clearance. The **Holds ready for clearance review** view opens the oldest eligible hold by its held due date. A hold appears in this view when its corresponding calibration or maintenance due date has moved past the held date. Readiness is a snapshot for prioritizing review. Equipment with an active hold remains unavailable, and the server checks the current schedule again when a manager submits a clearance reason.
+
 ## Register shortcuts
 
 A register row with an active hold opens the existing compliance controls for that instrument. Authorized equipment managers also see calibration and maintenance shortcuts for required schedules that are overdue, upcoming, or missing a due date. These open the existing evidence form with the instrument and evidence type selected. Each shortcut focuses the destination heading. If the requested instrument is unavailable, the destination has no selected instrument until the user makes a selection. The shortcuts use the existing forms, permissions, validations, and audit writes.

@@ -7,6 +7,7 @@ import { equipmentWorklist, filterEquipmentWorklist, type EquipmentWorklistItem,
 const views: ReadonlyArray<{ value: EquipmentWorklistView; label: string }> = [
   { value: "all", label: "All equipment" },
   { value: "holds", label: "Active compliance holds" },
+  { value: "clearance-ready", label: "Holds ready for clearance review" },
   { value: "recalls", label: "Open recalls" },
   { value: "unavailable", label: "Not usable, excluding retired" },
   { value: "overdue", label: "Overdue calibration or maintenance" },
@@ -29,7 +30,7 @@ export function EquipmentRegister({ equipment, today, selected, onSelect, onRevi
   today: string;
   selected: string;
   onSelect: (id: string) => void;
-  onReviewHolds: (id: string) => void;
+  onReviewHolds: (id: string, holdId?: string) => void;
   onReviewRecalls: (id: string) => void;
   onRecordEvidence?: (id: string, type: EquipmentEvidenceType) => void;
 }) {
@@ -74,29 +75,33 @@ export function EquipmentRegister({ equipment, today, selected, onSelect, onRevi
     <div className="table-wrap"><table>
       <thead><tr><th>Equipment</th><th>Status</th><th>Usability</th><th>Calibration due</th><th>Maintenance due</th><th>Holds</th><th>Recalls</th><th>Actions</th></tr></thead>
       <tbody>
-        {visible.map(({ item, calibration, maintenance }) => <tr key={item.id}>
-          <td><button type="button" className="link-button" aria-pressed={selected === item.id}
-            onClick={() => onSelect(item.id)}>{item.equipmentNumber} — {item.name}</button></td>
-          <td>{item.status.replaceAll("_", " ")}</td>
-          <td><strong>{item.usable ? "Usable" : "Not usable"}</strong></td>
-          <td>{schedule(item.nextCalibrationDueAt, calibration)}</td>
-          <td>{schedule(item.nextMaintenanceDueAt, maintenance)}</td>
-          <td>{item.activeHoldCount}</td>
-          <td><button type="button" className="link-button"
-            aria-label={`Review recalls for ${item.equipmentNumber}, ${item.openRecallCount} open`}
-            onClick={() => onReviewRecalls(item.id)}>{item.openRecallCount} open</button></td>
-          <td>
-            {item.activeHoldCount > 0 && <button type="button" className="secondary-button"
-              aria-label={`Review holds for ${item.equipmentNumber}`}
-              onClick={() => onReviewHolds(item.id)}>Review holds</button>}
-            {onRecordEvidence && actionableSchedules.has(calibration) && <button type="button" className="secondary-button"
-              aria-label={`Record calibration for ${item.equipmentNumber}`}
-              onClick={() => onRecordEvidence(item.id, "CALIBRATED")}>Record calibration</button>}
-            {onRecordEvidence && actionableSchedules.has(maintenance) && <button type="button" className="secondary-button"
-              aria-label={`Record maintenance for ${item.equipmentNumber}`}
-              onClick={() => onRecordEvidence(item.id, "MAINTENANCE")}>Record maintenance</button>}
-          </td>
-        </tr>)}
+        {visible.map(({ item, calibration, maintenance }) => {
+          const readyHoldId = view === "clearance-ready" ? item.firstReadyHoldId ?? undefined : undefined;
+          const reviewLabel = readyHoldId ? "Review ready hold" : "Review holds";
+          return <tr key={item.id}>
+            <td><button type="button" className="link-button" aria-pressed={selected === item.id}
+              onClick={() => onSelect(item.id)}>{item.equipmentNumber} — {item.name}</button></td>
+            <td>{item.status.replaceAll("_", " ")}</td>
+            <td><strong>{item.usable ? "Usable" : "Not usable"}</strong></td>
+            <td>{schedule(item.nextCalibrationDueAt, calibration)}</td>
+            <td>{schedule(item.nextMaintenanceDueAt, maintenance)}</td>
+            <td>{item.activeHoldCount}{item.readyHoldCount > 0 && ` · ${item.readyHoldCount} ready`}</td>
+            <td><button type="button" className="link-button"
+              aria-label={`Review recalls for ${item.equipmentNumber}, ${item.openRecallCount} open`}
+              onClick={() => onReviewRecalls(item.id)}>{item.openRecallCount} open</button></td>
+            <td>
+              {item.activeHoldCount > 0 && <button type="button" className="secondary-button"
+                aria-label={`${reviewLabel} for ${item.equipmentNumber}`}
+                onClick={() => onReviewHolds(item.id, readyHoldId)}>{reviewLabel}</button>}
+              {onRecordEvidence && actionableSchedules.has(calibration) && <button type="button" className="secondary-button"
+                aria-label={`Record calibration for ${item.equipmentNumber}`}
+                onClick={() => onRecordEvidence(item.id, "CALIBRATED")}>Record calibration</button>}
+              {onRecordEvidence && actionableSchedules.has(maintenance) && <button type="button" className="secondary-button"
+                aria-label={`Record maintenance for ${item.equipmentNumber}`}
+                onClick={() => onRecordEvidence(item.id, "MAINTENANCE")}>Record maintenance</button>}
+            </td>
+          </tr>;
+        })}
         {visible.length === 0 && <tr><td colSpan={8}>{equipment.length
           ? "No equipment matches these filters."
           : "No equipment has been registered."}</td></tr>}
