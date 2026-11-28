@@ -18,3 +18,7 @@ Recall/quarantine is an operational control separate from administrative equipme
 
 ## Boundary
 Broader escalation, inventory/material linkage, automated recall-source integration, and final Prompt 051 completeness review remain subsequent work.
+
+## Recall actions in the workspace
+
+The open-recall count in each equipment register row links to that instrument's recall history. Authorized equipment managers can open a recall with a reason and affected scope, or close an open recall with a closure reason after any active holds have been cleared. The workspace uses the existing recall service and refreshes the register after a write. Closing a recall removes that quarantine restriction. Administrative status, schedule validity, and compliance holds also inform the usability decision.

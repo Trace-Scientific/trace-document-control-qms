@@ -24,12 +24,13 @@ const scheduleLabels = {
 
 const actionableSchedules = new Set(["overdue", "due-soon", "missing-date"]);
 
-export function EquipmentRegister({ equipment, today, selected, onSelect, onReviewHolds, onRecordEvidence }: {
+export function EquipmentRegister({ equipment, today, selected, onSelect, onReviewHolds, onRecordEvidence, onReviewRecalls }: {
   equipment: EquipmentWorklistItem[];
   today: string;
   selected: string;
   onSelect: (id: string) => void;
   onReviewHolds: (id: string) => void;
+  onReviewRecalls: (id: string) => void;
   onRecordEvidence?: (id: string, type: EquipmentEvidenceType) => void;
 }) {
   const [view, setView] = useState<EquipmentWorklistView>("all");
@@ -81,7 +82,9 @@ export function EquipmentRegister({ equipment, today, selected, onSelect, onRevi
           <td>{schedule(item.nextCalibrationDueAt, calibration)}</td>
           <td>{schedule(item.nextMaintenanceDueAt, maintenance)}</td>
           <td>{item.activeHoldCount}</td>
-          <td>{item.openRecallCount}</td>
+          <td><button type="button" className="link-button"
+            aria-label={`Review recalls for ${item.equipmentNumber}, ${item.openRecallCount} open`}
+            onClick={() => onReviewRecalls(item.id)}>{item.openRecallCount} open</button></td>
           <td>
             {item.activeHoldCount > 0 && <button type="button" className="secondary-button"
               aria-label={`Review holds for ${item.equipmentNumber}`}
