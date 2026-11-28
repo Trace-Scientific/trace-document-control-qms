@@ -1,4 +1,5 @@
 import { EquipmentOperationsWorkspace } from "@/components/equipment-operations-workspace";
+import { InventoryLotWorkspace } from "@/components/inventory-lot-workspace";
 import { DocumentControlDashboard } from "@/components/document-control-dashboard";
 import { DashboardVisibilityGate } from "@/components/dashboard-visibility-gate";
 import { LifecycleOperations } from "@/components/lifecycle-operations";
@@ -214,8 +215,16 @@ export default async function HomePage() {
         {
           id: "laboratory",
           label: "Laboratory operations",
-          description: "Equipment and operational controls.",
-          content: laboratory,
+          description: "Equipment, materials, and lots.",
+          sections: [
+            { id: "equipment", label: "Equipment", description: "Instrument status, evidence, and recalls.", content: laboratory },
+            {
+              id: "inventory",
+              label: "Inventory",
+              description: "Material catalog and lot register.",
+              content: visibility.inventoryRead ? <InventoryLotWorkspace canManage={visibility.inventoryManage} today={today} /> : null,
+            },
+          ],
         },
         {
           id: "reporting",

@@ -21,6 +21,8 @@ export type WorkspaceVisibility = {
   qualityEventManage: boolean;
   equipmentManagement: boolean;
   equipmentManage: boolean;
+  inventoryRead: boolean;
+  inventoryManage: boolean;
   reportingManagement: boolean;
   reportingManage: boolean;
   reportingExport: boolean;
@@ -53,6 +55,8 @@ export function workspaceVisibility(permissionKeys: Iterable<string>): Workspace
     qualityEventManage: has("quality_event.manage"),
     equipmentManagement: has("equipment.read"),
     equipmentManage: has("equipment.manage"),
+    inventoryRead: has("inventory.read"),
+    inventoryManage: has("inventory.manage"),
     reportingManagement: has("report.read"),
     reportingManage: has("report.manage"),
     reportingExport: has("report.export"),
