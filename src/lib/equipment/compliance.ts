@@ -7,6 +7,19 @@ export class EquipmentComplianceValidationError extends Error {}
 export type EquipmentComplianceKind="CALIBRATION_OVERDUE"|"MAINTENANCE_OVERDUE";
 export type EquipmentImpactDisposition="NO_IMPACT"|"POTENTIAL_IMPACT"|"CONFIRMED_IMPACT";
 export type EquipmentHoldRecord={id:string;organizationId:string;equipmentId:string;kind:EquipmentComplianceKind;dueAt:Date;detectedAt:Date;clearedAt:Date|null;clearedByUserId:string|null;clearanceReason:string|null};
+type HoldSchedule = { nextCalibrationDueAt: Date | null; nextMaintenanceDueAt: Date | null };
+export type EquipmentHoldReadiness = EquipmentHoldRecord & {
+  currentDueAt: Date | null;
+  canClear: boolean;
+};
+
+export function equipmentHoldReadiness(hold: EquipmentHoldRecord, schedule: HoldSchedule | undefined): EquipmentHoldReadiness {
+  const currentDueAt = (hold.kind === "CALIBRATION_OVERDUE"
+    ? schedule?.nextCalibrationDueAt
+    : schedule?.nextMaintenanceDueAt) ?? null;
+  return { ...hold, currentDueAt, canClear: !hold.clearedAt && !!currentDueAt && currentDueAt > hold.dueAt };
+}
+
 export type EquipmentImpactRecord={id:string;organizationId:string;equipmentId:string;holdId:string|null;disposition:EquipmentImpactDisposition;scopeSummary:string;rationale:string;qualityEventId:string|null;assessedByUserId:string;assessedAt:Date};
 
 export type EquipmentImpactHistoryEntry = Pick<EquipmentImpactRecord,
@@ -15,7 +28,7 @@ export type EquipmentImpactHistoryEntry = Pick<EquipmentImpactRecord,
 
 export interface EquipmentComplianceStore{
   listImpactHistory(organizationId: string, equipmentId: string, includeQualityEvent: boolean): Promise<EquipmentImpactHistoryEntry[]>;
-  listHolds(organizationId:string,equipmentId:string):Promise<EquipmentHoldRecord[]>;
+  listHolds(organizationId:string,equipmentId:string):Promise<EquipmentHoldReadiness[]>;
   detectOverdue():Promise<number>;
   clearHold(input:{organizationId:string;equipmentId:string;holdId:string;reason:string;actorUserId:string}):Promise<EquipmentHoldRecord>;
   createImpact(input:{organizationId:string;equipmentId:string;holdId:string|null;disposition:EquipmentImpactDisposition;scopeSummary:string;rationale:string;actorUserId:string;qualityEventId:string|null}):Promise<EquipmentImpactRecord>;

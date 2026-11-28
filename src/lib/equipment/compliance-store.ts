@@ -1,9 +1,21 @@
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import { EquipmentComplianceValidationError,type EquipmentComplianceStore,type EquipmentHoldRecord,type EquipmentImpactHistoryEntry,type EquipmentImpactRecord } from "./compliance";
+import { equipmentHoldReadiness,EquipmentComplianceValidationError,type EquipmentComplianceStore,type EquipmentHoldRecord,type EquipmentImpactHistoryEntry,type EquipmentImpactRecord } from "./compliance";
 
 export class PrismaEquipmentComplianceStore implements EquipmentComplianceStore{
-  listHolds(organizationId:string,equipmentId:string){return db.$queryRaw<EquipmentHoldRecord[]>(Prisma.sql`SELECT * FROM "EquipmentComplianceHold" WHERE "organizationId"=${organizationId}::uuid AND "equipmentId"=${equipmentId}::uuid ORDER BY "detectedAt" DESC`);}
+  async listHolds(organizationId: string, equipmentId: string) {
+    const rows = await db.$queryRaw<Array<EquipmentHoldRecord & {
+      nextCalibrationDueAt: Date | null; nextMaintenanceDueAt: Date | null;
+    }>>(Prisma.sql`
+      SELECT h.*, e."nextCalibrationDueAt", e."nextMaintenanceDueAt"
+      FROM "EquipmentComplianceHold" h
+      JOIN "Equipment" e ON e."organizationId" = h."organizationId" AND e."id" = h."equipmentId"
+      WHERE h."organizationId" = ${organizationId}::uuid AND h."equipmentId" = ${equipmentId}::uuid
+      ORDER BY h."detectedAt" DESC, h."id" DESC
+    `);
+    return rows.map(({ nextCalibrationDueAt, nextMaintenanceDueAt, ...hold }) =>
+      equipmentHoldReadiness(hold, { nextCalibrationDueAt, nextMaintenanceDueAt }));
+  }
   listImpactHistory(organizationId: string, equipmentId: string, includeQualityEvent: boolean) {
     return db.$queryRaw<EquipmentImpactHistoryEntry[]>(Prisma.sql`
       SELECT a."id", a."holdId", a."disposition", a."scopeSummary", a."rationale", a."assessedAt",
@@ -46,7 +58,9 @@ export class PrismaEquipmentComplianceStore implements EquipmentComplianceStore{
       const hold=(await tx.$queryRaw<EquipmentHoldRecord[]>(Prisma.sql`SELECT * FROM "EquipmentComplianceHold" WHERE "organizationId"=${input.organizationId}::uuid AND "equipmentId"=${input.equipmentId}::uuid AND "id"=${input.holdId}::uuid FOR UPDATE`))[0];
       if(!hold)throw new EquipmentComplianceValidationError("Compliance hold not found");if(hold.clearedAt)throw new EquipmentComplianceValidationError("Compliance hold is already cleared");
       const equipment=(await tx.$queryRaw<Array<{nextCalibrationDueAt:Date|null;nextMaintenanceDueAt:Date|null}>>(Prisma.sql`SELECT "nextCalibrationDueAt","nextMaintenanceDueAt" FROM "Equipment" WHERE "organizationId"=${input.organizationId}::uuid AND id=${input.equipmentId}::uuid`))[0];
-      const currentDue=hold.kind==="CALIBRATION_OVERDUE"?equipment?.nextCalibrationDueAt:equipment?.nextMaintenanceDueAt;if(!currentDue||currentDue<=hold.dueAt)throw new EquipmentComplianceValidationError("Current compliance evidence does not support clearing this hold");
+      if (!equipmentHoldReadiness(hold, equipment).canClear) {
+        throw new EquipmentComplianceValidationError("Current compliance evidence does not support clearing this hold");
+      }
       const updated=(await tx.$queryRaw<EquipmentHoldRecord[]>(Prisma.sql`UPDATE "EquipmentComplianceHold" SET "clearedAt"=CURRENT_TIMESTAMP,"clearedByUserId"=${input.actorUserId}::uuid,"clearanceReason"=${input.reason} WHERE id=${input.holdId}::uuid RETURNING *`))[0];
       if(!updated)throw new EquipmentComplianceValidationError("Compliance hold could not be cleared");
       await tx.auditEvent.create({data:{organizationId:input.organizationId,actorUserId:input.actorUserId,action:"EQUIPMENT_COMPLIANCE_HOLD_CLEARED",entityType:"Equipment",entityId:input.equipmentId,reason:input.reason,metadata:{holdId:input.holdId,kind:hold.kind,dueAt:hold.dueAt.toISOString()}}});return updated;

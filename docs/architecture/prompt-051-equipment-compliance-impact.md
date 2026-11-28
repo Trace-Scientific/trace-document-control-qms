@@ -11,6 +11,8 @@ An uncleared compliance hold means the equipment is operationally not usable. Ho
 ## Clearance
 A hold can be cleared only by an authorized equipment manager and only after the corresponding equipment next-due date has advanced beyond the held due date. A controlled clearance reason and actor are recorded and audited.
 
+The compliance panel displays the held due date, the corresponding current next due date, and whether the date requirement is met. Recording compliance evidence or correcting the schedule refreshes this view. Managers can submit a clearance reason once the date requirement is met. The server checks the current schedule again when accepting clearance. The equipment register continues to evaluate overall usability, including other active holds and open recalls.
+
 ## Impact assessment
 Impact assessments are append-only and capture disposition, affected scope, rationale, assessor, time, optional linked compliance hold, and optional linked quality event.
 

@@ -1,24 +1,172 @@
 "use client";
-import { useEffect,useMemo,useState } from "react";
+
+import { type FormEvent, useEffect, useMemo, useState } from "react";
+import type { EquipmentHoldReadiness, EquipmentImpactDisposition } from "@/lib/equipment/compliance";
 import { EquipmentImpactHistory, type EquipmentImpactHistoryRow } from "./equipment-impact-history";
 
-type Hold={id:string;kind:"CALIBRATION_OVERDUE"|"MAINTENANCE_OVERDUE";dueAt:string;detectedAt:string;clearedAt:string|null;clearanceReason:string|null};
-type Disposition="NO_IMPACT"|"POTENTIAL_IMPACT"|"CONFIRMED_IMPACT";
+type Hold = Pick<EquipmentHoldReadiness, "id" | "kind" | "clearanceReason" | "canClear"> & {
+  dueAt: string;
+  detectedAt: string;
+  clearedAt: string | null;
+  currentDueAt: string | null;
+};
 
-export function EquipmentCompliancePanel({equipmentId,canManage,onChanged}:{equipmentId:string;canManage:boolean;onChanged:()=>Promise<void>}){
- const [holds,setHolds]=useState<Hold[]>([]),[error,setError]=useState(""),[message,setMessage]=useState("");
- const [impactHistory, setImpactHistory] = useState<EquipmentImpactHistoryRow[] | null>(null);
- const [holdId,setHoldId]=useState(""),[disposition,setDisposition]=useState<Disposition>("NO_IMPACT"),[scopeSummary,setScopeSummary]=useState(""),[rationale,setRationale]=useState(""),[clearanceReason,setClearanceReason]=useState("");
- const holdLabels = useMemo(() => new Map(holds.map(hold => [
-   hold.id, `${hold.kind === "CALIBRATION_OVERDUE" ? "Calibration" : "Maintenance"} due ${hold.dueAt.slice(0, 10)}`,
- ])), [holds]);
- const activeHolds=useMemo(()=>holds.filter(hold=>!hold.clearedAt),[holds]);
- async function load(){const r=await fetch(`/api/equipment/${equipmentId}/compliance`,{cache:"no-store"});const j=await r.json().catch(()=>null);if(!r.ok){setError(j?.error??"Unable to load equipment compliance holds");return;}setError("");setHolds(j?.data??[]);setImpactHistory(j?.impactHistory??[]);setHoldId(current=>current&&j?.data?.some((hold:Hold)=>hold.id===current&&!hold.clearedAt)?current:(j?.data??[]).find((hold:Hold)=>!hold.clearedAt)?.id??"");}
- useEffect(()=>{let cancelled=false;async function initialLoad(){const r=await fetch(`/api/equipment/${equipmentId}/compliance`,{cache:"no-store"});const j=await r.json().catch(()=>null);if(cancelled)return;if(!r.ok){setError(j?.error??"Unable to load equipment compliance holds");return;}const loaded:Hold[]=j?.data??[];setHolds(loaded);setImpactHistory(j?.impactHistory??[]);setHoldId(loaded.find(hold=>!hold.clearedAt)?.id??"");}void initialLoad().catch(()=>{if(!cancelled)setError("Unable to load equipment compliance records");});return()=>{cancelled=true;};},[equipmentId]);
- async function assess(e:React.FormEvent){e.preventDefault();if(!holdId)return;setMessage("");const r=await fetch(`/api/equipment/${equipmentId}/compliance`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operation:"ASSESS_IMPACT",holdId,disposition,scopeSummary,rationale})});const j=await r.json().catch(()=>null);setMessage(r.ok?(j?.data?.qualityEventId?"Impact assessment recorded and linked to a quality event.":"Impact assessment recorded and audited."):j?.error??"Impact assessment failed");if(r.ok){setScopeSummary("");setRationale("");await load();await onChanged();}}
- async function clear(e:React.FormEvent){e.preventDefault();if(!holdId)return;setMessage("");const r=await fetch(`/api/equipment/${equipmentId}/compliance`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operation:"CLEAR_HOLD",holdId,reason:clearanceReason})});const j=await r.json().catch(()=>null);setMessage(r.ok?"Compliance hold cleared with audit evidence.":j?.error??"Compliance hold could not be cleared");if(r.ok){setClearanceReason("");await load();await onChanged();}}
- return <section className="form-stack"><h3>Compliance holds & impact assessment</h3><p>Overdue required calibration or maintenance creates a system compliance hold. An active hold makes otherwise-active equipment not usable until current compliance evidence supports clearance.</p>{error&&<p className="status-error">{error}</p>}{message&&<p role="status">{message}</p>}{holds.length?<ul>{holds.map(hold=><li key={hold.id}><strong>{hold.kind}</strong> · due {hold.dueAt.slice(0,10)} · detected {hold.detectedAt.slice(0,10)} · {hold.clearedAt?`CLEARED ${hold.clearedAt.slice(0,10)}`:"ACTIVE"}{hold.clearanceReason?` — ${hold.clearanceReason}`:""}</li>)}</ul>:<p>No compliance holds recorded.</p>}
- <EquipmentImpactHistory entries={impactHistory} holdLabels={holdLabels} />
- {canManage&&activeHolds.length>0&&<><label>Active hold<select value={holdId} onChange={e=>setHoldId(e.target.value)}>{activeHolds.map(hold=><option key={hold.id} value={hold.id}>{hold.kind} · due {hold.dueAt.slice(0,10)}</option>)}</select></label><form className="form-stack" onSubmit={assess}><h3>Record impact assessment</h3><label>Disposition<select value={disposition} onChange={e=>setDisposition(e.target.value as Disposition)}><option value="NO_IMPACT">No impact</option><option value="POTENTIAL_IMPACT">Potential impact</option><option value="CONFIRMED_IMPACT">Confirmed impact</option></select></label><label>Affected scope<textarea required maxLength={5000} value={scopeSummary} onChange={e=>setScopeSummary(e.target.value)}/></label><label>Assessment rationale<textarea required maxLength={5000} value={rationale} onChange={e=>setRationale(e.target.value)}/></label><button type="submit" disabled={!holdId||!scopeSummary.trim()||!rationale.trim()}>Record impact assessment</button></form><form className="form-stack" onSubmit={clear}><h3>Clear compliance hold</h3><p>Clearance is accepted only after newer calibration or maintenance evidence advances the applicable due date.</p><label>Required clearance reason<textarea required maxLength={1000} value={clearanceReason} onChange={e=>setClearanceReason(e.target.value)}/></label><button type="submit" disabled={!holdId||!clearanceReason.trim()}>Clear compliance hold</button></form></>}
- </section>;
+export function EquipmentCompliancePanel({ equipmentId, canManage, onChanged }: {
+  equipmentId: string;
+  canManage: boolean;
+  onChanged: () => Promise<void>;
+}) {
+  const [holds, setHolds] = useState<Hold[] | null>(null);
+  const [impactHistory, setImpactHistory] = useState<EquipmentImpactHistoryRow[] | null>(null);
+  const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [message, setMessage] = useState("");
+  const [revision, setRevision] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [holdId, setHoldId] = useState("");
+  const [disposition, setDisposition] = useState<EquipmentImpactDisposition>("NO_IMPACT");
+  const [scopeSummary, setScopeSummary] = useState("");
+  const [rationale, setRationale] = useState("");
+  const [clearanceReason, setClearanceReason] = useState("");
+  const endpoint = `/api/equipment/${equipmentId}/compliance`;
+  const holdLabels = useMemo(() => new Map(holds?.map(hold => [
+    hold.id, `${hold.kind === "CALIBRATION_OVERDUE" ? "Calibration" : "Maintenance"} due ${hold.dueAt.slice(0, 10)}`,
+  ])), [holds]);
+  const activeHolds = holds?.filter(hold => !hold.clearedAt) ?? [];
+  const selectedHold = activeHolds.find(hold => hold.id === holdId);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(endpoint, { cache: "no-store", signal: controller.signal })
+      .then(async response => {
+        const body = await response.json().catch(() => null);
+        if (!response.ok || !Array.isArray(body?.data)) throw new Error(body?.error ?? "Unable to load equipment compliance records.");
+        if (controller.signal.aborted) return;
+        const loaded: Hold[] = body.data;
+        setHolds(loaded);
+        setImpactHistory(body.impactHistory ?? []);
+        setHoldId(current => current || loaded.find(hold => !hold.clearedAt)?.id || "");
+      })
+      .catch(error => { if (!controller.signal.aborted) setLoadError(error.message); });
+    return () => controller.abort();
+  }, [endpoint, revision]);
+
+  function refresh() {
+    setHolds(null);
+    setImpactHistory(null);
+    setLoadError("");
+    setRevision(current => current + 1);
+  }
+
+  useEffect(() => {
+    function equipmentChanged(event: Event) {
+      if ((event as CustomEvent<{ equipmentId?: string }>).detail?.equipmentId === equipmentId) refresh();
+    }
+    window.addEventListener("qms:equipment-changed", equipmentChanged);
+    return () => window.removeEventListener("qms:equipment-changed", equipmentChanged);
+  }, [equipmentId]);
+
+  function selectHold(id: string) {
+    setHoldId(id);
+    setDisposition("NO_IMPACT");
+    setScopeSummary("");
+    setRationale("");
+    setClearanceReason("");
+    setError("");
+    setMessage("");
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>, operation: "ASSESS_IMPACT" | "CLEAR_HOLD") {
+    event.preventDefault();
+    if (!canManage || !selectedHold || busy) return;
+    if (operation === "CLEAR_HOLD" ? !selectedHold.canClear || !clearanceReason.trim() : !scopeSummary.trim() || !rationale.trim()) return;
+    setBusy(true);
+    setMessage("");
+    setError("");
+    const command = operation === "CLEAR_HOLD"
+      ? { operation, holdId, reason: clearanceReason }
+      : { operation, holdId, disposition, scopeSummary, rationale };
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(command),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        setError(body?.error ?? "Equipment compliance update failed.");
+        return;
+      }
+      if (operation === "CLEAR_HOLD") setClearanceReason("");
+      else {
+        setScopeSummary("");
+        setRationale("");
+      }
+      setMessage(operation === "CLEAR_HOLD"
+        ? "Compliance hold cleared and audited. Review equipment usability before use."
+        : body?.data?.qualityEventId
+          ? "Impact assessment recorded and linked to a quality event."
+          : "Impact assessment recorded and audited.");
+      await onChanged();
+    } catch {
+      setError("The update could not be confirmed. Refresh the compliance records before retrying.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <section className="form-stack">
+    <h3>Compliance holds &amp; impact assessment</h3>
+    <p>An active hold makes otherwise-active equipment unavailable for use.</p>
+    {loadError && <p role="alert">{loadError}</p>}
+    {error && <p role="alert">{error}</p>}
+    {message && <p role="status">{message}</p>}
+    {!holds && !loadError && <p role="status">Loading compliance records…</p>}
+    {holds?.length === 0 && <p>No compliance holds recorded.</p>}
+    {holds && holds.length > 0 && <ul>
+      {holds.map(hold => <li key={hold.id}>
+        <strong>{holdLabels.get(hold.id)}</strong> · Detected {hold.detectedAt.slice(0, 10)} ·{" "}
+        {hold.clearedAt ? `Cleared ${hold.clearedAt.slice(0, 10)}` : "Active"}
+        {hold.clearanceReason && ` — ${hold.clearanceReason}`}
+      </li>)}
+    </ul>}
+    <div><button type="button" className="secondary-button" disabled={busy || (!holds && !loadError)} onClick={refresh}>Refresh compliance records</button></div>
+    <EquipmentImpactHistory entries={impactHistory} holdLabels={holdLabels} />
+    {activeHolds.length > 0 &&
+      <label>Active hold
+        <select disabled={busy} value={selectedHold?.id ?? ""} onChange={event => selectHold(event.target.value)}>
+          <option value="" disabled>Select an active hold</option>
+          {activeHolds.map(hold => <option key={hold.id} value={hold.id}>{holdLabels.get(hold.id)}</option>)}
+        </select>
+      </label>
+    }
+    {selectedHold && <>
+      <dl className="quality-record-details">
+        <dt>Due date on the hold</dt><dd>{selectedHold.dueAt.slice(0, 10)}</dd>
+        <dt>Current next due date</dt><dd>{selectedHold.currentDueAt?.slice(0, 10) ?? "No date recorded"}</dd>
+        <dt>Clearance readiness</dt>
+        <dd>{selectedHold.canClear
+          ? "The date requirement is met. A manager can clear the hold with a reason."
+          : "The current next due date must be later than the due date on the hold."}</dd>
+      </dl>
+      {canManage && <>
+        <form className="form-stack" onSubmit={event => void submit(event, "ASSESS_IMPACT")}>
+          <h4>Record impact assessment</h4>
+          <label>Disposition<select disabled={busy} value={disposition} onChange={event => setDisposition(event.target.value as EquipmentImpactDisposition)}>
+            <option value="NO_IMPACT">No impact</option>
+            <option value="POTENTIAL_IMPACT">Potential impact</option>
+            <option value="CONFIRMED_IMPACT">Confirmed impact</option>
+          </select></label>
+          <label>Affected scope<textarea disabled={busy} required maxLength={5000} value={scopeSummary} onChange={event => setScopeSummary(event.target.value)} /></label>
+          <label>Assessment rationale<textarea disabled={busy} required maxLength={5000} value={rationale} onChange={event => setRationale(event.target.value)} /></label>
+          <button type="submit" disabled={busy || !scopeSummary.trim() || !rationale.trim()}>Record impact assessment</button>
+        </form>
+        <form className="form-stack" onSubmit={event => void submit(event, "CLEAR_HOLD")}>
+          <h4>Clear compliance hold</h4>
+          <label>Required clearance reason
+            <textarea disabled={busy || !selectedHold.canClear} required maxLength={1000} value={clearanceReason} onChange={event => setClearanceReason(event.target.value)} />
+          </label>
+          <button type="submit" disabled={busy || !selectedHold.canClear || !clearanceReason.trim()}>Clear compliance hold</button>
+        </form>
+      </>}
+    </>}
+  </section>;
 }
