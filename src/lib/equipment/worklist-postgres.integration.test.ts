@@ -98,6 +98,47 @@ describe.skipIf(!enabled)("equipment register in migrated PostgreSQL", () => {
     expect(audit.map(row => row.action).sort()).toEqual(["EQUIPMENT_RECALL_CLOSED", "EQUIPMENT_RECALL_OPENED"]);
   });
 
+  it("checks the corresponding due date for each hold and audits eligible clearance", async () => {
+    const { organizationId, actorId, equipmentId } = await createTenant();
+    const other = await createTenant();
+    await db.$executeRaw`
+      INSERT INTO "EquipmentComplianceHold" ("organizationId", "equipmentId", "kind", "dueAt")
+      VALUES
+        (${organizationId}::uuid, ${equipmentId}::uuid, 'CALIBRATION_OVERDUE', DATE '2026-01-01'),
+        (${organizationId}::uuid, ${equipmentId}::uuid, 'MAINTENANCE_OVERDUE', DATE '2026-01-01')
+    `;
+    const store = new PrismaEquipmentComplianceStore();
+    const initial = await store.listHolds(organizationId, equipmentId);
+    expect(initial).toHaveLength(2);
+    for (const hold of initial) expect(hold).toMatchObject({ currentDueAt: null, canClear: false });
+    await expect(store.listHolds(other.organizationId, equipmentId)).resolves.toEqual([]);
+
+    await db.$executeRaw`
+      UPDATE "Equipment" SET "calibrationRequired" = true, "calibrationIntervalDays" = 30,
+        "nextCalibrationDueAt" = DATE '2026-01-02', "maintenanceRequired" = true, "maintenanceIntervalDays" = 30,
+        "nextMaintenanceDueAt" = DATE '2026-01-01'
+      WHERE "organizationId" = ${organizationId}::uuid AND "id" = ${equipmentId}::uuid
+    `;
+    const holds = await store.listHolds(organizationId, equipmentId);
+    const calibration = holds.find(hold => hold.kind === "CALIBRATION_OVERDUE")!;
+    const maintenance = holds.find(hold => hold.kind === "MAINTENANCE_OVERDUE")!;
+    expect(calibration).toMatchObject({ canClear: true, currentDueAt: new Date("2026-01-02") });
+    expect(maintenance).toMatchObject({ canClear: false, currentDueAt: new Date("2026-01-01") });
+
+    const command = { organizationId, equipmentId, actorUserId: actorId, reason: "Synthetic calibration evidence" };
+    await expect(store.clearHold({ ...command, holdId: maintenance.id })).rejects.toThrow("does not support clearing this hold");
+    await expect(store.clearHold({ ...command, holdId: calibration.id })).resolves.toMatchObject({
+      clearedAt: expect.any(Date), clearedByUserId: actorId, clearanceReason: command.reason,
+    });
+    expect(await store.listHolds(organizationId, equipmentId)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: calibration.id, canClear: false, clearedAt: expect.any(Date) }),
+      expect.objectContaining({ id: maintenance.id, canClear: false, clearedAt: null }),
+    ]));
+    await expect(db.auditEvent.findMany({ where: {
+      organizationId, entityId: equipmentId, action: "EQUIPMENT_COMPLIANCE_HOLD_CLEARED",
+    } })).resolves.toEqual([expect.objectContaining({ actorUserId: actorId, reason: command.reason })]);
+  });
+
   it("retains impact assessment details and scopes the resulting quality event number", async () => {
     const { organizationId, actorId, equipmentId } = await createTenant();
     const other = await createTenant();
